@@ -1,0 +1,7 @@
+.env.dev
+
+# ignore the binary itself
+go
+
+# ignore IDE/editor things
+.idea
