@@ -5,3 +5,4 @@ go
 
 # ignore IDE/editor things
 .idea
+cmd

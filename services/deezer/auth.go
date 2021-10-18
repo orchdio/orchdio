@@ -11,11 +11,10 @@ import (
 )
 
 type Deezer struct {
-	ClientID string
+	ClientID     string
 	ClientSecret string
-	RedirectURI string
+	RedirectURI  string
 }
-
 
 func (d *Deezer) FetchAuthURL() string {
 	permissions := fmt.Sprintf("%s,%s,%s,%s", "basic_access", "email", "manage_library", "delete_library")
@@ -23,7 +22,7 @@ func (d *Deezer) FetchAuthURL() string {
 	return fmt.Sprintf("%s/auth.php?app_id=%s&redirect_uri=%s&perms=%s&state=%s", AuthBase, d.ClientID, d.RedirectURI, permissions, uniqueID.String())
 }
 
-func (d *Deezer) FetchAccessToken(code string) []byte{
+func (d *Deezer) FetchAccessToken(code string) []byte {
 	// first, extract the "code" param from the url
 	authURL := fmt.Sprintf("%s/access_token.php?app_id=%s&secret=%s&code=%s&output=json", AuthBase, d.ClientID, d.ClientSecret, code)
 	resp, err := axios.Get(authURL)
@@ -44,10 +43,9 @@ func (d *Deezer) FetchAccessToken(code string) []byte{
 	return []byte(authResponse.AccessToken)
 }
 
-func (d *Deezer) CompleteUserAuth(token []byte)  (DeezerUser, error) {
+func (d *Deezer) CompleteUserAuth(token []byte) (DeezerUser, error) {
 	t := string(token)
 	url := fmt.Sprintf("%s/user/me?access_token=%s", ApiBase, t)
-
 
 	resp, err := axios.Get(url)
 	if err != nil {

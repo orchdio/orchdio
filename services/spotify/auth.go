@@ -11,8 +11,8 @@ import (
 
 func FetchAuthURL(state string) []byte {
 	redirectURI := os.Getenv("SPOTIFY_REDIRECT_URI")
-	var auth  = spotifyauth.New(spotifyauth.WithRedirectURL(redirectURI),
-	// TODO: update the scopes as I need them
+	var auth = spotifyauth.New(spotifyauth.WithRedirectURL(redirectURI),
+		// TODO: update the scopes as I need them
 		spotifyauth.WithScopes(spotifyauth.ScopeUserReadPrivate,
 			spotifyauth.ScopeUserLibraryRead,
 			spotifyauth.ScopeUserReadEmail))
@@ -21,10 +21,10 @@ func FetchAuthURL(state string) []byte {
 }
 
 // CompleteUserAuth finishes authorizing a spotify user
-func CompleteUserAuth(ctx context.Context, request *http.Request) (*spotify.Client, []byte){
+func CompleteUserAuth(ctx context.Context, request *http.Request) (*spotify.Client, []byte) {
 	redirectURI := os.Getenv("SPOTIFY_REDIRECT_URI")
 	state := request.FormValue("state")
-	auth  := spotifyauth.New(spotifyauth.WithRedirectURL(redirectURI),
+	auth := spotifyauth.New(spotifyauth.WithRedirectURL(redirectURI),
 		spotifyauth.WithScopes(spotifyauth.ScopeUserReadPrivate,
 			spotifyauth.ScopeUserLibraryRead,
 			spotifyauth.ScopeUserReadEmail))

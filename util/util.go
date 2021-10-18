@@ -7,7 +7,13 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"errors"
+	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v4"
 	"io"
+	"log"
+	"os"
+	"time"
+	"zoove/types"
 )
 
 // Encrypt encrypts data using 256-bit AES-GCM.  This both hides the content of
@@ -56,4 +62,43 @@ func Decrypt(ciphertext []byte, key []byte) (plaintext []byte, err error) {
 		ciphertext[gcm.NonceSize():],
 		nil,
 	)
+}
+
+// SuccessResponse sends back a success http response to the client.
+func SuccessResponse(ctx *fiber.Ctx, statusCode int, data interface{}) error {
+	return ctx.Status(statusCode).JSON(fiber.Map{
+		"message": "Request Ok",
+		"status":  statusCode,
+		"data":    data,
+	})
+}
+
+// ErrorResponse sends back an error http response to the client.
+func ErrorResponse(ctx *fiber.Ctx, statusCode int, err interface{}) error {
+	return ctx.Status(statusCode).JSON(fiber.Map{
+		"message": "Error with response",
+		"status":  statusCode,
+		"error":   err,
+	})
+}
+
+// SignJwt create a new jwt token
+func SignJwt(claims *types.ZooveUserToken) ([]byte, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &types.ZooveUserToken{
+		PlatformID: claims.PlatformID,
+		Platform:   claims.Platform,
+		Role:       claims.Role,
+		Email:      claims.Email,
+		StandardClaims: jwt.StandardClaims{
+			ExpiresAt: time.Now().Add(time.Hour * 12).Unix(),
+			IssuedAt:  time.Now().Unix(),
+		},
+	})
+
+	jToken, err := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+	if err != nil {
+		log.Printf("[util]: [SignJwt] - Error signing token %v", err)
+		return nil, err
+	}
+	return []byte(jToken), nil
 }
