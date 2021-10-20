@@ -1,6 +1,20 @@
 package types
 
-import "github.com/golang-jwt/jwt/v4"
+import (
+	"errors"
+	"github.com/golang-jwt/jwt/v4"
+)
+
+const (
+	DeezerHost  = "www.deezer.com"
+	SpotifyHost = "open.spotify.com"
+)
+
+// perhaps have a different Error type declarations somewhere. For now, be here
+
+var (
+	EHOSTUNSUPPORTED = errors.New("EHOSTUNSUPPORTED")
+)
 
 type (
 	SpotifyUser struct {
@@ -29,4 +43,11 @@ type ZooveUserToken struct {
 	PlatformID string `json:"platform_id"`
 	Email      string `json:"email"`
 	Role       string `json:"role"`
+}
+
+type LinkInfo struct {
+	Platform   string `json:"platform"`
+	TargetLink string `json:"target_link"`
+	Entity     string `json:"entity"`
+	EntityID   string `json:"entity_id"`
 }

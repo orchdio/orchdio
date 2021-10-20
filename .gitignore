@@ -3,6 +3,7 @@
 # ignore the binary itself
 go
 
-# ignore IDE/editor things
+# ignore IDE/editor thingsgit
 .idea
 cmd
+TODO.md

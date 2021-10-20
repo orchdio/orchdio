@@ -15,15 +15,14 @@ type NewDB struct {
 
 type SingleUserByEmail struct {
 	Email     string `json:"email"`
-	Usernames Map `json:"usernames"`
-	Tokens    Map `json:"tokens"`
-	IDs       Map `json:"ids"`
+	Usernames Map    `json:"usernames"`
+	Tokens    Map    `json:"tokens"`
+	IDs       Map    `json:"ids"`
 }
 
 type Map map[string]interface{}
 
-
-func(s *Map) Scan(value interface{}) error {
+func (s *Map) Scan(value interface{}) error {
 	b, ok := value.([]byte)
 	if !ok {
 		return errors.New("type assertion to byte failed")
@@ -40,7 +39,6 @@ func (s Map) Value() (driver.Value, error) {
 func (d *NewDB) FindUserByEmail(email string) (interface{}, error) {
 	result := d.DB.QueryRow(queries.FindUserByEmail, email)
 	user := SingleUserByEmail{}
-
 
 	err := result.Scan(&user.Email, &user.Usernames, &user.IDs)
 	if err != nil {
