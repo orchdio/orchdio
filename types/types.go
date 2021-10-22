@@ -5,8 +5,8 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 )
 
+var DeezerHost  = []string{"deezer.page.link", "www.deezer.com"}
 const (
-	DeezerHost  = "www.deezer.com"
 	SpotifyHost = "open.spotify.com"
 )
 

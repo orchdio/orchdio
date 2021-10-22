@@ -15,6 +15,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"zoove/controllers"
 	"zoove/controllers/account"
 	"zoove/middleware"
 	"zoove/types"
@@ -159,8 +160,8 @@ func main() {
 		ContextKey: "authToken",
 	}))
 	app.Use(middleware.VerifyToken)
-
 	baseRouter.Get("/me", userController.FetchProfile)
+	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
 	/**
 	 ==================================================================
 	+

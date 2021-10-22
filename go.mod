@@ -5,6 +5,7 @@ go 1.16
 require (
 	github.com/Junzki/link-preview v0.0.0-20190616153136-4d94cb3f9ebf
 	github.com/StackExchange/wmi v1.2.1 // indirect
+	github.com/badoux/goscraper v0.0.0-20190827161153-36995ce6b19f // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/gofiber/fiber/v2 v2.18.0
 	github.com/gofiber/jwt/v3 v3.0.2
@@ -18,6 +19,8 @@ require (
 	github.com/tklauser/go-sysconf v0.3.8 // indirect
 	github.com/vicanso/go-axios v1.3.2
 	github.com/zmb3/spotify/v2 v2.0.0
+	golang.org/x/net v0.0.0-20211020060615-d418f374d309 // indirect
 	golang.org/x/oauth2 v0.0.0-20210819190943-2bc19b11175f
 	golang.org/x/sys v0.0.0-20210923061019-b8560ed6a9b7 // indirect
+	golang.org/x/text v0.3.7 // indirect
 )

@@ -2,13 +2,15 @@ package services
 
 import (
 	"fmt"
-	"github.com/Junzki/link-preview"
+	"github.com/badoux/goscraper"
 	"log"
 	"net/url"
 	"os"
 	"strings"
 	"zoove/services/deezer"
+	"zoove/services/spotify"
 	"zoove/types"
+	"zoove/util"
 )
 
 
@@ -58,32 +60,36 @@ func ExtractLinkInfo(t string) (*types.LinkInfo, error) {
 	playlistIndex := strings.Index(song, "playlist")
 	trackIndex := strings.Index(song, "track")
 	switch host {
-	case types.DeezerHost:
+	case util.Find(types.DeezerHost, host):
 		// first, check the type of URL it is. for now, only track.
 		if strings.Contains(song, "deezer.page.link") {
 			// it contains a shortlink.
-			previewResult, err := LinkPreview.Preview(song, nil)
+			previewResult, err := goscraper.Scrape(song, 10)
 			if err != nil {
 				log.Printf("\n[services][s: Track][error] could not retrieve preview of link: %v", previewResult)
 				return nil, err
 			}
 
-			playlistIndex = strings.Index(previewResult.Link, "playlist")
+
+			playlistIndex = strings.Index(previewResult.Preview.Link, "playlist")
 			if playlistIndex != -1 {
-				entityID = song[playlistIndex+9:]
+				entityID = previewResult.Preview.Link[playlistIndex+9:]
 				entity = "playlist"
 			} else {
-				trackIndex = strings.Index(previewResult.Link, "track")
-				entityID = song[trackIndex:6]
+				trackIndex = strings.Index(previewResult.Preview.Link, "track")
+				log.Printf("Index of track for deezer shortlink extracted link is: %v", trackIndex)
+				entityID = previewResult.Preview.Link[trackIndex + 6:]
 			}
 		} else {
 			// it doesnt contain a preview URL and its a deezer track
 			if playlistIndex != -1 {
 				entityID = song[playlistIndex+9:]
+				entity = "playlist"
 			} else {
-				entityID = song[trackIndex:6]
+				entityID = song[trackIndex+6:]
 			}
 		}
+
 		// then we want to return the real URL.
 		linkInfo := &types.LinkInfo{
 			Platform:   deezer.IDENTIFIER,
@@ -105,8 +111,8 @@ func ExtractLinkInfo(t string) (*types.LinkInfo, error) {
 
 		// then we want to return the real URL.
 		linkInfo := &types.LinkInfo{
-			Platform:   deezer.IDENTIFIER,
-			TargetLink: fmt.Sprintf("%s/v1/%s/%s", os.Getenv("SPOTIFY_API_BASE"), entity, entityID),
+			Platform:   spotify.IDENTIFIER,
+			TargetLink: fmt.Sprintf("%s/%s/%s", os.Getenv("SPOTIFY_API_BASE"), entity, entityID),
 			Entity:     entity,
 			EntityID:   entityID,
 		}

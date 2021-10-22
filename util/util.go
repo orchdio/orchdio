@@ -102,3 +102,12 @@ func SignJwt(claims *types.ZooveUserToken) ([]byte, error) {
 	}
 	return []byte(jToken), nil
 }
+
+func Find(s []string, e string) string {
+	for _, a := range s {
+		if a == e {
+			return a
+		}
+	}
+	return ""
+}
