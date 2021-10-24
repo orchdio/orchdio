@@ -7,13 +7,14 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"io"
 	"log"
 	"os"
 	"time"
-	"zoove/types"
+	"zoove/blueprint"
 )
 
 // Encrypt encrypts data using 256-bit AES-GCM.  This both hides the content of
@@ -83,8 +84,8 @@ func ErrorResponse(ctx *fiber.Ctx, statusCode int, err interface{}) error {
 }
 
 // SignJwt create a new jwt token
-func SignJwt(claims *types.ZooveUserToken) ([]byte, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &types.ZooveUserToken{
+func SignJwt(claims *blueprint.ZooveUserToken) ([]byte, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &blueprint.ZooveUserToken{
 		PlatformID: claims.PlatformID,
 		Platform:   claims.Platform,
 		Role:       claims.Role,
@@ -110,4 +111,20 @@ func Find(s []string, e string) string {
 		}
 	}
 	return ""
+}
+
+// DeezerIsExplicit returns a true or false specifying if it's an explicit content
+func DeezerIsExplicit(v int) bool {
+	out := false
+	if v == 1 {
+		out = true
+	}
+	return out
+}
+
+// GetFormattedDuration returns the duration of a track in format ``hh:mm``
+func GetFormattedDuration(v int) string {
+	hour := v / 60
+	sec := v % 60
+	return fmt.Sprintf("%d:%d", hour, sec)
 }

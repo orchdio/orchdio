@@ -14,7 +14,7 @@ import (
 	"zoove/db/queries"
 	"zoove/services/deezer"
 	"zoove/services/spotify"
-	"zoove/types"
+	"zoove/blueprint"
 	"zoove/util"
 )
 
@@ -104,7 +104,7 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	}
 	log.Printf("\n[user][controller][AuthUser] Method - User with the email %s just signed up or logged in with their Spotify account.\n", user.Email)
 	// create a jwt
-	claim := &types.ZooveUserToken{
+	claim := &blueprint.ZooveUserToken{
 		Role:       "user",
 		Email:      user.Email,
 		Platform:   "spotify",
@@ -160,7 +160,7 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 	)
 
 	// now create a token
-	claims := &types.ZooveUserToken{
+	claims := &blueprint.ZooveUserToken{
 		Role:       "user",
 		Email:      user.Email,
 		Platform:   "deezer",
@@ -176,7 +176,7 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 }
 
 func (c *UserController) FetchProfile(ctx *fiber.Ctx) error {
-	claims := ctx.Locals("claims").(*types.ZooveUserToken)
+	claims := ctx.Locals("claims").(*blueprint.ZooveUserToken)
 
 	database := db.NewDB{
 		DB: c.DB,

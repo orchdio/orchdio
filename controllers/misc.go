@@ -3,7 +3,7 @@ package controllers
 import (
 	"github.com/gofiber/fiber/v2"
 	"net/http"
-	"zoove/types"
+	"zoove/blueprint"
 	"zoove/util"
 )
 
@@ -12,6 +12,6 @@ func LinkInfo(ctx *fiber.Ctx) error {
 	if local == nil {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Link not passed.")
 	}
-	info := local.(*types.LinkInfo)
+	info := local.(*blueprint.LinkInfo)
 	return util.SuccessResponse(ctx, http.StatusOK, info)
 }

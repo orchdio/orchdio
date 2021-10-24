@@ -19,7 +19,7 @@ import (
 	"zoove/controllers/account"
 	"zoove/controllers/platforms"
 	"zoove/middleware"
-	"zoove/types"
+	"zoove/blueprint"
 )
 
 func init() {
@@ -157,7 +157,7 @@ func main() {
 	// MIDDLEWARE DEFINITION
 	app.Use(jwtware.New(jwtware.Config{
 		SigningKey: []byte(os.Getenv("JWT_SECRET")),
-		Claims:     &types.ZooveUserToken{},
+		Claims:     &blueprint.ZooveUserToken{},
 		ContextKey: "authToken",
 	}))
 	app.Use(middleware.VerifyToken)

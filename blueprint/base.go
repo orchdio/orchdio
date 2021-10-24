@@ -1,4 +1,4 @@
-package types
+package blueprint
 
 import (
 	"errors"
@@ -14,6 +14,7 @@ const (
 
 var (
 	EHOSTUNSUPPORTED = errors.New("EHOSTUNSUPPORTED")
+	ENORESULT = errors.New("ENORESULT")
 )
 
 type (
@@ -50,4 +51,17 @@ type LinkInfo struct {
 	TargetLink string `json:"target_link"`
 	Entity     string `json:"entity"`
 	EntityID   string `json:"entity_id"`
+}
+
+// TrackSearchResult represents a single search result for a platform.
+// It represents what a single platform should return when trying to
+// convert a link.
+type TrackSearchResult struct {
+	URL string `json:"url"`
+	Artistes []string `json:"artistes"`
+	Released string `json:"released"`
+	Duration string `json:"duration"`
+	Explicit bool `json:"explicit"`
+	Title string `json:"title"`
+	Preview string `json:"preview"`
 }

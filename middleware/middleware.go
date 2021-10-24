@@ -6,14 +6,14 @@ import (
 	"log"
 	"net/http"
 	"zoove/services"
-	"zoove/types"
+	"zoove/blueprint"
 	"zoove/util"
 )
 
-// VerifyToken verifies a token and set the context local called "claim" to a type of *types.ZooveUserToken
+// VerifyToken verifies a token and set the context local called "claim" to a type of *blueprint.ZooveUserToken
 func VerifyToken(ctx *fiber.Ctx) error {
 	jwtToken := ctx.Locals("authToken").(*jwt.Token)
-	claims := jwtToken.Claims.(*types.ZooveUserToken)
+	claims := jwtToken.Claims.(*blueprint.ZooveUserToken)
 	ctx.Locals("claims", claims)
 	return ctx.Next()
 }
@@ -23,11 +23,11 @@ func ExtractLinkInfo(ctx *fiber.Ctx) error {
 	link := ctx.Query("link")
 	if link == "" {
 		log.Printf("\n[middleware][ExtractLinkInfo] warning - Link not detected. Skipping...\n")
-		return ctx.Next()
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Bad request. Check you're using the '?link' query string")
 	}
 	linkInfo, err := services.ExtractLinkInfo(link)
 	if err != nil {
-		if err == types.EHOSTUNSUPPORTED {
+		if err == blueprint.EHOSTUNSUPPORTED {
 			return util.ErrorResponse(ctx, http.StatusNotImplemented, err)
 		}
 		log.Printf("\n[middleware][ExtractLinkInfo] error - Could not extract link info: %v: for link: %v\n", err, link)

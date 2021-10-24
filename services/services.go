@@ -9,14 +9,14 @@ import (
 	"strings"
 	"zoove/services/deezer"
 	"zoove/services/spotify"
-	"zoove/types"
+	"zoove/blueprint"
 	"zoove/util"
 )
 
 
 
 // ExtractLinkInfo extracts a URL from a URL.
-func ExtractLinkInfo(t string) (*types.LinkInfo, error) {
+func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 	// first, check if the link is a shortlink
 
 	/**
@@ -60,7 +60,7 @@ func ExtractLinkInfo(t string) (*types.LinkInfo, error) {
 	playlistIndex := strings.Index(song, "playlist")
 	trackIndex := strings.Index(song, "track")
 	switch host {
-	case util.Find(types.DeezerHost, host):
+	case util.Find(blueprint.DeezerHost, host):
 		// first, check the type of URL it is. for now, only track.
 		if strings.Contains(song, "deezer.page.link") {
 			// it contains a shortlink.
@@ -90,14 +90,14 @@ func ExtractLinkInfo(t string) (*types.LinkInfo, error) {
 		}
 
 		// then we want to return the real URL.
-		linkInfo := &types.LinkInfo{
+		linkInfo := &blueprint.LinkInfo{
 			Platform:   deezer.IDENTIFIER,
 			TargetLink: fmt.Sprintf("%s/%s/%s", os.Getenv("DEEZER_API_BASE"), entity, entityID),
 			Entity:     entity,
 			EntityID:   entityID,
 		}
 		return linkInfo, nil
-	case types.SpotifyHost:
+	case blueprint.SpotifyHost:
 		if playlistIndex != -1 {
 			entityID = song[34:]
 			entity = "playlists"
@@ -109,7 +109,7 @@ func ExtractLinkInfo(t string) (*types.LinkInfo, error) {
 		}
 
 		// then we want to return the real URL.
-		linkInfo := &types.LinkInfo{
+		linkInfo := &blueprint.LinkInfo{
 			Platform:   spotify.IDENTIFIER,
 			TargetLink: fmt.Sprintf("%s/%s/%s", os.Getenv("SPOTIFY_API_BASE"), entity, entityID),
 			Entity:     entity,
@@ -119,6 +119,6 @@ func ExtractLinkInfo(t string) (*types.LinkInfo, error) {
 		return linkInfo, nil
 	default:
 		log.Printf("\n[servies][s: Track][error] Link info could not be processed. Might be an invalid link")
-		return nil, types.EHOSTUNSUPPORTED
+		return nil, blueprint.EHOSTUNSUPPORTED
 	}
 }
