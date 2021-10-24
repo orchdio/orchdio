@@ -23,6 +23,17 @@ func ExtractTitle(title string) string {
 	return title[:index]
 }
 
+//func extractArtistes(contributors Track) []string {
+//	var _contributors []string
+//
+//	for _, contributor := range contributors.Contributors {
+//		if contributor.Type == "artist" {
+//			_contributors = append(_contributors, contributor.Name)
+//		}
+//	}
+//	return _contributors
+//}
+
 // FetchSingleTrack fetches a single deezer track from the URL
 func FetchSingleTrack(link string) (*Track, error) {
 	response, err := axios.Get(link)
@@ -39,6 +50,48 @@ func FetchSingleTrack(link string) (*Track, error) {
 		return nil, err
 	}
 	return singleTrack, nil
+}
+
+// FetchPlaylistFromLink returns a playlist information for a deezer playlist, including tracks with type of ``blueprint.TrackSearchResult``
+func FetchPlaylistFromLink(link string) (*blueprint.PlaylistSearchResult, error){
+	response, err := axios.Get(link)
+	if err != nil {
+		log.Printf("\n[services][deezer][playlist][FetchPlaylist] error - could not fetch playlist: %v\n", err)
+		return nil, err
+	}
+	playlist := &Playlist{}
+	err = json.Unmarshal(response.Data, playlist)
+
+	if err != nil {
+		log.Printf("\n[services][deezer][playlist][FetchPlaylist] error - could not deserialize response into output: %v\n", err)
+		return nil, err
+	}
+
+	var sample []blueprint.TrackSearchResult
+	var duration int
+	for _, track := range playlist.Tracks.Data {
+
+		trackCopy := blueprint.TrackSearchResult{
+			URL:      track.URL,
+			Artistes:  []string{track.Artistes.Name},
+			Released: track.ReleaseDate,
+			Duration: util.GetFormattedDuration(track.Duration),
+			Explicit: track.Explicit,
+			Title:    track.Title,
+			Preview:  track.Preview,
+		}
+		duration += track.Duration
+		sample = append(sample, trackCopy)
+	}
+
+	out := blueprint.PlaylistSearchResult{
+		URL:     playlist.URL,
+		Tracks:  sample,
+		Length:  util.GetFormattedDuration(duration),
+		Title:   playlist.Title,
+		Preview: " ",
+	}
+	return &out, nil
 }
 
 // SearchTrackWithLink fetches the deezer result for the track being searched using the URL
@@ -115,3 +168,8 @@ func SearchTrackWithTitle(title, artiste string) (*blueprint.TrackSearchResult, 
 
 	return nil, blueprint.ENORESULT
 }
+
+// SearchPlaylistWithID retrieves a playlist's info using the playlist ID
+//func SearchPlaylistWithLink(id string) {
+//	dzSingle
+//}

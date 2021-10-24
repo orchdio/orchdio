@@ -7,9 +7,9 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"zoove/blueprint"
 	"zoove/services/deezer"
 	"zoove/services/spotify"
-	"zoove/blueprint"
 	"zoove/util"
 )
 
@@ -69,7 +69,6 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 				log.Printf("\n[services][s: Track][error] could not retrieve preview of link: %v", previewResult)
 				return nil, err
 			}
-
 
 			playlistIndex = strings.Index(previewResult.Preview.Link, "playlist")
 			if playlistIndex != -1 {

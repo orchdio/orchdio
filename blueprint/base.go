@@ -65,3 +65,12 @@ type TrackSearchResult struct {
 	Title string `json:"title"`
 	Preview string `json:"preview"`
 }
+
+// PlaylistSearchResult represents a single playlist result for a platform.
+type PlaylistSearchResult struct {
+	URL string `json:"url"`
+	Tracks []TrackSearchResult `json:"tracks"`
+	Length string `json:"length"`
+	Title string `json:"title"`
+	Preview string `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
+}

@@ -22,8 +22,8 @@ type Conversion struct {
 type PlaylistConversion struct {
 	Entity string `json:"entity"`
 	Platforms struct{
-		Deezer []*blueprint.TrackSearchResult `json:"deezer"`
-		Spotify []*blueprint.TrackSearchResult `json:"spotify"`
+		Deezer *blueprint.PlaylistSearchResult `json:"deezer"`
+		Spotify *blueprint.PlaylistSearchResult `json:"spotify"`
 	} `json:"platforms"`
 }
 
@@ -39,7 +39,7 @@ func ConvertTrack(ctx *fiber.Ctx) error {
 	conversion := &Conversion{}
 	conversion.Entity = "track"
 	switch linkInfo.Platform {
-	case strings.ToLower(deezer.IDENTIFIER):
+	case deezer.IDENTIFIER:
 		dzSingleTrack := deezer.SearchTrackWithLink(linkInfo.TargetLink)
 		trackTitle := deezer.ExtractTitle(dzSingleTrack.Title)
 
@@ -80,6 +80,7 @@ func ConvertTrack(ctx *fiber.Ctx) error {
 	return util.ErrorResponse(ctx, http.StatusNotImplemented, nil)
 }
 
+// ConvertPlaylist retrieves info about a playlist from various platforms.
 func ConvertPlaylist(ctx *fiber.Ctx) error {
 	// first, we want to fetch the information on the link
 
@@ -90,5 +91,22 @@ func ConvertPlaylist(ctx *fiber.Ctx) error {
 		log.Printf("\n[controllers][platforms][ConvertTrack] error - %v\n", "Not a playlist URL")
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Not a playlist entity")
 	}
-	return util.ErrorResponse(ctx, http.StatusNotImplemented, nil)
+
+	playlistConversion := &PlaylistConversion{
+		Entity: "playlist",
+	}
+	switch linkInfo.Platform {
+	case deezer.IDENTIFIER:
+		singlePlaylist, err := deezer.FetchPlaylistFromLink(linkInfo.TargetLink)
+		if err != nil {
+			log.Printf("\n[controllers][platforms][ConvertPlaylist] error - could not fetch playlist info from deezer: %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		}
+		// TODO: do for other platform
+		playlistConversion.Platforms.Deezer = singlePlaylist
+		return util.SuccessResponse(ctx, http.StatusOK, playlistConversion)
+	}
+
+
+	return util.ErrorResponse(ctx, http.StatusNotImplemented, "Not yet implemented")
 }
