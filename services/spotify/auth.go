@@ -35,7 +35,6 @@ func CompleteUserAuth(ctx context.Context, request *http.Request) (*spotify.Clie
 		return nil, nil
 	}
 
-	log.Printf("\n 🔔 Spotify token retrieved is - ==> %v \n", token)
 	client := spotify.New(auth.Client(request.Context(), token))
 	return client, []byte(token.RefreshToken)
 }

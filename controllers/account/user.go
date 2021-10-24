@@ -47,7 +47,6 @@ func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusOK, "Error creating auth URL")
 		}
 
-		log.Printf("\nState is: %s\n", uniqueID.String())
 		return util.SuccessResponse(ctx, http.StatusOK, fiber.Map{
 			"url": string(url),
 		})
@@ -76,7 +75,6 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	}
 
 	client, refreshToken := spotify.CompleteUserAuth(context.Background(), r)
-	log.Printf("\nHere is the refreshToken retrieved - %v\n", string(refreshToken))
 	encryptedToken, encErr := util.Encrypt(refreshToken, []byte(encryptionSecretKey))
 	if encErr != nil {
 		log.Printf("\n[controllers][account][user] Error - could not encrypt refreshToken - %v\n", encErr)

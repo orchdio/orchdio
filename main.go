@@ -17,6 +17,7 @@ import (
 	"os"
 	"zoove/controllers"
 	"zoove/controllers/account"
+	"zoove/controllers/platforms"
 	"zoove/middleware"
 	"zoove/types"
 )
@@ -162,6 +163,7 @@ func main() {
 	app.Use(middleware.VerifyToken)
 	baseRouter.Get("/me", userController.FetchProfile)
 	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
+	baseRouter.Get("/convert", middleware.ExtractLinkInfo, platforms.ConvertTrack)
 	/**
 	 ==================================================================
 	+

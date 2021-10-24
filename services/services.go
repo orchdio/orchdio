@@ -77,7 +77,6 @@ func ExtractLinkInfo(t string) (*types.LinkInfo, error) {
 				entity = "playlist"
 			} else {
 				trackIndex = strings.Index(previewResult.Preview.Link, "track")
-				log.Printf("Index of track for deezer shortlink extracted link is: %v", trackIndex)
 				entityID = previewResult.Preview.Link[trackIndex + 6:]
 			}
 		} else {
