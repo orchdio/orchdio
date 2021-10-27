@@ -8,19 +8,23 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"zoove/blueprint"
 	"zoove/util"
 )
 
 type SearchInfo struct {
-
 }
+
+// ExtractTitle retrieves the title of a track if it contains opening and closing brackets
+// This is to improve the searching accuracy when searching for these tracks on platforms
 func ExtractTitle(title string) string {
-	index := strings.Index(title, "(feat")
-	if index == -1 {
-		return title
+	openingBracketIndex := strings.Index(title, "(")
+	closingBracketIndex := strings.LastIndex(title, ")")
+	if openingBracketIndex != -1 && closingBracketIndex != -1 {
+		return title[:openingBracketIndex]
 	}
-	return title[:index]
+	return title
 }
 
 //func extractArtistes(contributors Track) []string {
@@ -52,8 +56,8 @@ func FetchSingleTrack(link string) (*Track, error) {
 	return singleTrack, nil
 }
 
-// FetchPlaylistFromLink returns a playlist information for a deezer playlist, including tracks with type of ``blueprint.TrackSearchResult``
-func FetchPlaylistFromLink(link string) (*blueprint.PlaylistSearchResult, error){
+// FetchPlaylistTracksAndInfo returns a playlist information for a deezer playlist, including tracks with type of ``blueprint.TrackSearchResult``
+func FetchPlaylistTracksAndInfo(link string) (*blueprint.PlaylistSearchResult, error) {
 	response, err := axios.Get(link)
 	if err != nil {
 		log.Printf("\n[services][deezer][playlist][FetchPlaylist] error - could not fetch playlist: %v\n", err)
@@ -68,42 +72,40 @@ func FetchPlaylistFromLink(link string) (*blueprint.PlaylistSearchResult, error)
 	}
 
 	var sample []blueprint.TrackSearchResult
-	var duration int
 	for _, track := range playlist.Tracks.Data {
 
 		trackCopy := blueprint.TrackSearchResult{
 			URL:      track.URL,
-			Artistes:  []string{track.Artistes.Name},
+			Artistes: []string{track.Artistes.Name},
 			Released: track.ReleaseDate,
 			Duration: util.GetFormattedDuration(track.Duration),
 			Explicit: track.Explicit,
 			Title:    track.Title,
 			Preview:  track.Preview,
 		}
-		duration += track.Duration
 		sample = append(sample, trackCopy)
 	}
 
-	out := blueprint.PlaylistSearchResult{
+
+	info := blueprint.PlaylistSearchResult{
 		URL:     playlist.URL,
 		Tracks:  sample,
-		Length:  util.GetFormattedDuration(duration),
+		Length:  util.GetFormattedDuration(playlist.Duration),
 		Title:   playlist.Title,
-		Preview: " ",
+		Preview: "",
 	}
-	return &out, nil
+	return &info, nil
 }
 
 // SearchTrackWithLink fetches the deezer result for the track being searched using the URL
-func SearchTrackWithLink(link string) *blueprint.TrackSearchResult{
+func SearchTrackWithLink(link string) *blueprint.TrackSearchResult {
 	dzSingleTrack, err := FetchSingleTrack(link)
 	var dzTrackContributors []string
-	for _, contributor := range dzSingleTrack.Contributors{
+	for _, contributor := range dzSingleTrack.Contributors {
 		if contributor.Type == "artist" {
 			dzTrackContributors = append(dzTrackContributors, contributor.Name)
 		}
 	}
-
 
 	if err != nil {
 		// FIXME: do something.
@@ -117,15 +119,14 @@ func SearchTrackWithLink(link string) *blueprint.TrackSearchResult{
 		explicit = true
 	}
 
-
 	fetchedDeezerTrack := blueprint.TrackSearchResult{
 		Explicit: explicit,
 		Duration: fmt.Sprintf("%d:%d", hour, sec),
-		URL: dzSingleTrack.Link,
+		URL:      dzSingleTrack.Link,
 		Artistes: dzTrackContributors,
 		Released: dzSingleTrack.ReleaseDate,
-		Title: dzSingleTrack.Title,
-		Preview: dzSingleTrack.Preview,
+		Title:    dzSingleTrack.Title,
+		Preview:  dzSingleTrack.Preview,
 	}
 	return &fetchedDeezerTrack
 
@@ -133,8 +134,8 @@ func SearchTrackWithLink(link string) *blueprint.TrackSearchResult{
 
 // SearchTrackWithTitle searches for a track using the title (and artiste) on deezer
 func SearchTrackWithTitle(title, artiste string) (*blueprint.TrackSearchResult, error) {
-	log.Println(fmt.Sprintf("track:\"%s\" artist: \"%s\"", title, artiste))
-	payload := url.QueryEscape(fmt.Sprintf("track:\"%s\" artist:\"%s\"", title, artiste))
+	trackTitle := ExtractTitle(title)
+	payload := url.QueryEscape(fmt.Sprintf("track:\"%s\" artist:\"%s\"", strings.Trim(trackTitle, " ") , strings.Trim(artiste, " ")))
 	link := fmt.Sprintf("%s/search?q=%s", os.Getenv("DEEZER_API_BASE"), payload)
 
 	response, err := axios.Get(link)
@@ -153,23 +154,53 @@ func SearchTrackWithTitle(title, artiste string) (*blueprint.TrackSearchResult, 
 	if len(fullTrack.Data) > 0 {
 		track := fullTrack.Data[0]
 
-	out := blueprint.TrackSearchResult{
-		URL:      track.Link,
-		Artistes: []string{track.Artist.Name},
-		Released: "",
-		Duration: util.GetFormattedDuration(track.Duration),
-		Explicit: util.DeezerIsExplicit(track.ExplicitContentLyrics),
-		Title:    track.Title,
-		Preview: track.Preview,
-	}
+		out := blueprint.TrackSearchResult{
+			URL:      track.Link,
+			Artistes: []string{track.Artist.Name},
+			Released: "",
+			Duration: util.GetFormattedDuration(track.Duration),
+			Explicit: util.DeezerIsExplicit(track.ExplicitContentLyrics),
+			Title:    track.Title,
+			Preview:  track.Preview,
+		}
 
-	return &out, nil
+		return &out, nil
 	}
 
 	return nil, blueprint.ENORESULT
 }
 
-// SearchPlaylistWithID retrieves a playlist's info using the playlist ID
-//func SearchPlaylistWithLink(id string) {
-//	dzSingle
-//}
+func SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
+	result, err := SearchTrackWithTitle(title, artiste)
+	if err != nil {
+		c <- nil
+		wg.Add(1)
+		defer wg.Done()
+		return
+	}
+	c <- result
+	wg.Add(1)
+
+	defer wg.Done()
+	return
+}
+
+// FetchTracks searches for the tracks (titles) passed and returns the tracks on deezer.
+// This function is used to search for tracks in the playlists the user is trying to convert, on deezer
+func FetchTracks(tracks []blueprint.DeezerSearchTrack) *[]blueprint.TrackSearchResult {
+	var fetchedTracks []blueprint.TrackSearchResult
+	var ch = make(chan *blueprint.TrackSearchResult, len(tracks))
+	var wg sync.WaitGroup
+	for _, track := range tracks {
+		go SearchTrackWithTitleChan(track.Title, track.Artiste, ch, &wg)
+
+		outputTracks := <- ch
+		if outputTracks == nil {
+			log.Printf("\n[services][deezer][FetchTracks] error - no track found for title: %v\n", track.Title)
+			continue
+		}
+		fetchedTracks = append(fetchedTracks, *outputTracks)
+	}
+	wg.Wait()
+	return &fetchedTracks
+}

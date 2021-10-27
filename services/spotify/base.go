@@ -8,15 +8,35 @@ import (
 	"golang.org/x/oauth2/clientcredentials"
 	"log"
 	"os"
+	"sync"
 	"zoove/blueprint"
 	"zoove/util"
 )
 
+// createNewSpotifyUInstance creates a new spotify client to make API request that doesn't need user auth
+func createNewSpotifyUInstance() *spotify.Client {
+	config := &clientcredentials.Config{
+		ClientID:     os.Getenv("SPOTIFY_ID"),
+		ClientSecret: os.Getenv("SPOTIFY_SECRET"),
+		TokenURL:     spotifyauth.TokenURL,
+	}
+
+	token, err := config.Token(context.Background())
+	if err != nil {
+		log.Printf("\n[services][spotify][base][FetchSingleTrack] error  - could not fetch spotify token: %v\n", err)
+		return nil
+	}
+
+	httpClient := spotifyauth.New().Client(context.Background(), token)
+	client := spotify.New(httpClient)
+	return client
+}
+
 func FetchSingleTrack(title string) *spotify.SearchResult {
 	config := &clientcredentials.Config{
-		ClientID: os.Getenv("SPOTIFY_ID"),
+		ClientID:     os.Getenv("SPOTIFY_ID"),
 		ClientSecret: os.Getenv("SPOTIFY_SECRET"),
-		TokenURL: spotifyauth.TokenURL,
+		TokenURL:     spotifyauth.TokenURL,
 	}
 
 	token, err := config.Token(context.Background())
@@ -37,8 +57,27 @@ func FetchSingleTrack(title string) *spotify.SearchResult {
 	return results
 }
 
+
+func SearchTrackWithTitleChan(title string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
+	result, err := SearchTrackWithTitle(title)
+	if err != nil {
+		log.Printf("\nError fetching track %s with channels\n. Error: %v", title, err)
+		c <- nil
+		wg.Add(1)
+
+		defer wg.Done()
+		return
+	}
+	log.Printf("\nChann running for: %s\n", title)
+	c <- result
+	wg.Add(1)
+
+	defer wg.Done()
+	return
+}
+
 // SearchTrackWithTitle searches spotify using the title of a track
-func SearchTrackWithTitle(title string) (*blueprint.TrackSearchResult, error){
+func SearchTrackWithTitle(title string) (*blueprint.TrackSearchResult, error) {
 	spotifySearch := FetchSingleTrack(title)
 	if spotifySearch == nil {
 		log.Printf("\n[controllers][platforms][deezer][ConvertTrack] error - error fetching single track on spotify\n")
@@ -60,16 +99,16 @@ func SearchTrackWithTitle(title string) (*blueprint.TrackSearchResult, error){
 	}
 
 	spHr := (spSingleTrack.Duration / 1000) / 60
-	spSec := (spSingleTrack.Duration/ 1000) % 60
+	spSec := (spSingleTrack.Duration / 1000) % 60
 
 	fetchedSpotifyTrack := blueprint.TrackSearchResult{
 		Released: spSingleTrack.Album.ReleaseDate,
-		URL: spSingleTrack.SimpleTrack.ExternalURLs["spotify"],
+		URL:      spSingleTrack.SimpleTrack.ExternalURLs["spotify"],
 		Artistes: spTrackContributors,
 		Duration: fmt.Sprintf("%d:%d", spHr, spSec),
 		Explicit: spSingleTrack.Explicit,
-		Title: spSingleTrack.Name,
-		Preview: spSingleTrack.PreviewURL,
+		Title:    spSingleTrack.Name,
+		Preview:  spSingleTrack.PreviewURL,
 	}
 
 	return &fetchedSpotifyTrack, nil
@@ -78,9 +117,9 @@ func SearchTrackWithTitle(title string) (*blueprint.TrackSearchResult, error){
 // SearchTrackWithID fetches a track using a track (entityID) and return a spotify track.
 func SearchTrackWithID(id string) (*blueprint.TrackSearchResult, error) {
 	config := &clientcredentials.Config{
-		ClientID: os.Getenv("SPOTIFY_ID"),
+		ClientID:     os.Getenv("SPOTIFY_ID"),
 		ClientSecret: os.Getenv("SPOTIFY_SECRET"),
-		TokenURL: spotifyauth.TokenURL,
+		TokenURL:     spotifyauth.TokenURL,
 	}
 
 	token, err := config.Token(context.Background())
@@ -107,11 +146,83 @@ func SearchTrackWithID(id string) (*blueprint.TrackSearchResult, error) {
 		URL:      results.ExternalURLs["spotify"],
 		Artistes: artistes,
 		Released: results.Album.ReleaseDate,
-		Duration: util.GetFormattedDuration(results.Duration/1000),
+		Duration: util.GetFormattedDuration(results.Duration / 1000),
 		Explicit: results.Explicit,
 		Title:    results.Name,
-		Preview: results.PreviewURL,
+		Preview:  results.PreviewURL,
 	}
 
 	return &out, nil
 }
+
+func FetchPlaylistTracksAndInfo(id string) (*blueprint.PlaylistSearchResult, error) {
+	client := createNewSpotifyUInstance()
+	playlist, err := client.GetPlaylist(context.Background(), spotify.ID(id))
+	if err != nil {
+		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - Could not fetch playlist from spotify: %v\n", err)
+		return nil, err
+	}
+	var tracks []blueprint.TrackSearchResult
+
+	for _, track := range playlist.Tracks.Tracks {
+		var artistes []string
+		for _, artist := range track.Track.Artists {
+			artistes = append(artistes, artist.Name)
+		}
+
+		 trackCopy := blueprint.TrackSearchResult{
+			 URL:      track.Track.ExternalURLs["spotify"],
+			 Artistes: artistes,
+			 Released: track.Track.Album.ReleaseDate,
+			 Duration: util.GetFormattedDuration(track.Track.Duration / 1000),
+			 Explicit: track.Track.Explicit,
+			 Title:    track.Track.Name,
+			 Preview:  track.Track.PreviewURL,
+		 }
+		 tracks = append(tracks, trackCopy)
+	}
+
+	playlistResult := blueprint.PlaylistSearchResult{
+		URL:     playlist.ExternalURLs["spotify"],
+		Tracks:  tracks,
+		Title:   playlist.Name,
+	}
+	return &playlistResult, nil
+}
+
+// FetchTracks fetches tracks in a playlist
+func FetchTracks(tracks []string) *[]blueprint.TrackSearchResult {
+	var fetchedTracks []blueprint.TrackSearchResult
+	var ch = make(chan *blueprint.TrackSearchResult, len(tracks))
+	var wg sync.WaitGroup
+	for _, title := range tracks {
+		go SearchTrackWithTitleChan(title, ch, &wg)
+		outputTracks := <-ch
+
+		if outputTracks == nil {
+			log.Printf("\n[spotify][chan] No result found")
+			continue
+		}
+		fetchedTracks = append(fetchedTracks, *outputTracks)
+	}
+	wg.Wait()
+	return &fetchedTracks
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

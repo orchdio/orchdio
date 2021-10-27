@@ -13,8 +13,6 @@ import (
 	"zoove/util"
 )
 
-
-
 // ExtractLinkInfo extracts a URL from a URL.
 func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 	// first, check if the link is a shortlink
@@ -76,7 +74,7 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 				entity = "playlist"
 			} else {
 				trackIndex = strings.Index(previewResult.Preview.Link, "track")
-				entityID = previewResult.Preview.Link[trackIndex + 6:]
+				entityID = previewResult.Preview.Link[trackIndex+6:]
 			}
 		} else {
 			// it doesnt contain a preview URL and its a deezer track

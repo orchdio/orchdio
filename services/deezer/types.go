@@ -146,7 +146,6 @@ type FullTrack struct {
 	Total int `json:"total"`
 }
 
-
 type PlaylistOwner struct {
 	Name   string `json:"name"`
 	ID     string `json:"id"`
@@ -154,42 +153,43 @@ type PlaylistOwner struct {
 }
 
 type SingleTrack struct {
-	Title       string   `json:"title"`
-	Duration    int      `json:"duration"`
+	Title       string `json:"title"`
+	Duration    int    `json:"duration"`
 	Artistes    Artist `json:"artist"`
-	URL         string   `json:"url"`
-	Preview     string   `json:"preview"`
-	Cover       string   `json:"cover"`
-	ReleaseDate string   `json:"release_date"`
-	Explicit    bool     `json:"explicit"`
-	Platform    string   `json:"platform"`
-	ID          int   `json:"id"`
-	PlayedAt    string   `json:"played_at,omitempty"` // this is because this struct is also used for the single listening history object which contains (and needs) a "when was it played" body which is this.
-	AddedAt     string   `json:"added_at,omitempty"`  // similar situation above but in this case, its for Playlists. To know when a track was added to a playlist.
-	Album      Album    `json:"album"`
+	URL         string `json:"link"`
+	Preview     string `json:"preview"`
+	Cover       string `json:"cover"`
+	ReleaseDate string `json:"release_date"`
+	Explicit    bool   `json:"explicit_lyrics"`
+	Platform    string `json:"platform"`
+	ID          int    `json:"id"`
+	PlayedAt    string `json:"played_at,omitempty"` // this is because this struct is also used for the single listening history object which contains (and needs) a "when was it played" body which is this.
+	AddedAt     string `json:"added_at,omitempty"`  // similar situation above but in this case, its for Playlists. To know when a track was added to a playlist.
+	Album       Album  `json:"album"`
 }
 
 type Album struct {
-	ID int `json:"id"`
-	Title string `json:"title"`
-	Cover string `json:"cover"`
-	CoverSmall string `json:"cover_small"`
+	ID          int    `json:"id"`
+	Title       string `json:"title"`
+	Cover       string `json:"cover"`
+	CoverSmall  string `json:"cover_small"`
 	CoverMedium string `json:"cover_medium"`
-	CoverBig string `json:"cover_big"`
-	CoverXl string `json:"cover_xl"`
-	Md5Image string `json:"md5_image"`
-	Tracklist string `json:"tracklist"`
-	Type string `json:"type"`
+	CoverBig    string `json:"cover_big"`
+	CoverXl     string `json:"cover_xl"`
+	Md5Image    string `json:"md5_image"`
+	Tracklist   string `json:"tracklist"`
+	Type        string `json:"type"`
 }
-
 
 type Artist struct {
-	ID int `json:"id"`
-	Name string `json:"name"`
-	Link string `json:"link"`
+	ID        int    `json:"id"`
+	Name      string `json:"name"`
+	Link      string `json:"link"`
 	Tracklist string `json:"tracklist"`
-	Type string `json:"type"`
+	Type      string `json:"type"`
 }
+
+
 type Playlist struct {
 	Title         string        `json:"title"`
 	Description   string        `json:"description"`
@@ -197,10 +197,9 @@ type Playlist struct {
 	Collaborative bool          `json:"public"`
 	TracksNumber  int           `json:"tracks_number"`
 	Owner         PlaylistOwner `json:"owner"`
-	//Tracks        []SingleTrack `json:"tracks"`
-	Tracks struct{
+	Tracks struct {
 		Data []SingleTrack `json:"data"`
 	}
-	URL           string        `json:"playlist_url"`
-	Cover         string        `json:"playlist_cover"`
+	URL   string `json:"link"`
+	Cover string `json:"picture"`
 }

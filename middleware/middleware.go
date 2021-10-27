@@ -5,8 +5,8 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"log"
 	"net/http"
-	"zoove/services"
 	"zoove/blueprint"
+	"zoove/services"
 	"zoove/util"
 )
 
@@ -26,6 +26,7 @@ func ExtractLinkInfo(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Bad request. Check you're using the '?link' query string")
 	}
 	linkInfo, err := services.ExtractLinkInfo(link)
+	log.Printf("Some link info things here now: %v", linkInfo.EntityID)
 	if err != nil {
 		if err == blueprint.EHOSTUNSUPPORTED {
 			return util.ErrorResponse(ctx, http.StatusNotImplemented, err)

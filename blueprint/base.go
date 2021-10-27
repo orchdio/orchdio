@@ -5,7 +5,8 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 )
 
-var DeezerHost  = []string{"deezer.page.link", "www.deezer.com"}
+var DeezerHost = []string{"deezer.page.link", "www.deezer.com"}
+
 const (
 	SpotifyHost = "open.spotify.com"
 )
@@ -14,7 +15,7 @@ const (
 
 var (
 	EHOSTUNSUPPORTED = errors.New("EHOSTUNSUPPORTED")
-	ENORESULT = errors.New("ENORESULT")
+	ENORESULT        = errors.New("ENORESULT")
 )
 
 type (
@@ -57,20 +58,26 @@ type LinkInfo struct {
 // It represents what a single platform should return when trying to
 // convert a link.
 type TrackSearchResult struct {
-	URL string `json:"url"`
+	URL      string   `json:"url"`
 	Artistes []string `json:"artistes"`
-	Released string `json:"released"`
-	Duration string `json:"duration"`
-	Explicit bool `json:"explicit"`
-	Title string `json:"title"`
-	Preview string `json:"preview"`
+	Released string   `json:"released"`
+	Duration string   `json:"duration"`
+	Explicit bool     `json:"explicit"`
+	Title    string   `json:"title"`
+	Preview  string   `json:"preview"`
 }
 
 // PlaylistSearchResult represents a single playlist result for a platform.
 type PlaylistSearchResult struct {
-	URL string `json:"url"`
-	Tracks []TrackSearchResult `json:"tracks"`
-	Length string `json:"length"`
+	URL     string              `json:"url"`
+	Tracks  []TrackSearchResult `json:"tracks"`
+	Length  string              `json:"length,omitempty"`
+	Title   string              `json:"title"`
+	Preview string              `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
+}
+
+
+type DeezerSearchTrack struct {
+	Artiste string `json:"artiste"`
 	Title string `json:"title"`
-	Preview string `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
 }
