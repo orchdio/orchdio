@@ -13,6 +13,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 	"time"
 	"zoove/blueprint"
 )
@@ -127,4 +128,20 @@ func GetFormattedDuration(v int) string {
 	hour := v / 60
 	sec := v % 60
 	return fmt.Sprintf("%d:%d", hour, sec)
+}
+
+// ExtractSpotifyID returns the spotify ID from a playlist pagination link
+func ExtractSpotifyID(link string) string {
+	firstIndex := strings.Index(link, "playlists/") + len("playlists/")
+	lastIndex := strings.LastIndex(link, "/")
+
+	if lastIndex < firstIndex {
+		// get the index of ? incase there are nonsense tracking links attached
+		qIndex := strings.Index(link, "?")
+		if qIndex != -1 {
+			link = link[:qIndex]
+		}
+        return link[firstIndex:]
+    }
+	return link[firstIndex:lastIndex]
 }

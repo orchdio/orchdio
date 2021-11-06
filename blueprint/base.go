@@ -65,6 +65,14 @@ type TrackSearchResult struct {
 	Explicit bool     `json:"explicit"`
 	Title    string   `json:"title"`
 	Preview  string   `json:"preview"`
+	//Pagination []map[string]string `json:"pagination"`
+}
+
+type Pagination struct {
+	Next string `json:"next"`
+	Previous string `json:"previous"`
+	Total int `json:"total,omitempty"`
+	Platform string `json:"platform"`
 }
 
 // PlaylistSearchResult represents a single playlist result for a platform.
@@ -76,7 +84,8 @@ type PlaylistSearchResult struct {
 	Preview string              `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
 }
 
-
+// DeezerSearchTrack represents the key-value parameter passed
+// when trying to convert playlist from spotify
 type DeezerSearchTrack struct {
 	Artiste string `json:"artiste"`
 	Title string `json:"title"`

@@ -204,3 +204,51 @@ func FetchTracks(tracks []blueprint.DeezerSearchTrack) *[]blueprint.TrackSearchR
 	wg.Wait()
 	return &fetchedTracks
 }
+
+// FetchPlaylistTracklist fetches tracks under a playlist on deezer with pagination
+func FetchPlaylistTracklist(link string) (*[]blueprint.TrackSearchResult, *blueprint.Pagination, error) {
+	tracks, err := axios.Get(link)
+	if err != nil {
+		return nil,nil, err
+	}
+	var trackList PlaylistTracksSearch
+	err = json.Unmarshal(tracks.Data, &trackList)
+	if err != nil {
+		log.Println("Error deserializing result of playlist tracks search")
+		return nil,nil, err
+	}
+
+	var out []blueprint.TrackSearchResult
+	for _, track := range trackList.Data {
+		result := &blueprint.TrackSearchResult{
+			URL:      track.Link,
+			Artistes: []string{track.Artist.Name},
+			//Released: track.r,
+			Duration: util.GetFormattedDuration(track.Duration),
+			Explicit: util.DeezerIsExplicit(track.ExplicitContentLyrics),
+			Title:    track.Title,
+			Preview:  track.Preview,
+		}
+		out = append(out, *result)
+	}
+	pagination := &blueprint.Pagination{
+		Next:     trackList.Next,
+		Previous: "",
+		Total:    trackList.Total,
+		Platform: "deezer",
+	}
+	return &out, pagination, nil
+}
+
+func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult) *[]blueprint.TrackSearchResult {
+	var deezerTrackSearch []blueprint.DeezerSearchTrack
+	for _, spotifyTrack := range p.Tracks {
+		deezerTrackSearch = append(deezerTrackSearch, blueprint.DeezerSearchTrack{
+			Artiste: spotifyTrack.Artistes[0],
+			Title:   spotifyTrack.Title,
+		})
+	}
+
+	deezerTracks := FetchTracks(deezerTrackSearch)
+	return deezerTracks
+}

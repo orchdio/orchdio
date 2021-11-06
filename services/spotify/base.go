@@ -2,9 +2,12 @@ package spotify
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"github.com/vicanso/go-axios"
 	"github.com/zmb3/spotify/v2"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
+	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 	"log"
 	"os"
@@ -15,6 +18,13 @@ import (
 
 // createNewSpotifyUInstance creates a new spotify client to make API request that doesn't need user auth
 func createNewSpotifyUInstance() *spotify.Client {
+	token := fetchNewAuthToken()
+	httpClient := spotifyauth.New().Client(context.Background(), token)
+	client := spotify.New(httpClient)
+	return client
+}
+
+func fetchNewAuthToken() *oauth2.Token {
 	config := &clientcredentials.Config{
 		ClientID:     os.Getenv("SPOTIFY_ID"),
 		ClientSecret: os.Getenv("SPOTIFY_SECRET"),
@@ -26,10 +36,7 @@ func createNewSpotifyUInstance() *spotify.Client {
 		log.Printf("\n[services][spotify][base][FetchSingleTrack] error  - could not fetch spotify token: %v\n", err)
 		return nil
 	}
-
-	httpClient := spotifyauth.New().Client(context.Background(), token)
-	client := spotify.New(httpClient)
-	return client
+	return token
 }
 
 func FetchSingleTrack(title string) *spotify.SearchResult {
@@ -68,7 +75,6 @@ func SearchTrackWithTitleChan(title string, c chan *blueprint.TrackSearchResult,
 		defer wg.Done()
 		return
 	}
-	log.Printf("\nChann running for: %s\n", title)
 	c <- result
 	wg.Add(1)
 
@@ -155,12 +161,12 @@ func SearchTrackWithID(id string) (*blueprint.TrackSearchResult, error) {
 	return &out, nil
 }
 
-func FetchPlaylistTracksAndInfo(id string) (*blueprint.PlaylistSearchResult, error) {
+func FetchPlaylistTracksAndInfo(id string) (*blueprint.PlaylistSearchResult, *blueprint.Pagination, error) {
 	client := createNewSpotifyUInstance()
 	playlist, err := client.GetPlaylist(context.Background(), spotify.ID(id))
 	if err != nil {
 		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - Could not fetch playlist from spotify: %v\n", err)
-		return nil, err
+		return nil, nil, err
 	}
 	var tracks []blueprint.TrackSearchResult
 
@@ -187,10 +193,16 @@ func FetchPlaylistTracksAndInfo(id string) (*blueprint.PlaylistSearchResult, err
 		Tracks:  tracks,
 		Title:   playlist.Name,
 	}
-	return &playlistResult, nil
+	pagination := blueprint.Pagination{
+		Next:     playlist.Tracks.Next,
+		Previous: playlist.Tracks.Previous,
+		Total:    playlist.Tracks.Total,
+		Platform: "spotify",
+	} 
+	return &playlistResult, &pagination, nil
 }
 
-// FetchTracks fetches tracks in a playlist
+// FetchTracks fetches tracks in a playlist concurrently using channels
 func FetchTracks(tracks []string) *[]blueprint.TrackSearchResult {
 	var fetchedTracks []blueprint.TrackSearchResult
 	var ch = make(chan *blueprint.TrackSearchResult, len(tracks))
@@ -205,24 +217,67 @@ func FetchTracks(tracks []string) *[]blueprint.TrackSearchResult {
 		}
 		fetchedTracks = append(fetchedTracks, *outputTracks)
 	}
+
 	wg.Wait()
 	return &fetchedTracks
 }
 
+func FetchNextPage(link string) (*blueprint.PlaylistSearchResult, *blueprint.Pagination, error){
+	token := fetchNewAuthToken()
+	paginatedPlaylist := PaginatedPlaylist{}
+	axiosInstance := axios.NewInstance(&axios.InstanceConfig{
+		Headers: map[string][]string{
+			"Authorization": {fmt.Sprintf("Bearer %s", token.AccessToken)},
+		},
+	})
+
+	response, err := axiosInstance.Get(link)
+	if err != nil {
+		log.Printf("Error fetching the next page.")
+		return nil, nil, err
+	}
 
 
+	err = json.Unmarshal(response.Data, &paginatedPlaylist)
+	if err != nil {
+		log.Printf("\n[services][spotify][base] - Could not deserialize the body: %v\n", err)
+		return nil, nil, err
+	}
+	var tracks []blueprint.TrackSearchResult
 
+	for _, track := range paginatedPlaylist.Items {
+        var artistes []string
+        for _, artist := range track.Track.Artists {
+            artistes = append(artistes, artist.Name)
+        }
 
+        var previewLink string
+        if track.Track.PreviewUrl != nil {
+        	previewLink = *track.Track.PreviewUrl
+		}
+         trackCopy := blueprint.TrackSearchResult{
+             URL:      track.Track.ExternalUrls.Spotify,
+             Artistes: artistes,
+             Released: track.Track.Album.ReleaseDate,
+             Duration: util.GetFormattedDuration(track.Track.DurationMs / 1000),
+             Explicit: track.Track.Explicit,
+             Title:    track.Track.Name,
+             Preview: previewLink,
+         }
+         tracks = append(tracks, trackCopy)
+    }
 
+    pagination := blueprint.Pagination{
+        Next:     paginatedPlaylist.Next,
+        Previous: paginatedPlaylist.Previous,
+        Total:    paginatedPlaylist.Total,
+        Platform: "spotify",
+    }
 
+    playlistResult := blueprint.PlaylistSearchResult{
+        URL:     paginatedPlaylist.Href,
+        Tracks:  tracks,
+    }
 
-
-
-
-
-
-
-
-
-
-
+    return &playlistResult, &pagination, nil
+}

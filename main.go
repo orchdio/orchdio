@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/gofiber/fiber/v2"
-	jwtware "github.com/gofiber/jwt/v3"
 	_ "github.com/golang-migrate/migrate/source/file"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -15,7 +14,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"zoove/blueprint"
 	"zoove/controllers"
 	"zoove/controllers/account"
 	"zoove/controllers/platforms"
@@ -155,12 +153,14 @@ func main() {
 	baseRouter.Get("/deezer/auth", userController.AuthDeezerUser)
 
 	// MIDDLEWARE DEFINITION
-	app.Use(jwtware.New(jwtware.Config{
-		SigningKey: []byte(os.Getenv("JWT_SECRET")),
-		Claims:     &blueprint.ZooveUserToken{},
-		ContextKey: "authToken",
-	}))
-	app.Use(middleware.VerifyToken)
+	//app.Use(jwtware.New(jwtware.Config{
+	//	SigningKey: []byte(os.Getenv("JWT_SECRET")),
+	//	Claims:     &blueprint.ZooveUserToken{},
+	//	ContextKey: "authToken",
+	//}))
+	//app.Use(middleware.VerifyToken)
+
+
 	baseRouter.Get("/me", userController.FetchProfile)
 	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
 	baseRouter.Get("/track/convert", middleware.ExtractLinkInfo, platforms.ConvertTrack)

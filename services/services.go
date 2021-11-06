@@ -114,8 +114,21 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 		}
 
 		return linkInfo, nil
+		// to handle pagination.
+		// TODO: create magic string for this
+	case "api.spotify.com":
+		log.Printf("\n[servies][s: Track] Link info looks like a playlist pagination.")
+		linkInfo := blueprint.LinkInfo{
+			Platform:   spotify.IDENTIFIER,
+			TargetLink: t,
+			Entity:     "playlists",
+			EntityID:   util.ExtractSpotifyID(t),
+		}
+		log.Printf("\n[debug][🔔] linkfo is: %v\n", linkInfo)
+		return &linkInfo, nil
 	default:
 		log.Printf("\n[servies][s: Track][error] Link info could not be processed. Might be an invalid link")
+		log.Printf(host)
 		return nil, blueprint.EHOSTUNSUPPORTED
 	}
 }

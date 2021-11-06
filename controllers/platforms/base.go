@@ -1,6 +1,7 @@
 package platforms
 
 import (
+	"fmt"
 	"github.com/gofiber/fiber/v2"
 	"log"
 	"net/http"
@@ -23,16 +24,20 @@ type Conversion struct {
 
 type PlaylistConversion struct {
 	URL     string              `json:"url"`
-	Tracks  []map[string]*[]blueprint.TrackSearchResult `json:"tracks"`
+	//Tracks  []map[string]*[]blueprint.TrackSearchResult `json:"tracks"`
+	Tracks struct{
+		Deezer  *[]blueprint.TrackSearchResult `json:"deezer"`
+		Spotify *[]blueprint.TrackSearchResult `json:"spotify"`
+	} `json:"tracks"`
 	Length  string              `json:"length"`
 	Title   string              `json:"title"`
 	Preview string              `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
+	Pagination blueprint.Pagination `json:"pagination"`
 }
 
 // ConvertTrack returns the link to a track on several platforms
 func ConvertTrack(ctx *fiber.Ctx) error {
 	linkInfo := ctx.Locals("linkInfo").(*blueprint.LinkInfo)
-
 	// make sure we're actually handling for track alone, not playlist.
 	if !strings.Contains(linkInfo.Entity, "track") {
 		log.Printf("\n[controllers][platforms][deezer][ConvertTrack] error - %v\n", "Not a track URL")
@@ -97,68 +102,122 @@ func ConvertPlaylist(ctx *fiber.Ctx) error {
 
 	switch linkInfo.Platform {
 	case deezer.IDENTIFIER:
-		deezerPlaylist, err := deezer.FetchPlaylistTracksAndInfo(linkInfo.TargetLink)
+		// first, we want to get the playlist with just one track. this is mostly a hack
+		// to get behind the fact that i cannot fetch just the playlist info on deezer without
+		// fetching all the tracks on the PL.
+		playlistInfoURL := fmt.Sprintf("%s?limit=1", linkInfo.TargetLink)
+		deezerPlaylist, err := deezer.FetchPlaylistTracksAndInfo(playlistInfoURL)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][ConvertPlaylist] error - could not fetch playlist info from deezer: %v\n", err)
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 		}
+		// fetch first 100
+		// ALSO NOTE FOR DEEZER, when you attach a limit in the query then it's
+		// the same value for offset. else, it won't work as expected.
+		pagination := ctx.Query("pagination")
+		tracksURL := fmt.Sprintf("%s/tracks?limit=100&index=100", linkInfo.TargetLink)
+
+		if pagination != "" {
+			tracksURL = pagination
+		}
+		/*
+		*	Okay, so we know that a person can want to convert a deezer playlist
+		* 	and let's say there are 120 tracks. The highest we can fetch is 100. Why?
+		*	This is due to the limit set by spotify (On Deezer, we can fetch everything
+		*	at once, even if it has like 1000 tracks).
+		*
+		*	So, we've fetched the first 100 and now we need to paginate. However, we need to paginate
+		*	for spotify. So what to do?
+		*
+		*	Option: bas64 encoding of a string that contains info about pagination. Like so:
+		*	peg1 = <page to fetch. e.g. if its 1, then start from the 101th track to the end <= 200th>
+		*	Now, how get 101st, knowing deezer doesn't paginate? 🤔
+		*	attr = deezer:nextpage,spotify:peg2
+		*	First, response like:
+		*		deezer: [..100 ],
+		*		spotify: [..100 ]
+		*		pagination: base64_encode<attr>
+		*
+		*	Now, an endpoint to paginate like:
+		*	/api/v1/paginate?url=<playlist_url>&pagination=<pagination>
+		*	Then to fetch more deezer links:
+		*
+		 */
 		// TODO: do for other platform
+
+		var playlistTracks, dzPagination, tracklistErr = deezer.FetchPlaylistTracklist(tracksURL)
+		if tracklistErr != nil {
+			log.Printf("\n[controllers][platforms][ConvertPlaylist][error] - Could not fetch tracklist from deezer %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		}
+
 
 		// then for each of these playlists, search for the tracks on spotify
 		var trackTitles []string
-
-		for _, deezerTrack := range deezerPlaylist.Tracks {
-			trackTitles = append(trackTitles, deezerTrack.Title)
+		for _, tracks := range *playlistTracks {
+			trackTitles = append(trackTitles, tracks.Title)
 		}
 
+
+
 		spotifyTracks := spotify.FetchTracks(trackTitles)
-		var allTracks []map[string]*[]blueprint.TrackSearchResult
-
-		allTracks = append(allTracks, map[string]*[]blueprint.TrackSearchResult{
-			"spotify": spotifyTracks,
-			"deezer": &deezerPlaylist.Tracks,
-		})
-
 		convertedPlaylist := PlaylistConversion{
 			URL:     deezerPlaylist.URL,
-			Tracks:  allTracks,
 			Length:  deezerPlaylist.Length,
 			Title:   deezerPlaylist.Title,
 			Preview: "",
+			Pagination: *dzPagination,
 		}
+
+		convertedPlaylist.Tracks.Deezer = playlistTracks
+		convertedPlaylist.Tracks.Spotify = spotifyTracks
 
 		log.Printf("\n[controllers][platforms][ConvertTrack] - converted %v playlist with URL: %v\n",linkInfo.Platform, linkInfo.TargetLink)
 		return util.SuccessResponse(ctx, http.StatusOK, convertedPlaylist)
 
 	case spotify.IDENTIFIER:
-		spotifyPlaylist, err := spotify.FetchPlaylistTracksAndInfo(linkInfo.EntityID)
-		if err != nil {
-			log.Printf("\n[controllers][platforms][ConvertTrack] - could not fetch playlist track and info")
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		pagination := ctx.Query("pagination")
+		entityID := linkInfo.EntityID
+		spotifyPlaylist := blueprint.PlaylistSearchResult{}
+		spPagination := blueprint.Pagination{}
+
+		// THIS FEELS FUCKING HACKY. IT'S ALL SHADES OF WRONG
+		// but, I am not sure how else to proceed for now
+		// What this part does is that it checks if there's pagination and then fetch
+		// the paginated playlist tracks. for example if its the third page, it fetches this
+		// and converts the result into the standard *[]blueprint.TrackSearchResult
+		// However, the request might be just for fetching the first page (normal playlist conversion)
+		// So because of this, we're creating the empty variables, making the respective
+		// requests and assigning the variables to the response of the result.
+		if pagination != "" {
+			log.Printf("\n[debug] - Its a pagination.. Extracted spotify ID")
+			s1, s2, err := spotify.FetchNextPage(linkInfo.TargetLink)
+			spotifyPlaylist = *s1
+			spPagination = *s2
+			if err != nil {
+				log.Printf("\n[controllers][platforms][base] Error fetching next page from spotify")
+				return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+			}
+		} else {
+			s1, s2, err := spotify.FetchPlaylistTracksAndInfo(entityID)
+			if err != nil {
+				log.Printf("\n[controllers][platforms][base] Error fetching next page from spotify")
+				return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+			}
+			spotifyPlaylist = *s1
+			spPagination = *s2
 		}
 
-		var deezerTrackSearch []blueprint.DeezerSearchTrack
-		for _, spotifyTrack := range spotifyPlaylist.Tracks {
-			//trackTitles = append(trackTitles, map[string]string{"artiste": spotifyTrack.Artistes[0], "track": spotifyTrack.Title})
-			deezerTrackSearch = append(deezerTrackSearch, blueprint.DeezerSearchTrack{
-				Artiste: spotifyTrack.Artistes[0],
-				Title:   spotifyTrack.Title,
-			})
-		}
-
-		deezerTracks := deezer.FetchTracks(deezerTrackSearch)
-		var allTracks []map[string]*[]blueprint.TrackSearchResult
-		
-		allTracks = append(allTracks, map[string]*[]blueprint.TrackSearchResult{
-			"spotify": &spotifyPlaylist.Tracks,
-			"deezer": deezerTracks,
-		})
-		
+		deezerTracks := deezer.FetchPlaylistSearchResult(&spotifyPlaylist)
 		convertedPlaylist := PlaylistConversion{
-			URL:     spotifyPlaylist.URL,
-			Tracks:  allTracks,
-			Title:   spotifyPlaylist.Title,
+			URL:        spotifyPlaylist.URL,
+			Title:      spotifyPlaylist.Title,
+			Preview:    "",
+			Pagination: spPagination,
 		}
+
+		convertedPlaylist.Tracks.Deezer = deezerTracks
+		convertedPlaylist.Tracks.Spotify = &spotifyPlaylist.Tracks
 
 		log.Printf("\n[controllers][platforms][ConvertTrack] - converted %v playlist with URL: %v\n",linkInfo.Platform, linkInfo.TargetLink)
 		return util.SuccessResponse(ctx, http.StatusOK, convertedPlaylist)
@@ -166,3 +225,4 @@ func ConvertPlaylist(ctx *fiber.Ctx) error {
 
 	return util.ErrorResponse(ctx, http.StatusNotImplemented, "Not yet implemented")
 }
+
