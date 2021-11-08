@@ -10,6 +10,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 	"log"
+	"net/url"
 	"os"
 	"sync"
 	"zoove/blueprint"
@@ -224,6 +225,23 @@ func FetchTracks(tracks []string) *[]blueprint.TrackSearchResult {
 
 func FetchNextPage(link string) (*blueprint.PlaylistSearchResult, *blueprint.Pagination, error){
 	token := fetchNewAuthToken()
+	client := createNewSpotifyUInstance()
+	// first, get the playlistInfo
+	type requestOption struct {
+		urlParams url.Values
+	}
+	options := spotify.Fields("description,uri")
+	//options := spotify.RequestOption(requestOption{urlParams: map[string][]string{
+	//	"fields": {"RequestOption"},
+	//}})
+	//options := RequestOption{
+	//	urlParams: url.Values{
+	//		"fields": {"description,uri"},
+	//	},
+	//}
+
+
+	info , err := client.GetPlaylist(context.Background(), spotify.ID(link), options)
 	paginatedPlaylist := PaginatedPlaylist{}
 	axiosInstance := axios.NewInstance(&axios.InstanceConfig{
 		Headers: map[string][]string{
@@ -275,9 +293,11 @@ func FetchNextPage(link string) (*blueprint.PlaylistSearchResult, *blueprint.Pag
     }
 
     playlistResult := blueprint.PlaylistSearchResult{
-        URL:     paginatedPlaylist.Href,
-        Tracks:  tracks,
-    }
+		URL:     info.ExternalURLs["spotify"],
+		Tracks:  tracks,
+		Title:   info.Name,
+		Preview: "",
+	}
 
     return &playlistResult, &pagination, nil
 }

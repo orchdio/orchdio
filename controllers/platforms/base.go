@@ -5,6 +5,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"zoove/blueprint"
 	"zoove/services/deezer"
@@ -102,52 +103,21 @@ func ConvertPlaylist(ctx *fiber.Ctx) error {
 
 	switch linkInfo.Platform {
 	case deezer.IDENTIFIER:
-		// first, we want to get the playlist with just one track. this is mostly a hack
-		// to get behind the fact that i cannot fetch just the playlist info on deezer without
-		// fetching all the tracks on the PL.
-		playlistInfoURL := fmt.Sprintf("%s?limit=1", linkInfo.TargetLink)
-		deezerPlaylist, err := deezer.FetchPlaylistTracksAndInfo(playlistInfoURL)
+		playlistInfoURL := fmt.Sprintf("%s/playlist/%s?limit=1", os.Getenv("DEEZER_API_BASE"), linkInfo.EntityID)
+		deezerPlaylist, err := deezer.FetchPlaylistInfo(playlistInfoURL)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][ConvertPlaylist] error - could not fetch playlist info from deezer: %v\n", err)
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 		}
-		// fetch first 100
-		// ALSO NOTE FOR DEEZER, when you attach a limit in the query then it's
-		// the same value for offset. else, it won't work as expected.
-		pagination := ctx.Query("pagination")
-		tracksURL := fmt.Sprintf("%s/tracks?limit=100&index=100", linkInfo.TargetLink)
 
-		if pagination != "" {
-			tracksURL = pagination
+		index := ctx.Query("index", "none")
+		link := linkInfo.TargetLink
+		if index != "none" {
+			link = fmt.Sprintf("%s&index=%s", link, index)
 		}
-		/*
-		*	Okay, so we know that a person can want to convert a deezer playlist
-		* 	and let's say there are 120 tracks. The highest we can fetch is 100. Why?
-		*	This is due to the limit set by spotify (On Deezer, we can fetch everything
-		*	at once, even if it has like 1000 tracks).
-		*
-		*	So, we've fetched the first 100 and now we need to paginate. However, we need to paginate
-		*	for spotify. So what to do?
-		*
-		*	Option: bas64 encoding of a string that contains info about pagination. Like so:
-		*	peg1 = <page to fetch. e.g. if its 1, then start from the 101th track to the end <= 200th>
-		*	Now, how get 101st, knowing deezer doesn't paginate? 🤔
-		*	attr = deezer:nextpage,spotify:peg2
-		*	First, response like:
-		*		deezer: [..100 ],
-		*		spotify: [..100 ]
-		*		pagination: base64_encode<attr>
-		*
-		*	Now, an endpoint to paginate like:
-		*	/api/v1/paginate?url=<playlist_url>&pagination=<pagination>
-		*	Then to fetch more deezer links:
-		*
-		 */
-		// TODO: do for other platform
-
-		var playlistTracks, dzPagination, tracklistErr = deezer.FetchPlaylistTracklist(tracksURL)
+		var playlistTracks, dzPagination, tracklistErr = deezer.FetchPlaylistTracklist(link)
 		if tracklistErr != nil {
-			log.Printf("\n[controllers][platforms][ConvertPlaylist][error] - Could not fetch tracklist from deezer %v\n", err)
+			log.Printf("\n[controllers][platforms][ConvertPlaylist][error] - Could not fetch tracklist from deezer %v\n", tracklistErr)
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 		}
 

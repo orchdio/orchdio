@@ -56,8 +56,8 @@ func FetchSingleTrack(link string) (*Track, error) {
 	return singleTrack, nil
 }
 
-// FetchPlaylistTracksAndInfo returns a playlist information for a deezer playlist, including tracks with type of ``blueprint.TrackSearchResult``
-func FetchPlaylistTracksAndInfo(link string) (*blueprint.PlaylistSearchResult, error) {
+// FetchPlaylistInfo fetches the playlist info.
+func FetchPlaylistInfo(link string) (*blueprint.PlaylistSearchResult, error) {
 	response, err := axios.Get(link)
 	if err != nil {
 		log.Printf("\n[services][deezer][playlist][FetchPlaylist] error - could not fetch playlist: %v\n", err)
@@ -71,31 +71,56 @@ func FetchPlaylistTracksAndInfo(link string) (*blueprint.PlaylistSearchResult, e
 		return nil, err
 	}
 
-	var sample []blueprint.TrackSearchResult
-	for _, track := range playlist.Tracks.Data {
-
-		trackCopy := blueprint.TrackSearchResult{
-			URL:      track.URL,
-			Artistes: []string{track.Artistes.Name},
-			Released: track.ReleaseDate,
-			Duration: util.GetFormattedDuration(track.Duration),
-			Explicit: track.Explicit,
-			Title:    track.Title,
-			Preview:  track.Preview,
-		}
-		sample = append(sample, trackCopy)
-	}
-
-
 	info := blueprint.PlaylistSearchResult{
 		URL:     playlist.URL,
-		Tracks:  sample,
 		Length:  util.GetFormattedDuration(playlist.Duration),
 		Title:   playlist.Title,
 		Preview: "",
 	}
 	return &info, nil
 }
+
+
+// FetchPlaylistTracksAndInfo returns a playlist information for a deezer playlist, including tracks with type of ``blueprint.TrackSearchResult``
+//func FetchPlaylistTracksAndInfo(link string) (*blueprint.PlaylistSearchResult, error) {
+//	response, err := axios.Get(link)
+//	if err != nil {
+//		log.Printf("\n[services][deezer][playlist][FetchPlaylist] error - could not fetch playlist: %v\n", err)
+//		return nil, err
+//	}
+//	playlist := &Playlist{}
+//	err = json.Unmarshal(response.Data, playlist)
+//
+//	if err != nil {
+//		log.Printf("\n[services][deezer][playlist][FetchPlaylist] error - could not deserialize response into output: %v\n", err)
+//		return nil, err
+//	}
+//
+//	var sample []blueprint.TrackSearchResult
+//	for _, track := range playlist.Tracks.Data {
+//
+//		trackCopy := blueprint.TrackSearchResult{
+//			URL:      track.URL,
+//			Artistes: []string{track.Artistes.Name},
+//			Released: track.ReleaseDate,
+//			Duration: util.GetFormattedDuration(track.Duration),
+//			Explicit: track.Explicit,
+//			Title:    track.Title,
+//			Preview:  track.Preview,
+//		}
+//		sample = append(sample, trackCopy)
+//	}
+//
+//
+//	info := blueprint.PlaylistSearchResult{
+//		URL:     playlist.URL,
+//		Tracks:  sample,
+//		Length:  util.GetFormattedDuration(playlist.Duration),
+//		Title:   playlist.Title,
+//		Preview: "",
+//	}
+//	return &info, nil
+//}
 
 // SearchTrackWithLink fetches the deezer result for the track being searched using the URL
 func SearchTrackWithLink(link string) *blueprint.TrackSearchResult {
@@ -233,7 +258,7 @@ func FetchPlaylistTracklist(link string) (*[]blueprint.TrackSearchResult, *bluep
 	}
 	pagination := &blueprint.Pagination{
 		Next:     trackList.Next,
-		Previous: "",
+		Previous: trackList.Previous,
 		Total:    trackList.Total,
 		Platform: "deezer",
 	}

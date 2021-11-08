@@ -145,3 +145,19 @@ func ExtractSpotifyID(link string) string {
     }
 	return link[firstIndex:lastIndex]
 }
+
+// ExtractDeezerID returns the deezer ID from a playlist pagination link
+func ExtractDeezerID(link string ) string {
+	firstIndex := strings.Index(link, "playlist/") + len("playlist/")
+	lastIndex := strings.LastIndex(link, "/")
+
+	if lastIndex < firstIndex {
+        // get the index of ? incase there are nonsense tracking links attached
+        qIndex := strings.Index(link, "?")
+        if qIndex != -1 {
+            link = link[:qIndex]
+        }
+        return link[firstIndex:]
+    }
+    return link[firstIndex:lastIndex]
+}
