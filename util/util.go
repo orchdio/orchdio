@@ -13,6 +13,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 	"zoove/blueprint"
@@ -127,7 +128,11 @@ func DeezerIsExplicit(v int) bool {
 func GetFormattedDuration(v int) string {
 	hour := v / 60
 	sec := v % 60
-	return fmt.Sprintf("%d:%d", hour, sec)
+	seconds := strconv.Itoa(sec)
+	if len(seconds) == 1 {
+        seconds = "0" + seconds
+    }
+	return fmt.Sprintf("%d:%s", hour, seconds)
 }
 
 // ExtractSpotifyID returns the spotify ID from a playlist pagination link
