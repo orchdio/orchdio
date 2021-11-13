@@ -205,5 +205,5 @@ type PlaylistTracksSearch struct {
 	Checksum string `json:"checksum"`
 	Total    int    `json:"total"`
 	Next     string `json:"next"`
-	Previous string `json:"previous"`
+	Previous string `json:"prev"`
 }

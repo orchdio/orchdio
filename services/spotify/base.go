@@ -105,14 +105,11 @@ func SearchTrackWithTitle(title string) (*blueprint.TrackSearchResult, error) {
 		spTrackContributors = append(spTrackContributors, contributor.Name)
 	}
 
-	spHr := (spSingleTrack.Duration / 1000) / 60
-	spSec := (spSingleTrack.Duration / 1000) % 60
-
 	fetchedSpotifyTrack := blueprint.TrackSearchResult{
 		Released: spSingleTrack.Album.ReleaseDate,
 		URL:      spSingleTrack.SimpleTrack.ExternalURLs["spotify"],
 		Artistes: spTrackContributors,
-		Duration: fmt.Sprintf("%d:%d", spHr, spSec),
+		Duration: util.GetFormattedDuration(spSingleTrack.Duration / 1000),
 		Explicit: spSingleTrack.Explicit,
 		Title:    spSingleTrack.Name,
 		Preview:  spSingleTrack.PreviewURL,
