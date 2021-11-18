@@ -96,9 +96,9 @@ type PaginatedPlaylist struct {
 			Url interface{} `json:"url"`
 		} `json:"video_thumbnail"`
 	} `json:"items"`
-	Limit    int         `json:"limit"`
-	Next	 string `json:"next"`
-	Offset   int         `json:"offset"`
-	Previous string      `json:"previous"`
-	Total    int         `json:"total"`
+	Limit    int    `json:"limit"`
+	Next     string `json:"next"`
+	Offset   int    `json:"offset"`
+	Previous string `json:"previous"`
+	Total    int    `json:"total"`
 }

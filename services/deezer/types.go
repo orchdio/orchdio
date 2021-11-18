@@ -118,8 +118,8 @@ type FullTrack struct {
 		Preview               string `json:"preview"`
 		Md5Image              string `json:"md5_image"`
 		Artist                Artist `json:"artist"`
-		Album Album `json:"album"`
-		Type string `json:"type"`
+		Album                 Album  `json:"album"`
+		Type                  string `json:"type"`
 	} `json:"data"`
 	Total int `json:"total"`
 }
@@ -167,7 +167,6 @@ type Artist struct {
 	Type      string `json:"type"`
 }
 
-
 type Playlist struct {
 	Title         string        `json:"title"`
 	Description   string        `json:"description"`
@@ -175,35 +174,105 @@ type Playlist struct {
 	Collaborative bool          `json:"public"`
 	TracksNumber  int           `json:"tracks_number"`
 	Owner         PlaylistOwner `json:"owner"`
-	Tracks struct {
+	Tracks        struct {
 		Data []SingleTrack `json:"data"`
 	}
 	URL   string `json:"link"`
 	Cover string `json:"picture"`
 }
 
+//type PlaylistTracksSearch struct {
+//	Data []struct {
+//		Id                    int    `json:"id"`
+//		Readable              bool   `json:"readable"`
+//		Title                 string `json:"title"`
+//		TitleShort            string `json:"title_short"`
+//		TitleVersion          string `json:"title_version,omitempty"`
+//		Link                  string `json:"link"`
+//		Duration              int    `json:"duration"`
+//		Rank                  int    `json:"rank"`
+//		ExplicitLyrics        bool   `json:"explicit_lyrics"`
+//		ExplicitContentLyrics int    `json:"explicit_content_lyrics"`
+//		ExplicitContentCover  int    `json:"explicit_content_cover"`
+//		Preview               string `json:"preview"`
+//		Md5Image              string `json:"md5_image"`
+//		TimeAdd               int    `json:"time_add"`
+//		Artist                Artist `json:"artist"`
+//		Album                 Album  `json:"album"`
+//		Type                  string `json:"type"`
+//	} `json:"data"`
+//	Checksum string `json:"checksum"`
+//	Total    int    `json:"total"`
+//	Next     string `json:"next"`
+//	Previous string `json:"previous"`
+//}
+
 type PlaylistTracksSearch struct {
-	Data []struct {
-		Id                    int    `json:"id"`
-		Readable              bool   `json:"readable"`
-		Title                 string `json:"title"`
-		TitleShort            string `json:"title_short"`
-		TitleVersion          string `json:"title_version,omitempty"`
-		Link                  string `json:"link"`
-		Duration              int    `json:"duration"`
-		Rank                  int    `json:"rank"`
-		ExplicitLyrics        bool   `json:"explicit_lyrics"`
-		ExplicitContentLyrics int    `json:"explicit_content_lyrics"`
-		ExplicitContentCover  int    `json:"explicit_content_cover"`
-		Preview               string `json:"preview"`
-		Md5Image              string `json:"md5_image"`
-		TimeAdd               int    `json:"time_add"`
-		Artist                Artist `json:"artist"`
-		Album Album`json:"album"`
-		Type string `json:"type"`
-	} `json:"data"`
-	Checksum string `json:"checksum"`
-	Total    int    `json:"total"`
-	Next     string `json:"next"`
-	Previous string `json:"previous"`
+	Id            int64  `json:"id"`
+	Title         string `json:"title"`
+	Description   string `json:"description"`
+	Duration      int    `json:"duration"`
+	Public        bool   `json:"public"`
+	IsLovedTrack  bool   `json:"is_loved_track"`
+	Collaborative bool   `json:"collaborative"`
+	NbTracks      int    `json:"nb_tracks"`
+	Fans          int    `json:"fans"`
+	Link          string `json:"link"`
+	Share         string `json:"share"`
+	Picture       string `json:"picture"`
+	PictureSmall  string `json:"picture_small"`
+	PictureMedium string `json:"picture_medium"`
+	PictureBig    string `json:"picture_big"`
+	PictureXl     string `json:"picture_xl"`
+	Checksum      string `json:"checksum"`
+	Tracklist     string `json:"tracklist"`
+	CreationDate  string `json:"creation_date"`
+	Md5Image      string `json:"md5_image"`
+	PictureType   string `json:"picture_type"`
+	Creator       struct {
+		Id        int    `json:"id"`
+		Name      string `json:"name"`
+		Tracklist string `json:"tracklist"`
+		Type      string `json:"type"`
+	} `json:"creator"`
+	Type   string `json:"type"`
+	Tracks struct {
+		Data []struct {
+			Id                    int    `json:"id"`
+			Readable              bool   `json:"readable"`
+			Title                 string `json:"title"`
+			TitleShort            string `json:"title_short"`
+			TitleVersion          string `json:"title_version,omitempty"`
+			Link                  string `json:"link"`
+			Duration              int    `json:"duration"`
+			Rank                  int    `json:"rank"`
+			ExplicitLyrics        bool   `json:"explicit_lyrics"`
+			ExplicitContentLyrics int    `json:"explicit_content_lyrics"`
+			ExplicitContentCover  int    `json:"explicit_content_cover"`
+			Preview               string `json:"preview"`
+			Md5Image              string `json:"md5_image"`
+			TimeAdd               int    `json:"time_add"`
+			Artist                struct {
+				Id        int    `json:"id"`
+				Name      string `json:"name"`
+				Link      string `json:"link"`
+				Tracklist string `json:"tracklist"`
+				Type      string `json:"type"`
+			} `json:"artist"`
+			Album struct {
+				Id          int    `json:"id"`
+				Title       string `json:"title"`
+				Cover       string `json:"cover"`
+				CoverSmall  string `json:"cover_small"`
+				CoverMedium string `json:"cover_medium"`
+				CoverBig    string `json:"cover_big"`
+				CoverXl     string `json:"cover_xl"`
+				Md5Image    string `json:"md5_image"`
+				Tracklist   string `json:"tracklist"`
+				Type        string `json:"type"`
+			} `json:"album"`
+			Type string `json:"type"`
+		} `json:"data"`
+		Checksum string `json:"checksum"`
+	} `json:"tracks"`
 }

@@ -10,18 +10,21 @@ import (
 	"net/http"
 )
 
+// Deezer represents a deezer instance.
 type Deezer struct {
 	ClientID     string
 	ClientSecret string
 	RedirectURI  string
 }
 
+// FetchAuthURL fetches the auth url.
 func (d *Deezer) FetchAuthURL() string {
 	permissions := fmt.Sprintf("%s,%s,%s,%s", "basic_access", "email", "manage_library", "delete_library")
 	uniqueID, _ := uuid.NewUUID()
 	return fmt.Sprintf("%s/auth.php?app_id=%s&redirect_uri=%s&perms=%s&state=%s", AuthBase, d.ClientID, d.RedirectURI, permissions, uniqueID.String())
 }
 
+// FetchAccessToken fetches the access token.
 func (d *Deezer) FetchAccessToken(code string) []byte {
 	// first, extract the "code" param from the url
 	authURL := fmt.Sprintf("%s/access_token.php?app_id=%s&secret=%s&code=%s&output=json", AuthBase, d.ClientID, d.ClientSecret, code)
@@ -43,6 +46,8 @@ func (d *Deezer) FetchAccessToken(code string) []byte {
 	return []byte(authResponse.AccessToken)
 }
 
+// CompleteUserAuth completes a user's auth process. It will return an error if the user's auth process has not been completed.
+// and a deezer user object if the auth process has been completed.
 func (d *Deezer) CompleteUserAuth(token []byte) (DeezerUser, error) {
 	t := string(token)
 	url := fmt.Sprintf("%s/user/me?access_token=%s", ApiBase, t)

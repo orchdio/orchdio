@@ -59,6 +59,7 @@ func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 	return util.ErrorResponse(ctx, http.StatusNotImplemented, "Other Platforms have not been implemented")
 }
 
+// AuthSpotifyUser authorizes a user with spotify account
 func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	state := ctx.Query("state")
 	encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
@@ -114,6 +115,7 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	return util.SuccessResponse(ctx, http.StatusOK, string(token))
 }
 
+// AuthDeezerUser authorizes a user with deezer account
 func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 	code := ctx.Query("code")
 	state := ctx.Query("state")
@@ -175,6 +177,7 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 	return util.SuccessResponse(ctx, http.StatusOK, string(jToken))
 }
 
+// FetchProfile fetches the playlist of the person, on the platform
 func (c *UserController) FetchProfile(ctx *fiber.Ctx) error {
 	claims := ctx.Locals("claims").(*blueprint.ZooveUserToken)
 

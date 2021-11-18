@@ -130,8 +130,8 @@ func GetFormattedDuration(v int) string {
 	sec := v % 60
 	seconds := strconv.Itoa(sec)
 	if len(seconds) == 1 {
-        seconds = "0" + seconds
-    }
+		seconds = "0" + seconds
+	}
 	return fmt.Sprintf("%d:%s", hour, seconds)
 }
 
@@ -146,23 +146,23 @@ func ExtractSpotifyID(link string) string {
 		if qIndex != -1 {
 			link = link[:qIndex]
 		}
-        return link[firstIndex:]
-    }
+		return link[firstIndex:]
+	}
 	return link[firstIndex:lastIndex]
 }
 
 // ExtractDeezerID returns the deezer ID from a playlist pagination link
-func ExtractDeezerID(link string ) string {
+func ExtractDeezerID(link string) string {
 	firstIndex := strings.Index(link, "playlist/") + len("playlist/")
 	lastIndex := strings.LastIndex(link, "/")
 
 	if lastIndex < firstIndex {
-        // get the index of ? incase there are nonsense tracking links attached
-        qIndex := strings.Index(link, "?")
-        if qIndex != -1 {
-            link = link[:qIndex]
-        }
-        return link[firstIndex:]
-    }
-    return link[firstIndex:lastIndex]
+		// get the index of ? incase there are nonsense tracking links attached
+		qIndex := strings.Index(link, "?")
+		if qIndex != -1 {
+			link = link[:qIndex]
+		}
+		return link[firstIndex:]
+	}
+	return link[firstIndex:lastIndex]
 }

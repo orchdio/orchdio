@@ -3,7 +3,10 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"github.com/antoniodipinto/ikisocket"
+	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/websocket/v2"
 	_ "github.com/golang-migrate/migrate/source/file"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -18,6 +21,7 @@ import (
 	"zoove/controllers/account"
 	"zoove/controllers/platforms"
 	"zoove/middleware"
+	"zoove/universal"
 )
 
 func init() {
@@ -82,26 +86,6 @@ func main() {
 	baseRouter := app.Group("/api/v1")
 
 	baseRouter.Get("/heartbeat", getInfo)
-	//driver, err := postgres.WithInstance(db, &postgres.Config{})
-
-	//if err != nil {
-	//	log.Printf("\n[main][migrate][error] Error with migrate driver 1: %v\n", err)
-	//	os.Exit(1)
-	//}
-	//m, migrateErr := migrate.NewWithDatabaseInstance(
-	//	"file://db/migration",
-	//	"postgres", driver)
-	//
-	//if migrateErr != nil {
-	//	log.Printf("\n[main][migrate][error] Error with migrate driver: %v\n", err)
-	//	os.Exit(1)
-	//}
-	//
-	//migrateErr = m.Up()
-	//if migrateErr != nil && migrateErr != migrate.ErrNoChange  {
-	//	log.Printf("\n[main][migrate] Error with migration - %v", err)
-	//	os.Exit(1)
-	//}
 
 	// here is the DB things
 	dbHost := os.Getenv("DB_HOST")
@@ -160,11 +144,44 @@ func main() {
 	//}))
 	//app.Use(middleware.VerifyToken)
 
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     os.Getenv("REDIS_ADDRESS"),
+		Password: "",
+		DB:       1,
+	})
+
+	platformsControllers := platforms.NewPlatform(redisClient)
 
 	baseRouter.Get("/me", userController.FetchProfile)
 	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
-	baseRouter.Get("/track/convert", middleware.ExtractLinkInfo, platforms.ConvertTrack)
-	baseRouter.Get("/playlist/convert", middleware.ExtractLinkInfo, platforms.ConvertPlaylist)
+	baseRouter.Get("/track/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
+	baseRouter.Get("/playlist/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
+
+	//now to the WS endpoint to connect to when they visit the website and want to "convert"
+	app.Use(func(c *fiber.Ctx) error {
+		if websocket.IsWebSocketUpgrade(c) {
+			c.Locals("allowed", true)
+			return c.Next()
+		}
+		return fiber.ErrUpgradeRequired
+	})
+
+	app.Get("/portal", ikisocket.New(func(kws *ikisocket.Websocket) {
+		log.Printf("\nClient with ID %v connected\n", kws.UUID)
+	}))
+
+	ikisocket.On(ikisocket.EventConnect, func(payload *ikisocket.EventPayload) {
+		log.Printf("\n[main][SocketEvent][EventConnect] - A new client connected\n")
+	})
+
+	ikisocket.On(ikisocket.EventDisconnect, func(payload *ikisocket.EventPayload) {
+		// TODO: incrementally retry to reconnect with the client
+		log.Printf("\nClient has disconnected")
+	})
+
+	ikisocket.On(ikisocket.EventMessage, universal.TrackConversion)
+	ikisocket.On(ikisocket.EventMessage, universal.PlaylistConversion)
+
 	/**
 	 ==================================================================
 	+
