@@ -29,7 +29,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 		return &conversion, nil
 
 	case spotify.IDENTIFIER:
-		spSingleTrack, err := spotify.SearchTrackWithID(info.EntityID)
+		spSingleTrack, err := spotify.SearchTrackWithID(info.EntityID, red)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][spotify][ConvertTrack] error - could not search track with ID from spotify: %v\n", err)
 			return nil, err

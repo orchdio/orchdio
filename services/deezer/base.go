@@ -48,30 +48,6 @@ func FetchSingleTrack(link string) (*Track, error) {
 	return singleTrack, nil
 }
 
-// FetchPlaylistInfo fetches the playlist info.
-func FetchPlaylistInfo(link string) (*blueprint.PlaylistSearchResult, error) {
-	response, err := axios.Get(link)
-	if err != nil {
-		log.Printf("\n[services][deezer][playlist][FetchPlaylist] error - could not fetch playlist: %v\n", err)
-		return nil, err
-	}
-	playlist := &Playlist{}
-	err = json.Unmarshal(response.Data, playlist)
-
-	if err != nil {
-		log.Printf("\n[services][deezer][playlist][FetchPlaylist] error - could not deserialize response into output: %v\n", err)
-		return nil, err
-	}
-
-	info := blueprint.PlaylistSearchResult{
-		URL:     playlist.URL,
-		Length:  util.GetFormattedDuration(playlist.Duration),
-		Title:   playlist.Title,
-		Preview: "",
-	}
-	return &info, nil
-}
-
 // SearchTrackWithLink fetches the deezer result for the track being searched using the URL
 func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) *blueprint.TrackSearchResult {
 	// first, get the cached track
@@ -122,20 +98,16 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) *blueprint
 		if err != nil {
 			log.Printf("\n[controllers][platforms][deezer][ConvertTrack] error serializing track - %v\n", err)
 		}
-		if err == nil {
-			err = red.Set(context.Background(), cachedKey, string(serializedTrack), 0).Err()
-			if err != nil {
+		err = red.Set(context.Background(), cachedKey, string(serializedTrack), 0).Err()
+		if err != nil {
 				log.Printf("\n[platforms][base][SearchTrackWithLink][error] could not cache track %v\n", dzSingleTrack.Title)
-			}
-			if err == nil {
-				log.Printf("\n[platforms][base][SearchTrackWithLink] Track %s has been cached\n", dzSingleTrack.Title)
-			}
+		} else {
+			log.Printf("\n[platforms][base][SearchTrackWithLink] Track %s has been cached\n", dzSingleTrack.Title)
 		}
 		return &fetchedDeezerTrack
 	}
 
 	var deserializedTrack *blueprint.TrackSearchResult
-	log.Printf("cached %v", cachedTrack)
 	err = json.Unmarshal([]byte(cachedTrack), &deserializedTrack)
 	if err != nil {
 		log.Printf("\n[platforms][base][SearchTrackWithLink] Could not deserialize cache result. err %v\n", err)

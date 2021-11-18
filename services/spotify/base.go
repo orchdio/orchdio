@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/go-redis/redis/v8"
 	"github.com/vicanso/go-axios"
 	"github.com/zmb3/spotify/v2"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
@@ -122,48 +123,75 @@ func SearchTrackWithTitle(title string) (*blueprint.TrackSearchResult, error) {
 }
 
 // SearchTrackWithID fetches a track using a track (entityID) and return a spotify track.
-func SearchTrackWithID(id string) (*blueprint.TrackSearchResult, error) {
-	config := &clientcredentials.Config{
-		ClientID:     os.Getenv("SPOTIFY_ID"),
-		ClientSecret: os.Getenv("SPOTIFY_SECRET"),
-		TokenURL:     spotifyauth.TokenURL,
-	}
+func SearchTrackWithID(id string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
+	cacheKey := "spotify-" + id
+	cachedTrack, err := red.Get(context.Background(), cacheKey).Result()
 
-	token, err := config.Token(context.Background())
-	if err != nil {
-		log.Printf("\n[services][spotify][base][FetchSingleTrack] error  - could not fetch spotify token: %v\n", err)
+	if err != nil && err != redis.Nil {
+		log.Printf("\n[services][SearchTrackWithID] error - Could not fetch record from cache\n")
 		return nil, err
 	}
+	if err != nil && err == redis.Nil {
+		log.Printf("\n[services][SearchTrackWithID] function track has not been cached")
+		config := &clientcredentials.Config{
+			ClientID:     os.Getenv("SPOTIFY_ID"),
+			ClientSecret: os.Getenv("SPOTIFY_SECRET"),
+			TokenURL:     spotifyauth.TokenURL,
+		}
 
-	httpClient := spotifyauth.New().Client(context.Background(), token)
-	client := spotify.New(httpClient)
-	results, err := client.GetTrack(context.Background(), spotify.ID(id))
+		token, err := config.Token(context.Background())
+		if err != nil {
+			log.Printf("\n[services][spotify][base][FetchSingleTrack] error  - could not fetch spotify token: %v\n", err)
+			return nil, err
+		}
+
+		httpClient := spotifyauth.New().Client(context.Background(), token)
+		client := spotify.New(httpClient)
+		results, err := client.GetTrack(context.Background(), spotify.ID(id))
+		if err != nil {
+			log.Printf("\n[services][spotify][base][FetchingSingleTrack] error - could not search for track: %v\n", err)
+			return nil, err
+		}
+
+		var artistes []string
+
+		for _, artiste := range results.Album.Artists {
+			artistes = append(artistes, artiste.Name)
+		}
+
+		out := blueprint.TrackSearchResult{
+			URL:      results.ExternalURLs["spotify"],
+			Artistes: artistes,
+			Released: results.Album.ReleaseDate,
+			Duration: util.GetFormattedDuration(results.Duration / 1000),
+			Explicit: results.Explicit,
+			Title:    results.Name,
+			Preview:  results.PreviewURL,
+			Album:    results.Album.Name,
+			ID:       results.ID.String(),
+		}
+
+		serialized, err := json.Marshal(out)
+		if err != nil {
+            log.Printf("\n[services][spotify][base][FetchSingleTrack] error - could not serialize track: %v\n", err)
+        }
+
+        err = red.Set(context.Background(), cacheKey, serialized, 0).Err()
+        if  err != nil {
+        	log.Printf("\n[services][spotify][base][FetchSingleTrack] error - could not cache track: %v\n", err)
+		} else {
+            log.Printf("\n[services][spotify][base][FetchSingleTrack] success - track cached\n")
+		}
+		return &out, nil
+	}
+
+	var deserializedTrack blueprint.TrackSearchResult
+	err = json.Unmarshal([]byte(cachedTrack), &deserializedTrack)
 	if err != nil {
-		log.Printf("\n[services][spotify][base][FetchingSingleTrack] error - could not search for track: %v\n", err)
+		log.Printf("\n[services][SearchTrackWithID] error - Could not deserialize track from cache\n")
 		return nil, err
 	}
-
-	var artistes []string
-
-	for _, artiste := range results.Album.Artists {
-		artistes = append(artistes, artiste.Name)
-	}
-
-	out := blueprint.TrackSearchResult{
-		URL:      results.ExternalURLs["spotify"],
-		Artistes: artistes,
-		Released: results.Album.ReleaseDate,
-		Duration: util.GetFormattedDuration(results.Duration / 1000),
-		Explicit: results.Explicit,
-		Title:    results.Name,
-		Preview:  results.PreviewURL,
-		Album:    results.Album.Name,
-		ID:       results.ID.String(),
-	}
-
-	log.Printf("\nOut is: %v\n", out)
-
-	return &out, nil
+	return &deserializedTrack, nil
 }
 
 // FetchPlaylistTracksAndInfo fetches a playlist and returns a list of tracks and the playlist info with pagination info
