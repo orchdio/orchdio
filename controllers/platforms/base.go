@@ -57,7 +57,7 @@ func (p *Platforms) ConvertPlaylist(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Not a playlist entity")
 	}
 
-	convertedPlaylist, err := universal.ConvertPlaylist(linkInfo)
+	convertedPlaylist, err := universal.ConvertPlaylist(linkInfo, p.Redis)
 
 	if err != nil {
 		if err == blueprint.ENOTIMPLEMENTED {

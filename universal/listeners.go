@@ -3,6 +3,7 @@ package universal
 import (
 	"encoding/json"
 	"github.com/antoniodipinto/ikisocket"
+	"github.com/go-redis/redis/v8"
 	"log"
 	"strings"
 	"zoove/blueprint"
@@ -47,7 +48,7 @@ func TrackConversion(payload *ikisocket.EventPayload) {
 }
 
 // PlaylistConversion listens for a playlist conversion event and converts the playlist
-func PlaylistConversion(payload *ikisocket.EventPayload) {
+func PlaylistConversion(payload *ikisocket.EventPayload, red *redis.Client) {
 	var message blueprint.Message
 	err := json.Unmarshal(payload.Data, &message)
 	if err != nil {
@@ -64,7 +65,7 @@ func PlaylistConversion(payload *ikisocket.EventPayload) {
 	}
 
 	if strings.Contains(linkInfo.Entity, "playlist") {
-		playlist, err := ConvertPlaylist(linkInfo)
+		playlist, err := ConvertPlaylist(linkInfo, red)
 		if err != nil {
 			log.Printf("\n[main][SocketEvent][EventMessage][error] - could not extract playlist")
 			payload.Kws.Emit([]byte(blueprint.EEPLAYLISTCONVERSION))

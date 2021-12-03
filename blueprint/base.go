@@ -73,7 +73,6 @@ type TrackSearchResult struct {
 	Preview  string   `json:"preview"`
 	Album    string   `json:"album,omitempty"`
 	ID       string   `json:"id"`
-	//Pagination []map[string]string `json:"pagination"`
 }
 
 type Pagination struct {
@@ -92,12 +91,13 @@ type PlaylistSearchResult struct {
 	Preview string              `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
 }
 
-// DeezerSearchTrack represents the key-value parameter passed
+// PlatformSearchTrack represents the key-value parameter passed
 // when trying to convert playlist from spotify
-type DeezerSearchTrack struct {
+type PlatformSearchTrack struct {
 	Artiste string `json:"artiste"`
 	Title   string `json:"title"`
 	ID      string `json:"id"`
+	URL string `json:"url"`
 }
 
 // Conversion represents the final response for a typical track conversion
@@ -117,14 +117,21 @@ type PlaylistConversion struct {
 		Deezer  *[]TrackSearchResult `json:"deezer"`
 		Spotify *[]TrackSearchResult `json:"spotify"`
 	} `json:"tracks"`
-	Length     string     `json:"length"`
-	Title      string     `json:"title"`
-	Preview    string     `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
-	Pagination Pagination `json:"pagination"`
+	Length  string `json:"length"`
+	Title   string `json:"title"`
+	Preview string `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
+	OmittedTracks []map[string][]OmittedTracks `json:"omitted_tracks"`
 }
 
 // Message represents a message sent from the client to the server over websocket
 type Message struct {
 	Link       string   `json:"link"`
 	Attributes struct{} `json:"attributes"`
+}
+
+// OmittedTracks represents tracks that could not be processed in a playlist, for whatever reason
+type OmittedTracks struct {
+	Title string `json:"title"`
+	URL string `json:"url"`
+	Artiste string `json:"artiste"`
 }

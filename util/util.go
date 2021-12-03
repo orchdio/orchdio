@@ -5,7 +5,9 @@ package util
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/md5"
 	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/gofiber/fiber/v2"
@@ -165,4 +167,11 @@ func ExtractDeezerID(link string) string {
 		return link[firstIndex:]
 	}
 	return link[firstIndex:lastIndex]
+}
+
+// HashIdentifier returns a hash of the identifier
+func HashIdentifier(id string) string {
+	hasher := md5.New()
+	hasher.Write([]byte(id))
+	return hex.EncodeToString(hasher.Sum(nil))
 }

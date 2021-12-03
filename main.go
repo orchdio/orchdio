@@ -180,7 +180,9 @@ func main() {
 	})
 
 	ikisocket.On(ikisocket.EventMessage, universal.TrackConversion)
-	ikisocket.On(ikisocket.EventMessage, universal.PlaylistConversion)
+	ikisocket.On(ikisocket.EventMessage, func(payload *ikisocket.EventPayload) {
+		universal.PlaylistConversion(payload, redisClient)
+	})
 
 	/**
 	 ==================================================================
