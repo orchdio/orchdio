@@ -1,6 +1,8 @@
 module zoove
 
+// +heroku goVersion go1.11
 go 1.16
+
 
 require (
 	github.com/Junzki/link-preview v0.0.0-20190616153136-4d94cb3f9ebf
