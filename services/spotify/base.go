@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/go-redis/redis/v8"
-	"github.com/vicanso/go-axios"
 	"github.com/zmb3/spotify/v2"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
 	"golang.org/x/oauth2"
@@ -369,74 +368,6 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]
 
 	wg.Wait()
 	return &fetchedTracks, &omittedTracks
-}
-
-// FetchNextPage fetches the next page in the playlist.
-func FetchNextPage(link string) (*blueprint.PlaylistSearchResult, *blueprint.Pagination, error) {
-	token := fetchNewAuthToken()
-	client := createNewSpotifyUInstance()
-	options := spotify.Fields("description,uri")
-
-	info, err := client.GetPlaylist(context.Background(), spotify.ID(link), options)
-	paginatedPlaylist := PaginatedPlaylist{}
-	axiosInstance := axios.NewInstance(&axios.InstanceConfig{
-		Headers: map[string][]string{
-			"Authorization": {fmt.Sprintf("Bearer %s", token.AccessToken)},
-		},
-	})
-
-	response, err := axiosInstance.Get(link)
-	if err != nil {
-		log.Printf("Error fetching the next page.")
-		return nil, nil, err
-	}
-
-	err = json.Unmarshal(response.Data, &paginatedPlaylist)
-	if err != nil {
-		log.Printf("\n[services][spotify][base] - Could not deserialize the body: %v\n", err)
-		return nil, nil, err
-	}
-	var tracks []blueprint.TrackSearchResult
-
-	for _, track := range paginatedPlaylist.Items {
-		var artistes []string
-		for _, artist := range track.Track.Artists {
-			artistes = append(artistes, artist.Name)
-		}
-
-		var previewLink string
-		if track.Track.PreviewUrl != nil {
-			previewLink = *track.Track.PreviewUrl
-		}
-		trackCopy := blueprint.TrackSearchResult{
-			URL:      track.Track.ExternalUrls.Spotify,
-			Artistes: artistes,
-			Released: track.Track.Album.ReleaseDate,
-			Duration: util.GetFormattedDuration(track.Track.DurationMs / 1000),
-			Explicit: track.Track.Explicit,
-			Title:    track.Track.Name,
-			Preview:  previewLink,
-			Album:    track.Track.Album.Name,
-			ID:       track.Track.Id,
-		}
-		tracks = append(tracks, trackCopy)
-	}
-
-	pagination := blueprint.Pagination{
-		Next:     paginatedPlaylist.Next,
-		Previous: paginatedPlaylist.Previous,
-		Total:    paginatedPlaylist.Total,
-		Platform: "spotify",
-	}
-
-	playlistResult := blueprint.PlaylistSearchResult{
-		URL:     info.ExternalURLs["spotify"],
-		Tracks:  tracks,
-		Title:   info.Name,
-		Preview: "",
-	}
-
-	return &playlistResult, &pagination, nil
 }
 
 // FetchPlaylistSearchResult fetches the track for a playlist based on the search result
