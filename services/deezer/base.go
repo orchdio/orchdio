@@ -69,17 +69,10 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) *blueprint
 			}
 		}
 
-		// FIXME: perhaps properly handle this error
-		hour := dzSingleTrack.Duration / 60
-		sec := dzSingleTrack.Duration % 60
-		explicit := false
-		if dzSingleTrack.ExplicitContentLyrics == 1 {
-			explicit = true
-		}
 
 		fetchedDeezerTrack := blueprint.TrackSearchResult{
-			Explicit: explicit,
-			Duration: fmt.Sprintf("%d:%d", hour, sec),
+			Explicit: util.DeezerIsExplicit(dzSingleTrack.ExplicitContentLyrics),
+			Duration: util.GetFormattedDuration(dzSingleTrack.Duration),
 			URL:      dzSingleTrack.Link,
 			Artistes: dzTrackContributors,
 			Released: dzSingleTrack.ReleaseDate,

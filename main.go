@@ -6,7 +6,7 @@ import (
 	"github.com/antoniodipinto/ikisocket"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/websocket/v2"
+	jwtware "github.com/gofiber/jwt/v3"
 	_ "github.com/golang-migrate/migrate/source/file"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -17,11 +17,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
+	"zoove/blueprint"
 	"zoove/controllers"
 	"zoove/controllers/account"
 	"zoove/controllers/platforms"
 	"zoove/middleware"
 	"zoove/universal"
+	"github.com/gofiber/websocket/v2"
 )
 
 func init() {
@@ -87,22 +90,7 @@ func main() {
 
 	baseRouter.Get("/heartbeat", getInfo)
 
-	// here is the DB things
-	dbHost := os.Getenv("DB_HOST")
-	dbUser := os.Getenv("DB_USER")
-	dbPort := os.Getenv("DB_PORT")
-	dbName := os.Getenv("DB_NAME")
-	dbPass := os.Getenv("DB_PASS")
-
-	psqlInfo := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		dbHost,
-		dbPort,
-		dbUser,
-		dbPass,
-		dbName,
-	)
-	db, err := sql.Open("postgres", psqlInfo)
+	db, err := sql.Open("postgres", fmt.Sprintf("%s?sslmode=%s", os.Getenv("DATABASE_URL"), os.Getenv("DB_SSL_MODE")))
 	if err != nil {
 		log.Printf("Error connecting to postgresql db")
 		panic(err)
@@ -136,27 +124,6 @@ func main() {
 	baseRouter.Get("/spotify/auth", userController.AuthSpotifyUser)
 	baseRouter.Get("/deezer/auth", userController.AuthDeezerUser)
 
-	// MIDDLEWARE DEFINITION
-	//app.Use(jwtware.New(jwtware.Config{
-	//	SigningKey: []byte(os.Getenv("JWT_SECRET")),
-	//	Claims:     &blueprint.ZooveUserToken{},
-	//	ContextKey: "authToken",
-	//}))
-	//app.Use(middleware.VerifyToken)
-
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS_ADDRESS"),
-		Password: "",
-		DB:       1,
-	})
-
-	platformsControllers := platforms.NewPlatform(redisClient)
-
-	baseRouter.Get("/me", userController.FetchProfile)
-	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
-	baseRouter.Get("/track/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
-	baseRouter.Get("/playlist/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
-
 	//now to the WS endpoint to connect to when they visit the website and want to "convert"
 	app.Use(func(c *fiber.Ctx) error {
 		if websocket.IsWebSocketUpgrade(c) {
@@ -170,6 +137,29 @@ func main() {
 		log.Printf("\nClient with ID %v connected\n", kws.UUID)
 	}))
 
+	addr := os.Getenv("REDISCLOUD_URL")
+	redisAddr := addr[strings.Index(addr, "@")+1:]
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: "",
+		DB:       1,
+	})
+	platformsControllers := platforms.NewPlatform(redisClient)
+
+
+	// MIDDLEWARE DEFINITION
+	app.Use(jwtware.New(jwtware.Config{
+		SigningKey: []byte(os.Getenv("JWT_SECRET")),
+		Claims:     &blueprint.ZooveUserToken{},
+		ContextKey: "authToken",
+	}))
+	app.Use(middleware.VerifyToken)
+
+	baseRouter.Get("/me", userController.FetchProfile)
+	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
+	baseRouter.Get("/track/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
+	baseRouter.Get("/playlist/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
+
 	ikisocket.On(ikisocket.EventConnect, func(payload *ikisocket.EventPayload) {
 		log.Printf("\n[main][SocketEvent][EventConnect] - A new client connected\n")
 	})
@@ -179,22 +169,6 @@ func main() {
 		log.Printf("\nClient has disconnected")
 	})
 
-	//ikisocket.On(ikisocket.EventMessage, func(payload *ikisocket.EventPayload) {
-	//	log.Printf("Payload is %v", string(payload.Data))
-	//	var message blueprint.Message
-	//	err := json.Unmarshal(payload.Data, &message)
-	//	if err != nil {
-	//		log.Printf("\n[main][SocketEvent][EventMessage] - error deserializing incoming message %v\n", err)
-	//		payload.Kws.Emit([]byte(blueprint.EEDESERIALIZE))
-	//		return
-	//	}
-	//	if message.EventName == "heartbeat" {
-	//		log.Printf("\n[main][SocketEvent][heartbeat] - Client sending headbeat\n")
-	//		log.Printf("%v\n", time.Now().String())
-	//		payload.Kws.Emit([]byte(`{"message":"heartbeat", payload: "` + time.Now().String() + `"}`))
-	//		return
-	//	}
-	//})
 	ikisocket.On(ikisocket.EventMessage, universal.TrackConversion)
 	ikisocket.On(ikisocket.EventMessage, func(payload *ikisocket.EventPayload) {
 		universal.PlaylistConversion(payload, redisClient)
