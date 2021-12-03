@@ -8,8 +8,10 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/antoniodipinto/ikisocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"io"
@@ -174,4 +176,21 @@ func HashIdentifier(id string) string {
 	hasher := md5.New()
 	hasher.Write([]byte(id))
 	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+func GetWSMessagePayload(payload []byte, ws *ikisocket.Websocket) *blueprint.Message{
+	var message blueprint.Message
+	err := json.Unmarshal(payload, &message)
+	if err != nil {
+		log.Printf("\n[main][SocketEvent][EventMessage] - error deserializing incoming message %v\n", err)
+		ws.Emit([]byte(blueprint.EEDESERIALIZE))
+		return nil
+	}
+	if message.EventName == "heartbeat" {
+		log.Printf("\n[main][SocketEvent][heartbeat] - Client sending headbeat\n")
+		log.Printf("%v\n", time.Now().String())
+		ws.Emit([]byte(`{"message":"heartbeat", payload: "` + time.Now().String() + `"}`))
+		return nil
+	}
+	return &message
 }

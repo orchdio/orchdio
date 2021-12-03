@@ -8,19 +8,17 @@ import (
 	"strings"
 	"zoove/blueprint"
 	"zoove/services"
+	"zoove/util"
 )
 
 // TrackConversion Listener listens for track conversion events and converts the track
 func TrackConversion(payload *ikisocket.EventPayload) {
-	var message blueprint.Message
-	err := json.Unmarshal(payload.Data, &message)
-	if err != nil {
-		log.Printf("\n[main][SocketEvent][EventMessage] - error deserializing incoming message %v\n", err)
-		payload.Kws.Emit([]byte(blueprint.EEDESERIALIZE))
+	message := util.GetWSMessagePayload(payload.Data, payload.Kws)
+	if message == nil {
 		return
 	}
-
 	linkInfo, err := services.ExtractLinkInfo(message.Link)
+
 	if err != nil {
 		log.Println("Oops! Could not extract information about the link. Is it valid?")
 		payload.Kws.Emit([]byte("Invalid link event here."))
@@ -49,11 +47,8 @@ func TrackConversion(payload *ikisocket.EventPayload) {
 
 // PlaylistConversion listens for a playlist conversion event and converts the playlist
 func PlaylistConversion(payload *ikisocket.EventPayload, red *redis.Client) {
-	var message blueprint.Message
-	err := json.Unmarshal(payload.Data, &message)
-	if err != nil {
-		log.Printf("\n[main][SocketEvent][EventMessage] - error deserializing incoming message %v\n", err)
-		payload.Kws.Emit([]byte(blueprint.EEDESERIALIZE))
+	message := util.GetWSMessagePayload(payload.Data, payload.Kws)
+	if message == nil {
 		return
 	}
 

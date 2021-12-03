@@ -179,6 +179,22 @@ func main() {
 		log.Printf("\nClient has disconnected")
 	})
 
+	//ikisocket.On(ikisocket.EventMessage, func(payload *ikisocket.EventPayload) {
+	//	log.Printf("Payload is %v", string(payload.Data))
+	//	var message blueprint.Message
+	//	err := json.Unmarshal(payload.Data, &message)
+	//	if err != nil {
+	//		log.Printf("\n[main][SocketEvent][EventMessage] - error deserializing incoming message %v\n", err)
+	//		payload.Kws.Emit([]byte(blueprint.EEDESERIALIZE))
+	//		return
+	//	}
+	//	if message.EventName == "heartbeat" {
+	//		log.Printf("\n[main][SocketEvent][heartbeat] - Client sending headbeat\n")
+	//		log.Printf("%v\n", time.Now().String())
+	//		payload.Kws.Emit([]byte(`{"message":"heartbeat", payload: "` + time.Now().String() + `"}`))
+	//		return
+	//	}
+	//})
 	ikisocket.On(ikisocket.EventMessage, universal.TrackConversion)
 	ikisocket.On(ikisocket.EventMessage, func(payload *ikisocket.EventPayload) {
 		universal.PlaylistConversion(payload, redisClient)

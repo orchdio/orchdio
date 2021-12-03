@@ -127,6 +127,7 @@ type PlaylistConversion struct {
 type Message struct {
 	Link       string   `json:"link"`
 	Attributes struct{} `json:"attributes"`
+	EventName string `json:"event_name"`
 }
 
 // OmittedTracks represents tracks that could not be processed in a playlist, for whatever reason
