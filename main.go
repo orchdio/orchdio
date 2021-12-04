@@ -89,7 +89,14 @@ func main() {
 	baseRouter := app.Group("/api/v1")
 
 	// Database and cache setup things
-	db, err := sql.Open("postgres", fmt.Sprintf("%s?sslmode=%s", os.Getenv("DATABASE_URL"), os.Getenv("DB_SSL_MODE")))
+	envr := os.Getenv("ZOOVE_ENV")
+	dbURL := os.Getenv("DATABASE_URL")
+	if envr != "production" {
+		dbURL = dbURL + "?sslmode=disable"
+	}
+
+	log.Printf(dbURL)
+	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Printf("Error connecting to postgresql db")
 		panic(err)
