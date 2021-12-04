@@ -1,14 +1,18 @@
+// +heroku goVersion go1.15
 module zoove
-
 go 1.16
+
 
 require (
 	github.com/Junzki/link-preview v0.0.0-20190616153136-4d94cb3f9ebf
 	github.com/StackExchange/wmi v1.2.1 // indirect
+	github.com/antoniodipinto/ikisocket v0.0.0-20210910063045-b2995ab1b378 // indirect
 	github.com/badoux/goscraper v0.0.0-20190827161153-36995ce6b19f // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/go-redis/redis/v8 v8.11.4 // indirect
 	github.com/gofiber/fiber/v2 v2.18.0
 	github.com/gofiber/jwt/v3 v3.0.2
+	github.com/gofiber/websocket/v2 v2.0.10 // indirect
 	github.com/golang-jwt/jwt/v4 v4.0.0
 	github.com/golang-migrate/migrate v3.5.4+incompatible
 	github.com/google/uuid v1.3.0

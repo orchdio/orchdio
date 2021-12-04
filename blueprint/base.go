@@ -16,6 +16,12 @@ const (
 var (
 	EHOSTUNSUPPORTED = errors.New("EHOSTUNSUPPORTED")
 	ENORESULT        = errors.New("ENORESULT")
+	ENOTIMPLEMENTED  = errors.New("NOT_IMPLEMENTED")
+)
+
+var (
+	EEDESERIALIZE        = "EVENT_DESERIALIZE_MESSAGE_ERROR"
+	EEPLAYLISTCONVERSION = "EVENT_PLAYLIST_CONVERSION_ERROR"
 )
 
 type (
@@ -65,13 +71,14 @@ type TrackSearchResult struct {
 	Explicit bool     `json:"explicit"`
 	Title    string   `json:"title"`
 	Preview  string   `json:"preview"`
-	//Pagination []map[string]string `json:"pagination"`
+	Album    string   `json:"album,omitempty"`
+	ID       string   `json:"id"`
 }
 
 type Pagination struct {
-	Next string `json:"next"`
+	Next     string `json:"next"`
 	Previous string `json:"previous"`
-	Total int `json:"total,omitempty"`
+	Total    int    `json:"total,omitempty"`
 	Platform string `json:"platform"`
 }
 
@@ -84,9 +91,48 @@ type PlaylistSearchResult struct {
 	Preview string              `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
 }
 
-// DeezerSearchTrack represents the key-value parameter passed
+// PlatformSearchTrack represents the key-value parameter passed
 // when trying to convert playlist from spotify
-type DeezerSearchTrack struct {
+type PlatformSearchTrack struct {
 	Artiste string `json:"artiste"`
+	Title   string `json:"title"`
+	ID      string `json:"id"`
+	URL string `json:"url"`
+}
+
+// Conversion represents the final response for a typical track conversion
+type Conversion struct {
+	Entity    string `json:"entity"`
+	Platforms struct {
+		Deezer  *TrackSearchResult `json:"deezer"`
+		Spotify *TrackSearchResult `json:"spotify"`
+	} `json:"platforms"`
+}
+
+// PlaylistConversion represents the final response for a typical playlist conversion
+type PlaylistConversion struct {
+	URL string `json:"url"`
+	//Tracks  []map[string]*[]blueprint.TrackSearchResult `json:"tracks"`
+	Tracks struct {
+		Deezer  *[]TrackSearchResult `json:"deezer"`
+		Spotify *[]TrackSearchResult `json:"spotify"`
+	} `json:"tracks"`
+	Length  string `json:"length"`
+	Title   string `json:"title"`
+	Preview string `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
+	OmittedTracks []map[string][]OmittedTracks `json:"omitted_tracks"`
+}
+
+// Message represents a message sent from the client to the server over websocket
+type Message struct {
+	Link       string   `json:"link"`
+	Attributes struct{} `json:"attributes"`
+	EventName string `json:"event_name"`
+}
+
+// OmittedTracks represents tracks that could not be processed in a playlist, for whatever reason
+type OmittedTracks struct {
 	Title string `json:"title"`
+	URL string `json:"url"`
+	Artiste string `json:"artiste"`
 }

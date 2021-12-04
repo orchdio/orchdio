@@ -9,6 +9,7 @@ import (
 	"os"
 )
 
+// FetchAuthURL fetches the auth url
 func FetchAuthURL(state string) []byte {
 	redirectURI := os.Getenv("SPOTIFY_REDIRECT_URI")
 	var auth = spotifyauth.New(spotifyauth.WithRedirectURL(redirectURI),

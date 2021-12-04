@@ -5,9 +5,13 @@ package util
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/md5"
 	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/antoniodipinto/ikisocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"io"
@@ -130,8 +134,8 @@ func GetFormattedDuration(v int) string {
 	sec := v % 60
 	seconds := strconv.Itoa(sec)
 	if len(seconds) == 1 {
-        seconds = "0" + seconds
-    }
+		seconds = "0" + seconds
+	}
 	return fmt.Sprintf("%d:%s", hour, seconds)
 }
 
@@ -146,23 +150,47 @@ func ExtractSpotifyID(link string) string {
 		if qIndex != -1 {
 			link = link[:qIndex]
 		}
-        return link[firstIndex:]
-    }
+		return link[firstIndex:]
+	}
 	return link[firstIndex:lastIndex]
 }
 
 // ExtractDeezerID returns the deezer ID from a playlist pagination link
-func ExtractDeezerID(link string ) string {
+func ExtractDeezerID(link string) string {
 	firstIndex := strings.Index(link, "playlist/") + len("playlist/")
 	lastIndex := strings.LastIndex(link, "/")
 
 	if lastIndex < firstIndex {
-        // get the index of ? incase there are nonsense tracking links attached
-        qIndex := strings.Index(link, "?")
-        if qIndex != -1 {
-            link = link[:qIndex]
-        }
-        return link[firstIndex:]
-    }
-    return link[firstIndex:lastIndex]
+		// get the index of ? incase there are nonsense tracking links attached
+		qIndex := strings.Index(link, "?")
+		if qIndex != -1 {
+			link = link[:qIndex]
+		}
+		return link[firstIndex:]
+	}
+	return link[firstIndex:lastIndex]
+}
+
+// HashIdentifier returns a hash of the identifier
+func HashIdentifier(id string) string {
+	hasher := md5.New()
+	hasher.Write([]byte(id))
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+func GetWSMessagePayload(payload []byte, ws *ikisocket.Websocket) *blueprint.Message{
+	var message blueprint.Message
+	err := json.Unmarshal(payload, &message)
+	if err != nil {
+		log.Printf("\n[main][SocketEvent][EventMessage] - error deserializing incoming message %v\n", err)
+		ws.Emit([]byte(blueprint.EEDESERIALIZE))
+		return nil
+	}
+	if message.EventName == "heartbeat" {
+		log.Printf("\n[main][SocketEvent][heartbeat] - Client sending headbeat\n")
+		log.Printf("%v\n", time.Now().String())
+		ws.Emit([]byte(`{"message":"heartbeat", payload: "` + time.Now().String() + `"}`))
+		return nil
+	}
+	return &message
 }

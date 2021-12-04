@@ -3,7 +3,11 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"github.com/antoniodipinto/ikisocket"
+	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
+	jwtware "github.com/gofiber/jwt/v3"
+	"github.com/gofiber/websocket/v2"
 	_ "github.com/golang-migrate/migrate/source/file"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -14,16 +18,19 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
+	"zoove/blueprint"
 	"zoove/controllers"
 	"zoove/controllers/account"
 	"zoove/controllers/platforms"
 	"zoove/middleware"
+	"zoove/universal"
 )
 
 func init() {
 	env := os.Getenv("ENV")
 	if env == "" {
-		log.Println("==⚠️ WARNING: env variable not set. Using dev==")
+		log.Println("==⚠️ WARNING: env variable not set. Using dev ⚠️==")
 		env = "dev"
 	}
 	err := godotenv.Load(".env." + env)
@@ -81,44 +88,14 @@ func main() {
 
 	baseRouter := app.Group("/api/v1")
 
-	baseRouter.Get("/heartbeat", getInfo)
-	//driver, err := postgres.WithInstance(db, &postgres.Config{})
+	// Database and cache setup things
+	envr := os.Getenv("ZOOVE_ENV")
+	dbURL := os.Getenv("DATABASE_URL")
+	if envr != "production" {
+		dbURL = dbURL + "?sslmode=disable"
+	}
 
-	//if err != nil {
-	//	log.Printf("\n[main][migrate][error] Error with migrate driver 1: %v\n", err)
-	//	os.Exit(1)
-	//}
-	//m, migrateErr := migrate.NewWithDatabaseInstance(
-	//	"file://db/migration",
-	//	"postgres", driver)
-	//
-	//if migrateErr != nil {
-	//	log.Printf("\n[main][migrate][error] Error with migrate driver: %v\n", err)
-	//	os.Exit(1)
-	//}
-	//
-	//migrateErr = m.Up()
-	//if migrateErr != nil && migrateErr != migrate.ErrNoChange  {
-	//	log.Printf("\n[main][migrate] Error with migration - %v", err)
-	//	os.Exit(1)
-	//}
-
-	// here is the DB things
-	dbHost := os.Getenv("DB_HOST")
-	dbUser := os.Getenv("DB_USER")
-	dbPort := os.Getenv("DB_PORT")
-	dbName := os.Getenv("DB_NAME")
-	dbPass := os.Getenv("DB_PASS")
-
-	psqlInfo := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		dbHost,
-		dbPort,
-		dbUser,
-		dbPass,
-		dbName,
-	)
-	db, err := sql.Open("postgres", psqlInfo)
+	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Printf("Error connecting to postgresql db")
 		panic(err)
@@ -136,6 +113,18 @@ func main() {
 	}
 
 	log.Println("Connected to Postgresql database")
+	userController := account.UserController{
+		DB: db,
+	}
+	addr := os.Getenv("REDISCLOUD_URL")
+	redisAddr := addr[strings.Index(addr, "@")+1:]
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: "",
+		DB:       1,
+	})
+	platformsControllers := platforms.NewPlatform(redisClient)
+
 	/**
 	 ==================================================================
 	+
@@ -145,26 +134,53 @@ func main() {
 	+
 	 ==================================================================
 	*/
-	userController := account.UserController{
-		DB: db,
-	}
+	baseRouter.Get("/heartbeat", getInfo)
 	baseRouter.Get("/:platform/connect", userController.RedirectAuth)
 	baseRouter.Get("/spotify/auth", userController.AuthSpotifyUser)
 	baseRouter.Get("/deezer/auth", userController.AuthDeezerUser)
+	baseRouter.Get("/track/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
+	baseRouter.Get("/playlist/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
+
+	app.Use(func(c *fiber.Ctx) error {
+		if websocket.IsWebSocketUpgrade(c) {
+			c.Locals("allowed", true)
+			return c.Next()
+		}
+		return fiber.ErrUpgradeRequired
+	})
+	// now to the WS endpoint to connect to when they visit the website and want to "convert"
+	app.Get("/portal", ikisocket.New(func(kws *ikisocket.Websocket) {
+		log.Printf("\nClient with ID %v connected\n", kws.UUID)
+	}))
 
 	// MIDDLEWARE DEFINITION
-	//app.Use(jwtware.New(jwtware.Config{
-	//	SigningKey: []byte(os.Getenv("JWT_SECRET")),
-	//	Claims:     &blueprint.ZooveUserToken{},
-	//	ContextKey: "authToken",
-	//}))
-	//app.Use(middleware.VerifyToken)
-
+	app.Use(jwtware.New(jwtware.Config{
+		SigningKey: []byte(os.Getenv("JWT_SECRET")),
+		Claims:     &blueprint.ZooveUserToken{},
+		ContextKey: "authToken",
+	}))
+	app.Use(middleware.VerifyToken)
 
 	baseRouter.Get("/me", userController.FetchProfile)
 	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
-	baseRouter.Get("/track/convert", middleware.ExtractLinkInfo, platforms.ConvertTrack)
-	baseRouter.Get("/playlist/convert", middleware.ExtractLinkInfo, platforms.ConvertPlaylist)
+
+
+
+	// WEBSOCKET EVENT HANDLERS
+	ikisocket.On(ikisocket.EventConnect, func(payload *ikisocket.EventPayload) {
+		log.Printf("\n[main][SocketEvent][EventConnect] - A new client connected\n")
+	})
+
+	ikisocket.On(ikisocket.EventDisconnect, func(payload *ikisocket.EventPayload) {
+		// TODO: incrementally retry to reconnect with the client
+		log.Printf("\nClient has disconnected")
+	})
+
+	ikisocket.On(ikisocket.EventMessage, universal.TrackConversion)
+	ikisocket.On(ikisocket.EventMessage, func(payload *ikisocket.EventPayload) {
+		universal.PlaylistConversion(payload, redisClient)
+	})
+
 	/**
 	 ==================================================================
 	+
