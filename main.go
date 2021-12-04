@@ -18,7 +18,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"zoove/blueprint"
 	"zoove/controllers"
 	"zoove/controllers/account"
@@ -116,13 +115,12 @@ func main() {
 	userController := account.UserController{
 		DB: db,
 	}
-	addr := os.Getenv("REDISCLOUD_URL")
-	redisAddr := addr[strings.Index(addr, "@")+1:]
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		Password: "",
-		DB:       1,
-	})
+	redisOpts, err := redis.ParseURL(os.Getenv("REDISCLOUD_URL"))
+	if err != nil {
+		panic(err)
+	}
+
+	redisClient := redis.NewClient(redisOpts)
 	platformsControllers := platforms.NewPlatform(redisClient)
 
 	/**

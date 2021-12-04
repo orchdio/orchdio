@@ -224,7 +224,13 @@ func SearchTrackWithID(id string, red *redis.Client) (*blueprint.TrackSearchResu
 
 // FetchPlaylistTracksAndInfo fetches a playlist and returns a list of tracks and the playlist info with pagination info
 func FetchPlaylistTracksAndInfo(id string, red *redis.Client) (*blueprint.PlaylistSearchResult, *blueprint.Pagination, error) {
-	client := createNewSpotifyUInstance()
+	//client := createNewSpotifyUInstance()
+	token := fetchNewAuthToken()
+	ctx := context.Background()
+	httpClient := spotifyauth.New().Client(ctx, token)
+	client := spotify.New(httpClient)
+
+
 	options := spotify.Fields("description,uri,external_urls,snapshot_id,name")
 
 	// --id--: 55JFgMW6BkDzIIHA7D3Wwo
@@ -249,22 +255,26 @@ func FetchPlaylistTracksAndInfo(id string, red *redis.Client) (*blueprint.Playli
 
 	if cacheErr != nil && cacheErr == redis.Nil || cachedSnapshotID != info.SnapshotID {
 
-		playlist, err := client.GetPlaylistTracks(context.Background(), spotify.ID(id))
+		playlist, err := client.GetPlaylistTracks(ctx, spotify.ID(id))
 		if err != nil {
 			log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - Could not fetch playlist from spotify: %v\n", err)
 			return nil, nil, err
 		}
+		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - playlist fetched from spotify: %v\n", len(playlist.Tracks))
 
 		// fetch ALL the pages
 		for page := 1; ; page++ {
-			paginationErr := client.NextPage(context.Background(), playlist)
+			out := &spotify.PlaylistTrackPage{}
+			paginationErr := client.NextPage(ctx, out)
 			if paginationErr == spotify.ErrNoMorePages {
+				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - No more pages for playlist\n")
 				break
 			}
 			if paginationErr != nil {
 				log.Printf("\n[services][spotify][base][FetchPlaylistTracksAndInfo] error - could not fetch playlist: %v\n", err)
 				return nil, nil, err
 			}
+			playlist.Tracks = append(playlist.Tracks, out.Tracks...)
 		}
 
 		var tracks []blueprint.TrackSearchResult
@@ -303,6 +313,8 @@ func FetchPlaylistTracksAndInfo(id string, red *redis.Client) (*blueprint.Playli
 				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] success - track %s by %s has been cached\n", trackCopy.Title, trackCopy.Artistes[0])
 			}
 		}
+
+		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - playlist trcaks length: %v\n", len(tracks))
 
 		playlistResult := blueprint.PlaylistSearchResult{
 			URL:    info.ExternalURLs["spotify"],
