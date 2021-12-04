@@ -5,5 +5,4 @@ go
 
 # ignore IDE/editor thingsgit
 .idea
-cmd
 TODO.md
