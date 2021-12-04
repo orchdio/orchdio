@@ -95,7 +95,6 @@ func main() {
 		dbURL = dbURL + "?sslmode=disable"
 	}
 
-	log.Printf(dbURL)
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Printf("Error connecting to postgresql db")
