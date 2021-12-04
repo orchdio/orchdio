@@ -1,1 +1,1 @@
-./cmd/zoove
+web: ./cmd/zoove --port %PORT%

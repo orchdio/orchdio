@@ -7,6 +7,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	jwtware "github.com/gofiber/jwt/v3"
+	"github.com/gofiber/websocket/v2"
 	_ "github.com/golang-migrate/migrate/source/file"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -24,13 +25,12 @@ import (
 	"zoove/controllers/platforms"
 	"zoove/middleware"
 	"zoove/universal"
-	"github.com/gofiber/websocket/v2"
 )
 
 func init() {
 	env := os.Getenv("ENV")
 	if env == "" {
-		log.Println("==⚠️ WARNING: env variable not set. Using dev==")
+		log.Println("==⚠️ WARNING: env variable not set. Using dev ⚠️==")
 		env = "dev"
 	}
 	err := godotenv.Load(".env." + env)
@@ -88,8 +88,7 @@ func main() {
 
 	baseRouter := app.Group("/api/v1")
 
-	baseRouter.Get("/heartbeat", getInfo)
-
+	// Database and cache setup things
 	db, err := sql.Open("postgres", fmt.Sprintf("%s?sslmode=%s", os.Getenv("DATABASE_URL"), os.Getenv("DB_SSL_MODE")))
 	if err != nil {
 		log.Printf("Error connecting to postgresql db")
@@ -108,35 +107,9 @@ func main() {
 	}
 
 	log.Println("Connected to Postgresql database")
-	/**
-	 ==================================================================
-	+
-	+
-	+	ROUTE DEFINITIONS GO HERE
-	+
-	+
-	 ==================================================================
-	*/
 	userController := account.UserController{
 		DB: db,
 	}
-	baseRouter.Get("/:platform/connect", userController.RedirectAuth)
-	baseRouter.Get("/spotify/auth", userController.AuthSpotifyUser)
-	baseRouter.Get("/deezer/auth", userController.AuthDeezerUser)
-
-	//now to the WS endpoint to connect to when they visit the website and want to "convert"
-	app.Use(func(c *fiber.Ctx) error {
-		if websocket.IsWebSocketUpgrade(c) {
-			c.Locals("allowed", true)
-			return c.Next()
-		}
-		return fiber.ErrUpgradeRequired
-	})
-
-	app.Get("/portal", ikisocket.New(func(kws *ikisocket.Websocket) {
-		log.Printf("\nClient with ID %v connected\n", kws.UUID)
-	}))
-
 	addr := os.Getenv("REDISCLOUD_URL")
 	redisAddr := addr[strings.Index(addr, "@")+1:]
 	redisClient := redis.NewClient(&redis.Options{
@@ -146,6 +119,33 @@ func main() {
 	})
 	platformsControllers := platforms.NewPlatform(redisClient)
 
+	/**
+	 ==================================================================
+	+
+	+
+	+	ROUTE DEFINITIONS GO HERE
+	+
+	+
+	 ==================================================================
+	*/
+	baseRouter.Get("/heartbeat", getInfo)
+	baseRouter.Get("/:platform/connect", userController.RedirectAuth)
+	baseRouter.Get("/spotify/auth", userController.AuthSpotifyUser)
+	baseRouter.Get("/deezer/auth", userController.AuthDeezerUser)
+	baseRouter.Get("/track/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
+	baseRouter.Get("/playlist/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
+
+	app.Use(func(c *fiber.Ctx) error {
+		if websocket.IsWebSocketUpgrade(c) {
+			c.Locals("allowed", true)
+			return c.Next()
+		}
+		return fiber.ErrUpgradeRequired
+	})
+	// now to the WS endpoint to connect to when they visit the website and want to "convert"
+	app.Get("/portal", ikisocket.New(func(kws *ikisocket.Websocket) {
+		log.Printf("\nClient with ID %v connected\n", kws.UUID)
+	}))
 
 	// MIDDLEWARE DEFINITION
 	app.Use(jwtware.New(jwtware.Config{
@@ -157,9 +157,10 @@ func main() {
 
 	baseRouter.Get("/me", userController.FetchProfile)
 	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
-	baseRouter.Get("/track/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
-	baseRouter.Get("/playlist/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
 
+
+
+	// WEBSOCKET EVENT HANDLERS
 	ikisocket.On(ikisocket.EventConnect, func(payload *ikisocket.EventPayload) {
 		log.Printf("\n[main][SocketEvent][EventConnect] - A new client connected\n")
 	})
