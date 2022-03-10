@@ -179,6 +179,7 @@ func HashIdentifier(id string) string {
 }
 
 func GetWSMessagePayload(payload []byte, ws *ikisocket.Websocket) *blueprint.Message{
+	// this represents a typical webscocket message from the client.
 	var message blueprint.Message
 	err := json.Unmarshal(payload, &message)
 	if err != nil {
@@ -186,10 +187,10 @@ func GetWSMessagePayload(payload []byte, ws *ikisocket.Websocket) *blueprint.Mes
 		ws.Emit([]byte(blueprint.EEDESERIALIZE))
 		return nil
 	}
-	if message.EventName == "heartbeat" {
+	if message.EventName == blueprint.EventTypeHeartbeat {
 		log.Printf("\n[main][SocketEvent][heartbeat] - Client sending headbeat\n")
 		log.Printf("%v\n", time.Now().String())
-		ws.Emit([]byte(`{"message":"heartbeat", payload: "` + time.Now().String() + `"}`))
+		ws.Emit([]byte(`{"message":"heartbeat", "payload": "` + time.Now().String() + `"}`))
 		return nil
 	}
 	return &message

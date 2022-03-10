@@ -131,6 +131,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 		Preview:  spSingleTrack.PreviewURL,
 		Album:    spSingleTrack.Album.Name,
 		ID:       spSingleTrack.SimpleTrack.ID.String(),
+		Cover:    spSingleTrack.Album.Images[0].URL,
 	}
 
 	// cache the track
@@ -197,6 +198,7 @@ func SearchTrackWithID(id string, red *redis.Client) (*blueprint.TrackSearchResu
 			Preview:  results.PreviewURL,
 			Album:    results.Album.Name,
 			ID:       results.ID.String(),
+			Cover:    results.Album.Images[0].URL,
 		}
 
 		serialized, err := json.Marshal(out)
@@ -229,7 +231,6 @@ func FetchPlaylistTracksAndInfo(id string, red *redis.Client) (*blueprint.Playli
 	ctx := context.Background()
 	httpClient := spotifyauth.New().Client(ctx, token)
 	client := spotify.New(httpClient)
-
 
 	options := spotify.Fields("description,uri,external_urls,snapshot_id,name")
 
@@ -298,6 +299,8 @@ func FetchPlaylistTracksAndInfo(id string, red *redis.Client) (*blueprint.Playli
 				Preview:  track.Track.PreviewURL,
 				Album:    track.Track.Album.Name,
 				ID:       track.Track.ID.String(),
+				// ! hotpath
+				Cover: track.Track.Album.Images[0].URL,
 			}
 			tracks = append(tracks, trackCopy)
 			// cache the track
@@ -321,6 +324,7 @@ func FetchPlaylistTracksAndInfo(id string, red *redis.Client) (*blueprint.Playli
 			Tracks: tracks,
 			Title:  info.Name,
 			Length: util.GetFormattedDuration(playlistLength),
+			Owner:  info.Owner.DisplayName,
 		}
 
 		// update the snapshotID in the cache
@@ -368,8 +372,8 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]
 			// log info about empty track
 			log.Printf("\n[services][spotify][base][FetchPlaylistSearchResult][warn] - Could not find track for %s\n", t.Title)
 			omittedTracks = append(omittedTracks, blueprint.OmittedTracks{
-				Title: t.Title,
-				URL:   t.URL,
+				Title:   t.Title,
+				URL:     t.URL,
 				Artiste: t.Artiste,
 			})
 			continue
@@ -391,7 +395,7 @@ func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Cli
 			Artiste: track.Artistes[0],
 			Title:   track.Title,
 			ID:      track.ID,
-			URL: track.URL,
+			URL:     track.URL,
 		})
 	}
 	track, omittedTracks := FetchTracks(trackSearch, red)

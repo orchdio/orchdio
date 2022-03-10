@@ -162,8 +162,6 @@ func main() {
 	baseRouter.Get("/me", userController.FetchProfile)
 	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
 
-
-
 	// WEBSOCKET EVENT HANDLERS
 	ikisocket.On(ikisocket.EventConnect, func(payload *ikisocket.EventPayload) {
 		log.Printf("\n[main][SocketEvent][EventConnect] - A new client connected\n")
@@ -174,7 +172,11 @@ func main() {
 		log.Printf("\nClient has disconnected")
 	})
 
-	ikisocket.On(ikisocket.EventMessage, universal.TrackConversion)
+	// track conversion
+	ikisocket.On(ikisocket.EventMessage, func(payload *ikisocket.EventPayload) {
+		universal.TrackConversion(payload, redisClient)
+	})
+	// playlist conversion
 	ikisocket.On(ikisocket.EventMessage, func(payload *ikisocket.EventPayload) {
 		universal.PlaylistConversion(payload, redisClient)
 	})

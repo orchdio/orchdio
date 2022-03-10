@@ -76,6 +76,7 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 			Length:  deezerPlaylist.Length,
 			Title:   deezerPlaylist.Title,
 			Preview: "",
+			Owner:   deezerPlaylist.Owner,
 		}
 
 		convertedPlaylist.Tracks.Deezer = &deezerPlaylist.Tracks
@@ -86,7 +87,7 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 			  "spotify": [{ Title: '', URL: ''}, { Title: '', URL: ''}],
 			  "deezer": [{ Title: '', URL: ''}, { Title: '', URL: ''}]
 			}
-		 */
+		*/
 		omitted = append(omitted, map[string][]blueprint.OmittedTracks{"spotify": *omittedTracks})
 		convertedPlaylist.OmittedTracks = omitted
 
@@ -105,6 +106,7 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 			Title:   spotifyPlaylist.Title,
 			Preview: "",
 			Length:  spotifyPlaylist.Length,
+			Owner:   spotifyPlaylist.Owner,
 		}
 
 		convertedPlaylist.Tracks.Deezer = deezerTracks
