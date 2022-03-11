@@ -96,9 +96,9 @@ func SignJwt(claims *blueprint.ZooveUserToken) ([]byte, error) {
 		Platform:   claims.Platform,
 		Role:       claims.Role,
 		Email:      claims.Email,
-		StandardClaims: jwt.StandardClaims{
-			ExpiresAt: time.Now().Add(time.Hour * 12).Unix(),
-			IssuedAt:  time.Now().Unix(),
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 12)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	})
 
@@ -178,7 +178,7 @@ func HashIdentifier(id string) string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
-func GetWSMessagePayload(payload []byte, ws *ikisocket.Websocket) *blueprint.Message{
+func GetWSMessagePayload(payload []byte, ws *ikisocket.Websocket) *blueprint.Message {
 	var message blueprint.Message
 	err := json.Unmarshal(payload, &message)
 	if err != nil {
@@ -189,8 +189,19 @@ func GetWSMessagePayload(payload []byte, ws *ikisocket.Websocket) *blueprint.Mes
 	if message.EventName == "heartbeat" {
 		log.Printf("\n[main][SocketEvent][heartbeat] - Client sending headbeat\n")
 		log.Printf("%v\n", time.Now().String())
-		ws.Emit([]byte(`{"message":"heartbeat", payload: "` + time.Now().String() + `"}`))
+		ws.Emit([]byte(`{"message":"heartbeat", "payload": "` + time.Now().String() + `"}`))
 		return nil
 	}
 	return &message
+}
+
+func SerializeWebsocketErrorMessage(message *blueprint.WebsocketErrorMessage) []byte {
+	payload, err := json.Marshal(message)
+	if err != nil {
+		log.Printf("\n[main][SocketEvent][EventMessage] - error serializing message %v\n", err)
+		// Todo: look for other places we're returning just a string instead of sending the standard WebSocketErrorMessage
+		// this should not be a problem, because we're just serializing the error message. If it fails, we're in trouble.
+		return []byte(blueprint.EEDESERIALIZE)
+	}
+	return payload
 }

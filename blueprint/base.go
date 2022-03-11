@@ -17,6 +17,7 @@ var (
 	EHOSTUNSUPPORTED = errors.New("EHOSTUNSUPPORTED")
 	ENORESULT        = errors.New("ENORESULT")
 	ENOTIMPLEMENTED  = errors.New("NOT_IMPLEMENTED")
+	EGENERAL         = errors.New("EGENERAL")
 )
 
 var (
@@ -46,7 +47,7 @@ type ControllerResult struct {
 }
 
 type ZooveUserToken struct {
-	jwt.StandardClaims
+	jwt.RegisteredClaims
 	Platform   string `json:"platform"`
 	PlatformID string `json:"platform_id"`
 	Email      string `json:"email"`
@@ -97,7 +98,7 @@ type PlatformSearchTrack struct {
 	Artiste string `json:"artiste"`
 	Title   string `json:"title"`
 	ID      string `json:"id"`
-	URL string `json:"url"`
+	URL     string `json:"url"`
 }
 
 // Conversion represents the final response for a typical track conversion
@@ -117,22 +118,31 @@ type PlaylistConversion struct {
 		Deezer  *[]TrackSearchResult `json:"deezer"`
 		Spotify *[]TrackSearchResult `json:"spotify"`
 	} `json:"tracks"`
-	Length  string `json:"length"`
-	Title   string `json:"title"`
-	Preview string `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
+	Length        string                       `json:"length"`
+	Title         string                       `json:"title"`
+	Preview       string                       `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
 	OmittedTracks []map[string][]OmittedTracks `json:"omitted_tracks"`
 }
 
 // Message represents a message sent from the client to the server over websocket
 type Message struct {
-	Link       string   `json:"link"`
+	Link string `json:"link"`
+	// TODO: investigate if i could just use interface{} here.
 	Attributes struct{} `json:"attributes"`
-	EventName string `json:"event_name"`
+	EventName  string   `json:"event_name"`
 }
 
 // OmittedTracks represents tracks that could not be processed in a playlist, for whatever reason
 type OmittedTracks struct {
-	Title string `json:"title"`
-	URL string `json:"url"`
+	Title   string `json:"title"`
+	URL     string `json:"url"`
 	Artiste string `json:"artiste"`
+}
+
+// WebsocketErrorMessage represents the error message sent from the server to the client over websocket
+type WebsocketErrorMessage struct {
+	Message   string      `json:"message"`
+	Error     string      `json:"error"`
+	EventName string      `json:"event_name"`
+	Payload   interface{} `json:"payload,omitempty"`
 }

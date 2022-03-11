@@ -6,3 +6,4 @@ go
 # ignore IDE/editor thingsgit
 .idea
 TODO.md
+cmd

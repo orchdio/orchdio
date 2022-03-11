@@ -86,7 +86,7 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 			  "spotify": [{ Title: '', URL: ''}, { Title: '', URL: ''}],
 			  "deezer": [{ Title: '', URL: ''}, { Title: '', URL: ''}]
 			}
-		 */
+		*/
 		omitted = append(omitted, map[string][]blueprint.OmittedTracks{"spotify": *omittedTracks})
 		convertedPlaylist.OmittedTracks = omitted
 
@@ -95,8 +95,11 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 		entityID := info.EntityID
 
 		spotifyPlaylist, _, err := spotify.FetchPlaylistTracksAndInfo(entityID, red)
+
+		// for whatever reason, the spotify API does not return the playlist. Probably because it is private
 		if err != nil && err != spotify2.ErrNoMorePages {
 			log.Printf("\n[controllers][platforms][base] Error fetching playlist tracks and info from spotify: %v\n", err)
+			return nil, err
 		}
 
 		deezerTracks := deezer.FetchPlaylistSearchResult(spotifyPlaylist, red)

@@ -62,10 +62,28 @@ func PlaylistConversion(payload *ikisocket.EventPayload, red *redis.Client) {
 	if strings.Contains(linkInfo.Entity, "playlist") {
 		playlist, err := ConvertPlaylist(linkInfo, red)
 		if err != nil {
-			log.Printf("\n[main][SocketEvent][EventMessage][error] - could not extract playlist")
-			payload.Kws.Emit([]byte(blueprint.EEPLAYLISTCONVERSION))
+			log.Printf("\n[main][SocketEvent][EventMessage][error] %v - could not extract playlist", err.Error())
+			// feels hacky, but it should work. Not sure how the error looks (is it "Not found." or "Not Found" or "Not Found")
+			if strings.Contains(strings.ToLower(err.Error()), "not found") {
+				log.Printf("\n[main][SocketEvent][EventMessage][error] %v - Playlist not found. It might be private.")
+				errorResponse := util.SerializeWebsocketErrorMessage(&blueprint.WebsocketErrorMessage{
+					Message:   "Playlist not found",
+					Error:     blueprint.ENORESULT.Error(),
+					EventName: "error",
+				})
+				payload.Kws.Emit(errorResponse)
+				return
+			}
+
+			errorResponse := util.SerializeWebsocketErrorMessage(&blueprint.WebsocketErrorMessage{
+				Message:   "Could not convert playlist",
+				EventName: "error",
+				Error:     blueprint.EGENERAL.Error(),
+			})
+			payload.Kws.Emit(errorResponse)
 			return
 		}
+
 		playlistBytes, mErr := json.Marshal(playlist)
 		if mErr != nil {
 			log.Printf("\n[main][SocketEvent][EventMessage][error] - could not extract playlist")
