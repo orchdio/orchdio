@@ -195,7 +195,7 @@ func GetWSMessagePayload(payload []byte, ws *ikisocket.Websocket) *blueprint.Mes
 	return &message
 }
 
-func SerializeWebsocketErrorMessage(message *blueprint.WebsocketErrorMessage) []byte {
+func SerializeWebsocketMessage(message interface{}) []byte {
 	payload, err := json.Marshal(message)
 	if err != nil {
 		log.Printf("\n[main][SocketEvent][EventMessage] - error serializing message %v\n", err)

@@ -74,6 +74,7 @@ type TrackSearchResult struct {
 	Preview  string   `json:"preview"`
 	Album    string   `json:"album,omitempty"`
 	ID       string   `json:"id"`
+	Cover    string   `json:"cover"`
 }
 
 type Pagination struct {
@@ -85,11 +86,13 @@ type Pagination struct {
 
 // PlaylistSearchResult represents a single playlist result for a platform.
 type PlaylistSearchResult struct {
-	URL     string              `json:"url"`
-	Tracks  []TrackSearchResult `json:"tracks"`
-	Length  string              `json:"length,omitempty"`
 	Title   string              `json:"title"`
+	Tracks  []TrackSearchResult `json:"tracks"`
+	URL     string              `json:"url"`
+	Length  string              `json:"length,omitempty"`
 	Preview string              `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
+	Owner   string              `json:"owner"`
+	Cover   string              `json:"cover"`
 }
 
 // PlatformSearchTrack represents the key-value parameter passed
@@ -118,11 +121,24 @@ type PlaylistConversion struct {
 		Deezer  *[]TrackSearchResult `json:"deezer"`
 		Spotify *[]TrackSearchResult `json:"spotify"`
 	} `json:"tracks"`
-	Length        string                       `json:"length"`
-	Title         string                       `json:"title"`
-	Preview       string                       `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
-	OmittedTracks []map[string][]OmittedTracks `json:"omitted_tracks"`
+	Length        string          `json:"length"`
+	Title         string          `json:"title"`
+	Preview       string          `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
+	OmittedTracks []OmittedTracks `json:"omitted_tracks"`
+	Owner         string          `json:"owner"`
+	Cover         string          `json:"cover"`
 }
+
+//type PlaylistPayload struct {
+//	Length        int64               `json:"length"`
+//	Name          string              `json:"name"`
+//	Preview       string              `json:"preview,omitempty"`
+//	OmittedTracks []TrackSearchResult `json:"omitted_tracks"`
+//	Platforms     struct {
+//		Deezer  *[]TrackSearchResult `json:"deezer"`
+//		Spotify *[]TrackSearchResult `json:"spotify"`
+//	}
+//}
 
 // Message represents a message sent from the client to the server over websocket
 type Message struct {
@@ -145,4 +161,11 @@ type WebsocketErrorMessage struct {
 	Error     string      `json:"error"`
 	EventName string      `json:"event_name"`
 	Payload   interface{} `json:"payload,omitempty"`
+}
+
+// WebsocketMessage represents the message sent from the server to the client over websocket
+type WebsocketMessage struct {
+	Message string      `json:"message"`
+	Event   string      `json:"event_name"`
+	Payload interface{} `json:"payload,omitempty"`
 }

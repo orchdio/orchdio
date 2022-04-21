@@ -38,6 +38,7 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 		log.Printf("\n[services][s: Track][error] Error escaping URL: %v\n", escapeErr)
 		return nil, escapeErr
 	}
+	// TODO: before parsing, check if it looks like a valid track/playlist url on supported services
 	parsedURL, parseErr := url.Parse(song)
 	if parseErr != nil {
 		log.Printf("\n[services][s: Track][error] Error parsing escaped URL: %v\n", parseErr)

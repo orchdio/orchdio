@@ -69,17 +69,17 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) *blueprint
 			}
 		}
 
-
 		fetchedDeezerTrack := blueprint.TrackSearchResult{
 			Explicit: util.DeezerIsExplicit(dzSingleTrack.ExplicitContentLyrics),
 			Duration: util.GetFormattedDuration(dzSingleTrack.Duration),
 			URL:      dzSingleTrack.Link,
 			Artistes: dzTrackContributors,
-			Released: dzSingleTrack.ReleaseDate,
+			Released: dzSingleTrack.Album.ReleaseDate,
 			Title:    dzSingleTrack.Title,
 			Preview:  dzSingleTrack.Preview,
 			Album:    dzSingleTrack.Album.Title,
 			ID:       strconv.Itoa(dzSingleTrack.ID),
+			Cover:    dzSingleTrack.Album.Cover,
 		}
 
 		// cache the track
@@ -128,7 +128,6 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 		return deserializedTrack, nil
 	}
 
-
 	trackTitle := ExtractTitle(title)
 	_link := fmt.Sprintf("track:\"%s\" artist:\"%s\" album:\"%s\"", strings.Trim(trackTitle, " "), strings.Trim(artiste, " "), strings.Trim(album, " "))
 	payload := url.QueryEscape(_link)
@@ -160,6 +159,7 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 			Preview:  track.Preview,
 			Album:    track.Album.Title,
 			ID:       strconv.Itoa(track.ID),
+			Cover:    track.Album.Cover,
 		}
 
 		// cache the track
@@ -235,7 +235,7 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) *[]b
 // FetchPlaylistTracklist fetches tracks under a playlist on deezer with pagination
 func FetchPlaylistTracklist(id string, red *redis.Client) (*blueprint.PlaylistSearchResult, error) {
 
-	infoLink := "https://api.deezer.com/playlist/"+id+"?limit=1"
+	infoLink := "https://api.deezer.com/playlist/" + id + "?limit=1"
 	info, err := axios.Get(infoLink)
 	if err != nil {
 		log.Printf("\n[services][deezer][FetchPlaylistTracklist] error - Could not fetch playlist info: %v\n", err)
@@ -248,8 +248,7 @@ func FetchPlaylistTracklist(id string, red *redis.Client) (*blueprint.PlaylistSe
 		return nil, err
 	}
 
-
-	tracks, err := axios.Get("https://api.deezer.com/playlist/"+id)
+	tracks, err := axios.Get("https://api.deezer.com/playlist/" + id)
 
 	cachedSnapshot, cacheErr := red.Get(context.Background(), "deezer:playlist:"+id).Result()
 
@@ -284,9 +283,10 @@ func FetchPlaylistTracklist(id string, red *redis.Client) (*blueprint.PlaylistSe
 				Preview:  track.Preview,
 				Album:    track.Album.Title,
 				ID:       strconv.Itoa(track.Id),
+				Cover:    track.Album.Cover,
 			}
 			// cache the track
-			cacheKey := "deezer-"+result.ID
+			cacheKey := "deezer-" + result.ID
 			serialized, err := json.Marshal(result)
 			if err != nil {
 				log.Printf("\n[services][deezer][FetchPlaylistTracklist] error - Could not serialize track: %v\n", err)
@@ -307,6 +307,8 @@ func FetchPlaylistTracklist(id string, red *redis.Client) (*blueprint.PlaylistSe
 			Tracks: out,
 			Title:  trackList.Title,
 			Length: util.GetFormattedDuration(trackList.Duration),
+			Owner:  trackList.Creator.Name,
+			Cover:  trackList.Picture,
 		}
 
 		// update the snapshotID cache
@@ -316,7 +318,6 @@ func FetchPlaylistTracklist(id string, red *redis.Client) (*blueprint.PlaylistSe
 		} else {
 			log.Printf("\n[services][deezer][FetchPlaylistTracklist] cached snapshot id: %v\n", trackList.Checksum)
 		}
-
 
 		// cache the whole playlist
 		serializedPlaylist, err := json.Marshal(reply)
@@ -351,7 +352,7 @@ func FetchPlaylistTracklist(id string, red *redis.Client) (*blueprint.PlaylistSe
 
 // FetchPlaylistSearchResult fetches the tracks for a playlist based on the search result
 // from another platform (spotify for now).
-func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Client) *[]blueprint.TrackSearchResult {
+func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Client) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
 	var trackSearch []blueprint.PlatformSearchTrack
 	var omittedTracks []blueprint.OmittedTracks
 	for _, track := range p.Tracks {
@@ -364,6 +365,7 @@ func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Cli
 				Title: track.Title,
 				URL:   track.URL,
 			})
+			continue
 		}
 		trackSearch = append(trackSearch, blueprint.PlatformSearchTrack{
 			Artiste: track.Artistes[0],
@@ -373,5 +375,5 @@ func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Cli
 	}
 
 	deezerTracks := FetchTracks(trackSearch, red)
-	return deezerTracks
+	return deezerTracks, &omittedTracks
 }

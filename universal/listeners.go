@@ -63,10 +63,10 @@ func PlaylistConversion(payload *ikisocket.EventPayload, red *redis.Client) {
 		playlist, err := ConvertPlaylist(linkInfo, red)
 		if err != nil {
 			log.Printf("\n[main][SocketEvent][EventMessage][error] %v - could not extract playlist", err.Error())
-			// feels hacky, but it should work. Not sure how the error looks (is it "Not found." or "Not Found" or "Not Found")
+			// note: feels hacky, but it should work. Not sure how the error looks (is it "Not found." or "Not Found" or "Not Found")
 			if strings.Contains(strings.ToLower(err.Error()), "not found") {
 				log.Printf("\n[main][SocketEvent][EventMessage][error] %v - Playlist not found. It might be private.")
-				errorResponse := util.SerializeWebsocketErrorMessage(&blueprint.WebsocketErrorMessage{
+				errorResponse := util.SerializeWebsocketMessage(&blueprint.WebsocketErrorMessage{
 					Message:   "Playlist not found",
 					Error:     blueprint.ENORESULT.Error(),
 					EventName: "error",
@@ -75,7 +75,7 @@ func PlaylistConversion(payload *ikisocket.EventPayload, red *redis.Client) {
 				return
 			}
 
-			errorResponse := util.SerializeWebsocketErrorMessage(&blueprint.WebsocketErrorMessage{
+			errorResponse := util.SerializeWebsocketMessage(&blueprint.WebsocketErrorMessage{
 				Message:   "Could not convert playlist",
 				EventName: "error",
 				Error:     blueprint.EGENERAL.Error(),
@@ -84,13 +84,11 @@ func PlaylistConversion(payload *ikisocket.EventPayload, red *redis.Client) {
 			return
 		}
 
-		playlistBytes, mErr := json.Marshal(playlist)
-		if mErr != nil {
-			log.Printf("\n[main][SocketEvent][EventMessage][error] - could not extract playlist")
-			payload.Kws.Emit([]byte(blueprint.EEPLAYLISTCONVERSION))
-			return
-		}
-		payload.Kws.Emit(playlistBytes)
+		serializeResponse := util.SerializeWebsocketMessage(&blueprint.WebsocketMessage{
+			Event:   "playlist",
+			Payload: playlist,
+		})
+		payload.Kws.Emit(serializeResponse)
 		return
 	}
 }

@@ -70,12 +70,14 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 		//}
 
 		spotifyTracks, omittedTracks := spotify.FetchPlaylistSearchResult(deezerPlaylist, red)
-		omitted := make([]map[string][]blueprint.OmittedTracks, 0)
 		convertedPlaylist := blueprint.PlaylistConversion{
-			URL:     deezerPlaylist.URL,
-			Length:  deezerPlaylist.Length,
-			Title:   deezerPlaylist.Title,
-			Preview: "",
+			URL:           deezerPlaylist.URL,
+			Length:        deezerPlaylist.Length,
+			Title:         deezerPlaylist.Title,
+			Preview:       "",
+			Owner:         deezerPlaylist.Owner,
+			Cover:         deezerPlaylist.Cover,
+			OmittedTracks: *omittedTracks,
 		}
 
 		convertedPlaylist.Tracks.Deezer = &deezerPlaylist.Tracks
@@ -87,8 +89,6 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 			  "deezer": [{ Title: '', URL: ''}, { Title: '', URL: ''}]
 			}
 		*/
-		omitted = append(omitted, map[string][]blueprint.OmittedTracks{"spotify": *omittedTracks})
-		convertedPlaylist.OmittedTracks = omitted
 
 		return &convertedPlaylist, nil
 	case spotify.IDENTIFIER:
@@ -102,12 +102,15 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 			return nil, err
 		}
 
-		deezerTracks := deezer.FetchPlaylistSearchResult(spotifyPlaylist, red)
+		deezerTracks, omittedTracks := deezer.FetchPlaylistSearchResult(spotifyPlaylist, red)
 		convertedPlaylist := blueprint.PlaylistConversion{
-			URL:     spotifyPlaylist.URL,
-			Title:   spotifyPlaylist.Title,
-			Preview: "",
-			Length:  spotifyPlaylist.Length,
+			URL:           spotifyPlaylist.URL,
+			Title:         spotifyPlaylist.Title,
+			Preview:       "",
+			Length:        spotifyPlaylist.Length,
+			Owner:         spotifyPlaylist.Owner,
+			OmittedTracks: *omittedTracks,
+			Cover:         spotifyPlaylist.Cover,
 		}
 
 		convertedPlaylist.Tracks.Deezer = deezerTracks
