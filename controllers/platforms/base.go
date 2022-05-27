@@ -42,6 +42,9 @@ func (p *Platforms) ConvertTrack(ctx *fiber.Ctx) error {
 	}
 
 	log.Printf("\n[controllers][platforms][ConvertTrack] - converted %v track with URL %v\n", linkInfo.Entity, linkInfo.TargetLink)
+
+	// we want to cache the track inside redis here.
+
 	return util.SuccessResponse(ctx, http.StatusOK, conversion)
 }
 

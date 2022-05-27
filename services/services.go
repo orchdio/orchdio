@@ -10,6 +10,7 @@ import (
 	"zoove/blueprint"
 	"zoove/services/deezer"
 	"zoove/services/spotify"
+	"zoove/services/tidal"
 	"zoove/util"
 )
 
@@ -116,8 +117,31 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 
 		return linkInfo, nil
 
+	case blueprint.TidalHost:
+		playlistIndex = strings.Index(song, "playlist")
+		if playlistIndex != -1 {
+			entityID = song[playlistIndex+9:]
+			entity = "playlists"
+		} else {
+			trackIndex = strings.Index(song, "track")
+			entityID = song[trackIndex+6:]
+			entity = "tracks"
+		}
+
+		linkInfo := blueprint.LinkInfo{
+			Platform:   tidal.IDENTIFIER,
+			TargetLink: fmt.Sprintf("%s/%s/%s", os.Getenv("TIDAL_API_BASE"), entity, entityID),
+			Entity:     "tracks",
+			EntityID:   entityID,
+		}
+
+		return &linkInfo, nil
 		// to handle pagination.
 		// TODO: create magic string for these
+
+		//----------------------------------------------------------------------------------
+		// :⚠️ DOES NOT SEEM TO BE IN USE. KEEP AROUND FOR FUTURE REFERENCE.
+		// PAGINATION SUPPORT.
 
 	case "api.spotify.com":
 		log.Printf("\n[servies][s: Track] Link info looks like a playlist pagination.")

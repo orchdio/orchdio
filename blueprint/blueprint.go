@@ -9,6 +9,7 @@ var DeezerHost = []string{"deezer.page.link", "www.deezer.com"}
 
 const (
 	SpotifyHost = "open.spotify.com"
+	TidalHost   = "tidal.com"
 )
 
 // perhaps have a different Error type declarations somewhere. For now, be here
@@ -110,6 +111,7 @@ type Conversion struct {
 	Platforms struct {
 		Deezer  *TrackSearchResult `json:"deezer"`
 		Spotify *TrackSearchResult `json:"spotify"`
+		Tidal   *TrackSearchResult `json:"tidal"`
 	} `json:"platforms"`
 }
 

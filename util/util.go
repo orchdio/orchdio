@@ -205,3 +205,10 @@ func SerializeWebsocketMessage(message interface{}) []byte {
 	}
 	return payload
 }
+
+//BuildTidalAssetURL returns a string of the tidal asset id
+func BuildTidalAssetURL(id string) string {
+	// for now, we get the asset type of image, at 320/320 by default
+	id = strings.Replace(id, "-", "/", -1)
+	return fmt.Sprintf("https://resources.tidal.com/images/%s/320x320.jpg", id)
+}
