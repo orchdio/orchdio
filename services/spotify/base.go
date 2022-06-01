@@ -176,7 +176,6 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 func SearchTrackWithID(id string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
 	// the cacheKey. scheme is "spotify:track_id"
 	cacheKey := "spotify:" + id
-	log.Println("\nhere is the cache key: ", cacheKey)
 	cachedTrack, err := red.Get(context.Background(), cacheKey).Result()
 
 	if err != nil && err != redis.Nil {

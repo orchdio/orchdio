@@ -46,7 +46,6 @@ func SearchWithID(id string, red *redis.Client) (*blueprint.TrackSearchResult, e
 			log.Printf("\n[services][tidal][SearchWithID] - error - %v\n", err)
 			return nil, err
 		}
-		log.Printf("\n[services][tidal][SearchWithID] - tracks - %v\n", tracks)
 
 		var artistes []string
 		for _, artist := range tracks.Artists {
@@ -464,52 +463,6 @@ func FetchTrackWithResult(p *blueprint.PlaylistSearchResult, red *redis.Client) 
 	return tracks, omittedTracks
 }
 
-//func FetchPlaylistTracksInfo(id string, red *redis.Client) (*blueprint.PlaylistSearchResult, error) {
-//	identifierHash := util.HashIdentifier(fmt.Sprintf("tidal-%s", id))
-//
-//	if red.Exists(context.Background(), identifierHash).Val() == 1 {
-//		var result *blueprint.PlaylistSearchResult
-//		cachedResult, err := red.Get(context.Background(), identifierHash).Result()
-//		if err != nil {
-//			log.Printf("\n[services][tidal][FetchPlaylistTracksInfo] - ⚠️ error fetching key from redis. - %v\n", err)
-//			return nil, err
-//		}
-//		err = json.Unmarshal([]byte(cachedResult), &result)
-//		if err != nil {
-//			log.Printf("\n[services][tidal][FetchPlaylistTracksInfo] - ⚠️ error deserializimng cache result - %v\n", err)
-//			return nil, err
-//		}
-//		return result, nil
-//	}
-//
-//	accessToken, err := FetchNewAuthToken()
-//	if err != nil {
-//		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - error - %v\n", err)
-//		return nil, err
-//	}
-//
-//	instance := axios.NewInstance(&axios.InstanceConfig{
-//		BaseURL:     ApiUrl,
-//		EnableTrace: true,
-//		Headers: map[string][]string{
-//			"Accept":        {"application/json"},
-//			"Authorization": {"Bearer " + accessToken},
-//		},
-//	})
-//
-//	response, err := instance.Get(fmt.Sprintf("/playlists/%s/tracks?countryCode=US", id))
-//	if err != nil {
-//		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - error - %v\n", err)
-//		return nil, err
-//	}
-//	playlistResult := &PlaylistResult{}
-//	err = json.Unmarshal(response.Data, playlistResult)
-//	if err != nil {
-//		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not deserialize playlist result from tidal - %v\n", err)
-//		return nil, err
-//	}
-//
-//}
 func FetchNewAuthToken() (string, error) {
 	// now refresh token and get a new access token
 	refreshInstance := axios.NewInstance(&axios.InstanceConfig{
