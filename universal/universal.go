@@ -123,16 +123,23 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 		}
 
 		// then for each of these playlists, search for the tracks on spotify
-		spotifyTracks, omittedTracks := spotify.FetchPlaylistSearchResult(deezerPlaylist, red)
+		var omittedTracks []blueprint.OmittedTracks
+		spotifyTracks, omittedSpotifyTracks := spotify.FetchPlaylistSearchResult(deezerPlaylist, red)
+		tidalTracks, omittedTidalTracks := tidal.FetchTrackWithResult(deezerPlaylist, red)
+
+		omittedTracks = append(omittedTracks, *omittedSpotifyTracks...)
+		omittedTracks = append(omittedTracks, *omittedTidalTracks...)
+
 		conversion.URL = deezerPlaylist.URL
 		conversion.Title = deezerPlaylist.Title
 		conversion.Length = deezerPlaylist.Length
 		conversion.Owner = deezerPlaylist.Owner
-		conversion.OmittedTracks = *omittedTracks
+		conversion.OmittedTracks = omittedTracks
 		conversion.Cover = deezerPlaylist.Cover
 
 		conversion.Tracks.Deezer = &deezerPlaylist.Tracks
 		conversion.Tracks.Spotify = spotifyTracks
+		conversion.Tracks.Tidal = tidalTracks
 		/**
 		what the structure looks like
 			{
@@ -160,20 +167,28 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 			return nil, err
 		}
 
-		deezerTracks, omittedTracks := deezer.FetchPlaylistSearchResult(spotifyPlaylist, red)
+		var omittedTracks []blueprint.OmittedTracks
+		deezerTracks, omittedDeezerTracks := deezer.FetchPlaylistSearchResult(spotifyPlaylist, red)
+		tidalTracks, omittedTidalTracks := tidal.FetchTrackWithResult(spotifyPlaylist, red)
+
+		omittedTracks = append(omittedTracks, *omittedDeezerTracks...)
+		omittedTracks = append(omittedTracks, *omittedTidalTracks...)
+
 		conversion.URL = spotifyPlaylist.URL
 		conversion.Title = spotifyPlaylist.Title
 		conversion.Length = spotifyPlaylist.Length
 		conversion.Owner = spotifyPlaylist.Owner
-		conversion.OmittedTracks = *omittedTracks
+		conversion.OmittedTracks = omittedTracks
 		conversion.Cover = spotifyPlaylist.Cover
 
-		conversion.Tracks.Deezer = deezerTracks
 		err = CachePlaylistTracksWithID(deezerTracks, red)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][base] warning - could not cache tracks: %v %v\n\n", err, deezerTracks)
 		}
 		conversion.Tracks.Spotify = &spotifyPlaylist.Tracks
+		conversion.Tracks.Deezer = deezerTracks
+		conversion.Tracks.Tidal = tidalTracks
+
 		err = CachePlaylistTracksWithID(&spotifyPlaylist.Tracks, red)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][base] warning - could not cache tracks: %v %v\n\n", err, spotifyPlaylist.Tracks)

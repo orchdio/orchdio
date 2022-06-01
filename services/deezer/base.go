@@ -366,16 +366,16 @@ func FetchPlaylistTracklist(id string, red *redis.Client) (*blueprint.PlaylistSe
 }
 
 // FetchPlaylistSearchResult fetches the tracks for a playlist based on the search result
-// from another platform (spotify for now).
+// from another platform (deezer for now).
 func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Client) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
 	var trackSearch []blueprint.PlatformSearchTrack
 	var omittedTracks []blueprint.OmittedTracks
 	for _, track := range p.Tracks {
-		// for some reason, there is no spotify url which means could not fetch track, we
+		// for some reason, there is no url which means could not fetch track, we
 		// want to add to the list of "not found" tracks.
 		if track.URL == "" {
 			// log info about empty track
-			log.Printf("\n[services][spotify][base][FetchPlaylistSearchResult] - Could not find track for %s\n", track.Title)
+			log.Printf("\n[services][deezer][base][FetchPlaylistSearchResult] - Could not find track for %s\n", track.Title)
 			omittedTracks = append(omittedTracks, blueprint.OmittedTracks{
 				Title: track.Title,
 				URL:   track.URL,

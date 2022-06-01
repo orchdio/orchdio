@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"sync"
 	"zoove/blueprint"
 	"zoove/util"
 )
@@ -151,43 +152,51 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	// here is where we select the best match. Right now, we just select the first result on the list
 	// but ideally if for example we want to filter more "generic" tracks, we can do that here
 	// etc.
+	log.Printf("\n[controllers][platforms][tidal][SearchTrackWithTitle] - result - %v\n", result.Tracks)
+	if len(result.Tracks.Items) > 0 {
+		var track = result.Tracks.Items[0]
+		var artistes []string
+		for _, artist := range track.Artists {
+			artistes = append(artistes, artist.Name)
+		}
 
-	var track = result.Tracks.Items[0]
-	var artistes []string
-	for _, artist := range track.Artists {
-		artistes = append(artistes, artist.Name)
-	}
+		tidalTrack := &blueprint.TrackSearchResult{
+			URL:      track.Url,
+			Artistes: artistes,
+			Released: track.StreamStartDate,
+			Duration: util.GetFormattedDuration(track.Duration),
+			Explicit: track.Explicit,
+			Title:    track.Title,
+			Preview:  "",
+			Album:    track.Album.Title,
+			ID:       strconv.Itoa(track.Id),
+			Cover:    util.BuildTidalAssetURL(track.Album.Cover),
+		}
 
-	tidalTrack := &blueprint.TrackSearchResult{
-		URL:      track.Url,
-		Artistes: artistes,
-		Released: track.StreamStartDate,
-		Duration: util.GetFormattedDuration(track.Duration),
-		Explicit: track.Explicit,
-		Title:    track.Title,
-		Preview:  "",
-		Album:    track.Album.Title,
-		ID:       strconv.Itoa(track.Id),
-		Cover:    util.BuildTidalAssetURL(track.Album.Cover),
+		serialized, err := json.Marshal(tidalTrack)
+		if err != nil {
+			log.Printf("\n[services][tidal][SearchTrackWithTitle] - could not serialize track result - %v\n", err)
+			return nil, err
+		}
+		newHashIdentifier := util.HashIdentifier(fmt.Sprintf("tidal-%s-%s", tidalTrack.Artistes[0], tidalTrack.Title))
+		// FIXME: perhaps look into how to batch insert into redis
+		err = red.Set(context.Background(), newHashIdentifier, serialized, 0).Err()
+		err = red.Set(context.Background(), identifierHash, serialized, 0).Err()
+		if err != nil {
+			log.Printf("\n[services][tidal][SearchTrackWithTitle] - could not cache track - %v\n", err)
+		} else {
+			log.Printf("\n[services][tidal][SearchTrackWithTitle] - track cached successfully\n")
+		}
+		return tidalTrack, nil
 	}
-
-	serialized, err := json.Marshal(tidalTrack)
-	if err != nil {
-		log.Printf("\n[services][tidal][SearchTrackWithTitle] - could not serialize track result - %v\n", err)
-		return nil, err
-	}
-	newHashIdentifier := util.HashIdentifier(fmt.Sprintf("tidal-%s-%s", tidalTrack.Artistes[0], tidalTrack.Title))
-	// FIXME: perhaps look into how to batch insert into redis
-	err = red.Set(context.Background(), newHashIdentifier, serialized, 0).Err()
-	err = red.Set(context.Background(), identifierHash, serialized, 0).Err()
-	if err != nil {
-		log.Printf("\n[services][tidal][SearchTrackWithTitle] - could not cache track - %v\n", err)
-	} else {
-		log.Printf("\n[services][tidal][SearchTrackWithTitle] - track cached successfully\n")
-	}
-	return tidalTrack, nil
+	// returning an empty track result because
+	// somewhere down the line, we want to check if the track was omitted
+	// and we need an empty URL for that. passing nil wont let us
+	// do this
+	return nil, nil
 }
 
+// FetchSingleTrackByTitle fetches a track from tidal by title and artist
 func FetchSingleTrackByTitle(title, artiste string) (*SearchResult, error) {
 	accessToken, err := FetchNewAuthToken()
 	if err != nil {
@@ -402,6 +411,62 @@ func FetchPlaylist(id string, red *redis.Client) (*blueprint.PlaylistSearchResul
 		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - cached playlist info into redis - %v\n", info.Title)
 	}
 	return result, nil
+}
+
+func FetchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup, red *redis.Client) {
+	track, err := SearchTrackWithTitle(title, artiste, red)
+	log.Printf("\n[controllers][platforms][tidal][FetchTrackWithTitleChan] - Single track fetched by title - %v\n", track)
+	if err != nil {
+		log.Printf("\n[controllers][platforms][tidal][FetchTrackWithTitleChan] - error fetching title - %v\n", err)
+		c <- nil
+		wg.Add(1)
+		defer wg.Done()
+		return
+	}
+	c <- track
+	wg.Add(1)
+	defer wg.Done()
+	return
+}
+
+func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
+	var c = make(chan *blueprint.TrackSearchResult, len(tracks))
+	var fetchedTracks []blueprint.TrackSearchResult
+	var omittedTracks []blueprint.OmittedTracks
+	var wg sync.WaitGroup
+	for _, track := range tracks {
+		go FetchTrackWithTitleChan(track.Title, track.Artiste, c, &wg, red)
+		outputTrack := <-c
+		if outputTrack == nil || outputTrack.URL == "" {
+			log.Printf("\n[controllers][platforms][tidal][FetchTracks] - could not fetch track - %v\n", outputTrack)
+			omittedTracks = append(omittedTracks, blueprint.OmittedTracks{
+				Title:   track.Title,
+				Artiste: track.Artiste,
+				URL:     track.URL,
+			})
+			continue
+		}
+		fetchedTracks = append(fetchedTracks, *outputTrack)
+	}
+
+	wg.Wait()
+	return &fetchedTracks, &omittedTracks
+}
+
+// FetchTrackWithResult fetches the tracks for a playlist from tidal, using the result from search
+// from another platform. This function builds the `PlatformSearchTrack` used to fetch the track
+func FetchTrackWithResult(p *blueprint.PlaylistSearchResult, red *redis.Client) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
+	var trackSearch []blueprint.PlatformSearchTrack
+	for _, track := range p.Tracks {
+		trackSearch = append(trackSearch, blueprint.PlatformSearchTrack{
+			Title:   track.Title,
+			Artiste: track.Artistes[0],
+			URL:     track.URL,
+		})
+		continue
+	}
+	tracks, omittedTracks := FetchTracks(trackSearch, red)
+	return tracks, omittedTracks
 }
 
 //func FetchPlaylistTracksInfo(id string, red *redis.Client) (*blueprint.PlaylistSearchResult, error) {
