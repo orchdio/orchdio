@@ -189,10 +189,6 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 		}
 		return tidalTrack, nil
 	}
-	// returning an empty track result because
-	// somewhere down the line, we want to check if the track was omitted
-	// and we need an empty URL for that. passing nil wont let us
-	// do this
 	return nil, nil
 }
 
@@ -438,7 +434,6 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]
 		go FetchTrackWithTitleChan(track.Title, track.Artiste, c, &wg, red)
 		outputTrack := <-c
 		if outputTrack == nil || outputTrack.URL == "" {
-			log.Printf("\n[controllers][platforms][tidal][FetchTracks] - could not fetch track - %v\n", outputTrack)
 			omittedTracks = append(omittedTracks, blueprint.OmittedTracks{
 				Title:   track.Title,
 				Artiste: track.Artiste,
