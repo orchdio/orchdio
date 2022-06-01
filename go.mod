@@ -15,6 +15,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/joho/godotenv v1.4.0
 	github.com/lib/pq v1.10.4
+	github.com/nleeper/goment v1.4.4 // indirect
 	github.com/savsgio/gotils v0.0.0-20220201163454-d252f0a44d5b // indirect
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/tklauser/go-sysconf v0.3.10 // indirect

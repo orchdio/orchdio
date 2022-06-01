@@ -114,8 +114,10 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) *blueprint
 // want to search on. That is, the other platforms that the user is trying to convert to.
 func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
 	identifierHash := util.HashIdentifier(fmt.Sprintf("deezer-%s-%s", artiste, title))
+
 	// get the cached track
 	if red.Exists(context.Background(), identifierHash).Val() == 1 {
+		log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] Track has been cached\n")
 		// deserialize the result from redis
 		cachedTrack, err := red.Get(context.Background(), identifierHash).Result()
 		if err != nil {
@@ -130,6 +132,8 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 		}
 		return deserializedTrack, nil
 	}
+
+	log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] Track has not been cached\n")
 
 	trackTitle := ExtractTitle(title)
 	_link := fmt.Sprintf("track:\"%s\" artist:\"%s\" album:\"%s\"", strings.Trim(trackTitle, " "), strings.Trim(artiste, " "), strings.Trim(album, " "))
@@ -173,6 +177,7 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 			log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error serializing track - %v\n", err)
 		}
 		newHashIdentifier := util.HashIdentifier("deezer-" + out.Artistes[0] + "-" + out.Title)
+
 		// cache tracks
 		err = red.Set(context.Background(), "deezer:"+out.ID, string(serializedTrack), 0).Err()
 		// cache track but with identifier. this is for when we're searching by title again and its the same

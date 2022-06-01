@@ -59,6 +59,7 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 	)
 	playlistIndex := strings.Index(song, "playlist")
 	trackIndex := strings.Index(song, "track")
+	log.Printf("\n[services][s: Track][info] Host: %v\n", host)
 	switch host {
 	case util.Find(blueprint.DeezerHost, host):
 		// first, check the type of URL it is. for now, only track.
@@ -131,7 +132,7 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 		linkInfo := blueprint.LinkInfo{
 			Platform:   tidal.IDENTIFIER,
 			TargetLink: fmt.Sprintf("%s/%s/%s", os.Getenv("TIDAL_API_BASE"), entity, entityID),
-			Entity:     "tracks",
+			Entity:     entity,
 			EntityID:   entityID,
 		}
 

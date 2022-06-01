@@ -122,6 +122,7 @@ type PlaylistConversion struct {
 	Tracks struct {
 		Deezer  *[]TrackSearchResult `json:"deezer"`
 		Spotify *[]TrackSearchResult `json:"spotify"`
+		Tidal   *[]TrackSearchResult `json:"tidal"`
 	} `json:"tracks"`
 	Length        string          `json:"length"`
 	Title         string          `json:"title"`

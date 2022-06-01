@@ -89,6 +89,7 @@ func SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSear
 // want to search on. That is, the other platforms that the user is trying to convert to.
 func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
 	identifierHash := util.HashIdentifier(fmt.Sprintf("spotify-%s-%s", artiste, title))
+
 	// if we have searched for this specific track before, we return the cached result
 	// And how do we know if we have cached it before?
 	// We store the hash of the title and artiste of the track in redis. we check if the hash of the
@@ -110,7 +111,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	}
 	spotifySearch := FetchSingleTrack(title, artiste)
 	if spotifySearch == nil {
-		log.Printf("\n[controllers][platforms][deezer][ConvertTrack] error - error fetching single track on spotify\n")
+		log.Printf("\n[controllers][platforms][spotify][ConvertTrack] error - error fetching single track on spotify\n")
 		// panic for now.. at least until i figure out how to handle it if it can fail at all or not or can fail but be taken care of
 		return nil, blueprint.ENORESULT
 	}
@@ -157,10 +158,11 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	// we're saving the hash with a scheme of: "spotify-artist-title". e.g "spotify-taylor-swift-blink-182"
 	// so we save the fetched track under that hash and assumed that was what the user searched for and wanted.
 	err = red.Set(context.Background(), newIdentifier, serializedTrack, 0).Err()
+
 	if err != nil {
 		log.Printf("\n[services][spotify][base][SearchTrackWithTitle] error - could not cache track: %v\n", err)
 	} else {
-		log.Printf("\n[services][spotify][base][SearchTrackWithTitle] success - cached track: %v\n", fetchedSpotifyTrack)
+		log.Printf("\n[services][spotify][base][SearchTrackWithTitle] success - cached track: %v\n", fetchedSpotifyTrack.Title)
 	}
 
 	return &fetchedSpotifyTrack, nil

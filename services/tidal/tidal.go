@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/go-redis/redis/v8"
+	"github.com/nleeper/goment"
 	"github.com/vicanso/go-axios"
 	"log"
 	"net/url"
@@ -219,6 +220,236 @@ func FetchSingleTrackByTitle(title, artiste string) (*SearchResult, error) {
 	return searchResult, nil
 }
 
+// FetchPlaylistInfo returns a playlist info
+func FetchPlaylistInfo(id string) (*PlaylistInfo, error) {
+	accessToken, err := FetchNewAuthToken()
+	if err != nil {
+		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistInfo] - could not fetch auth token - %v\n", err)
+		return nil, err
+	}
+	instance := axios.NewInstance(&axios.InstanceConfig{
+		BaseURL:     ApiUrl,
+		EnableTrace: true,
+		Headers: map[string][]string{
+			"Accept":        {"application/json"},
+			"Authorization": {"Bearer " + accessToken},
+		},
+	},
+	)
+	response, err := instance.Get(fmt.Sprintf("/playlists/%s?countryCode=US", id))
+	if err != nil {
+		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistInfo] - could not fetch the playlist info for %s - %v\n", err, id)
+		return nil, err
+	}
+	playlistInfo := &PlaylistInfo{}
+	err = json.Unmarshal(response.Data, playlistInfo)
+	if err != nil {
+		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistInfo] - could not deserialize playlist info - %v\n", err)
+		return nil, err
+	}
+	return playlistInfo, nil
+}
+
+// FetchPlaylist fetches a specific playlist based on the id
+func FetchPlaylist(id string, red *redis.Client) (*blueprint.PlaylistSearchResult, error) {
+	identifierHash := util.HashIdentifier(fmt.Sprintf("tidal-%s", id))
+	infoHash := fmt.Sprintf("tidal-%s-info", identifierHash)
+
+	info, err := FetchPlaylistInfo(id)
+	if err != nil {
+		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not fetch playlist info - %v\n", err)
+		return nil, err
+	}
+
+	// if we have already cached the playlist info.
+	// The assumption here is that the playlist info and the playlist tracks are always both cached every time
+	if red.Exists(context.Background(), identifierHash).Val() == 1 {
+		// fetch the playlist info from redis
+		cachedInfo, err := red.Get(context.Background(), infoHash).Result()
+		if err != nil && err != redis.Nil {
+			log.Printf("\n[controllers][platforms][tidal][FetchPlaylist] - could not fetch cached playlist info - %v\n", err)
+			return nil, err
+		}
+
+		// deserialize the playlist info
+		var Info PlaylistInfo
+		_ = json.Unmarshal([]byte(cachedInfo), &Info)
+
+		// format the timestamps on both of the playlist info
+		lastUpdated, err := goment.New(Info.LastUpdated)
+		infoLastUpdated, err := goment.New(info.LastUpdated)
+
+		if err != nil {
+			log.Printf("\n[controllers][platforms][tidal][FetchPlaylist] - could not parse last updated time - %v\n", err)
+			return nil, err
+		}
+
+		var result *blueprint.PlaylistSearchResult
+
+		// fetch the cached tracks from redis.
+		cachedResult, err := red.Get(context.Background(), identifierHash).Result()
+		if err != nil {
+			log.Printf("\n[services][tidal][FetchPlaylistTracksInfo] - ⚠️ error fetching key from redis. - %v\n", err)
+			return nil, err
+		}
+		// deserialize the tracks we fetched from redis
+		err = json.Unmarshal([]byte(cachedResult), &result)
+		if err != nil {
+			log.Printf("\n[services][tidal][FetchPlaylistTracksInfo] - ⚠️ error deserializimng cache result - %v\n", err)
+			return nil, err
+		}
+		// if the timestamps are the same, that means that our playlist has not
+		// changed, so we can return the cached result. in the other case, we
+		// are doing nothing so we go on to fetch the tracks from the tidal api.
+		if lastUpdated.IsSame(infoLastUpdated) {
+			return result, nil
+		}
+	}
+
+	accessToken, err := FetchNewAuthToken()
+	if err != nil {
+		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - error - %v\n", err)
+		return nil, err
+	}
+
+	if err != nil {
+		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not deserialize playlist result from tidal - %v\n", err)
+		return nil, err
+	}
+
+	playlistResult := &PlaylistTracks{}
+
+	var pages = info.NumberOfTracks / 100
+	if pages == 0 {
+		pages = 1
+	}
+
+	log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - pages - %v\n", pages)
+
+	instance := axios.NewInstance(&axios.InstanceConfig{
+		BaseURL:     ApiUrl,
+		EnableTrace: true,
+		Headers: map[string][]string{
+			"Accept":        {"application/json"},
+			"Authorization": {"Bearer " + accessToken},
+		},
+	})
+	// implement pagination fetching
+	for page := 0; page <= pages; page++ {
+		response, err := instance.Get(fmt.Sprintf("/playlists/%s/items?offset=%d&limit=100&countryCode=US", id, page*100))
+		if err != nil {
+			log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - error - %v\n", err)
+			return nil, err
+		}
+		res := &PlaylistTracks{}
+		err = json.Unmarshal(response.Data, res)
+		if err != nil {
+			log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not deserialize playlist result from tidal - %v\n", err)
+			return nil, err
+		}
+		if len(res.Items) == 0 {
+			break
+		}
+		playlistResult.Items = append(playlistResult.Items, res.Items...)
+	}
+
+	var tracks []blueprint.TrackSearchResult
+	for _, item := range playlistResult.Items {
+		var artistes []string
+		for _, artist := range item.Item.Artists {
+			artistes = append(artistes, artist.Name)
+		}
+		t := blueprint.TrackSearchResult{
+			URL:      item.Item.Url,
+			Artistes: artistes,
+			Released: item.Item.StreamStartDate,
+			Duration: util.GetFormattedDuration(item.Item.Duration),
+			Explicit: item.Item.Explicit,
+			Title:    item.Item.Title,
+			Preview:  "",
+			Album:    item.Item.Album.Title,
+			ID:       strconv.Itoa(item.Item.Id),
+			Cover:    util.BuildTidalAssetURL(item.Item.Album.Cover),
+		}
+
+		tracks = append(tracks, t)
+	}
+	// then convert to a blueprint.PlaylistSearchResult
+	result := &blueprint.PlaylistSearchResult{
+		Title:   info.Title,
+		Tracks:  tracks, // TODO: playlistResult.Items,
+		URL:     info.Url,
+		Length:  util.GetFormattedDuration(info.Duration),
+		Preview: "",
+		Owner:   "", // info.Creator.Id // TODO: implement fetching the user with this ID and populating it here,
+		Cover:   util.BuildTidalAssetURL(info.Image),
+	}
+	log.Printf("Response: %v\n", result)
+	ser, _ := json.Marshal(result)
+	// cache the result
+	err = red.Set(context.Background(), identifierHash, ser, 0).Err()
+	if err != nil {
+		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not cache playlist for %s into redis - %v\n", err, info.Title)
+	} else {
+		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - cached playlist into redis - %v\n", info.Title)
+	}
+
+	infoSer, _ := json.Marshal(info)
+	err = red.Set(context.Background(), infoHash, infoSer, 0).Err()
+	if err != nil {
+		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not cache playlist info for %s info into redis - %v\n", err, info.Title)
+	} else {
+		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - cached playlist info into redis - %v\n", info.Title)
+	}
+	return result, nil
+}
+
+//func FetchPlaylistTracksInfo(id string, red *redis.Client) (*blueprint.PlaylistSearchResult, error) {
+//	identifierHash := util.HashIdentifier(fmt.Sprintf("tidal-%s", id))
+//
+//	if red.Exists(context.Background(), identifierHash).Val() == 1 {
+//		var result *blueprint.PlaylistSearchResult
+//		cachedResult, err := red.Get(context.Background(), identifierHash).Result()
+//		if err != nil {
+//			log.Printf("\n[services][tidal][FetchPlaylistTracksInfo] - ⚠️ error fetching key from redis. - %v\n", err)
+//			return nil, err
+//		}
+//		err = json.Unmarshal([]byte(cachedResult), &result)
+//		if err != nil {
+//			log.Printf("\n[services][tidal][FetchPlaylistTracksInfo] - ⚠️ error deserializimng cache result - %v\n", err)
+//			return nil, err
+//		}
+//		return result, nil
+//	}
+//
+//	accessToken, err := FetchNewAuthToken()
+//	if err != nil {
+//		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - error - %v\n", err)
+//		return nil, err
+//	}
+//
+//	instance := axios.NewInstance(&axios.InstanceConfig{
+//		BaseURL:     ApiUrl,
+//		EnableTrace: true,
+//		Headers: map[string][]string{
+//			"Accept":        {"application/json"},
+//			"Authorization": {"Bearer " + accessToken},
+//		},
+//	})
+//
+//	response, err := instance.Get(fmt.Sprintf("/playlists/%s/tracks?countryCode=US", id))
+//	if err != nil {
+//		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - error - %v\n", err)
+//		return nil, err
+//	}
+//	playlistResult := &PlaylistResult{}
+//	err = json.Unmarshal(response.Data, playlistResult)
+//	if err != nil {
+//		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not deserialize playlist result from tidal - %v\n", err)
+//		return nil, err
+//	}
+//
+//}
 func FetchNewAuthToken() (string, error) {
 	// now refresh token and get a new access token
 	refreshInstance := axios.NewInstance(&axios.InstanceConfig{
@@ -238,6 +469,8 @@ func FetchNewAuthToken() (string, error) {
 
 	inst, err := refreshInstance.Post("/token", params)
 
+	// WARNING: it seems that the axios package does not handle the error when the response is not 200
+	// so we need to check the status code ourselves inside the body of the response
 	if err != nil {
 		log.Printf("\n[services][tidal][auth][CompleteUserAuth] Error refreshing token - %v\n", err)
 		return "", err

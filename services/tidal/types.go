@@ -349,3 +349,84 @@ type SearchResult struct {
 		Type string `json:"type"`
 	} `json:"topHits"`
 }
+
+type PlaylistInfo struct {
+	Uuid           string `json:"uuid"`
+	Title          string `json:"title"`
+	NumberOfTracks int    `json:"numberOfTracks"`
+	NumberOfVideos int    `json:"numberOfVideos"`
+	Creator        struct {
+		Id int `json:"id"`
+	} `json:"creator"`
+	Description     string        `json:"description"`
+	Duration        int           `json:"duration"`
+	LastUpdated     string        `json:"lastUpdated"`
+	Created         string        `json:"created"`
+	Type            string        `json:"type"`
+	PublicPlaylist  bool          `json:"publicPlaylist"`
+	Url             string        `json:"url"`
+	Image           string        `json:"image"`
+	Popularity      int           `json:"popularity"`
+	SquareImage     string        `json:"squareImage"`
+	PromotedArtists []interface{} `json:"promotedArtists"`
+	LastItemAddedAt string        `json:"lastItemAddedAt"`
+}
+
+type PlaylistTracks struct {
+	Limit              int `json:"limit"`
+	Offset             int `json:"offset"`
+	TotalNumberOfItems int `json:"totalNumberOfItems"`
+	Items              []struct {
+		Item struct {
+			Id                   int         `json:"id"`
+			Title                string      `json:"title"`
+			Duration             int         `json:"duration"`
+			ReplayGain           float64     `json:"replayGain"`
+			Peak                 float64     `json:"peak"`
+			AllowStreaming       bool        `json:"allowStreaming"`
+			StreamReady          bool        `json:"streamReady"`
+			StreamStartDate      string      `json:"streamStartDate"`
+			PremiumStreamingOnly bool        `json:"premiumStreamingOnly"`
+			TrackNumber          int         `json:"trackNumber"`
+			VolumeNumber         int         `json:"volumeNumber"`
+			Version              *string     `json:"version"`
+			Popularity           int         `json:"popularity"`
+			Copyright            string      `json:"copyright"`
+			Description          interface{} `json:"description"`
+			Url                  string      `json:"url"`
+			Isrc                 string      `json:"isrc"`
+			Editable             bool        `json:"editable"`
+			Explicit             bool        `json:"explicit"`
+			AudioQuality         string      `json:"audioQuality"`
+			AudioModes           []string    `json:"audioModes"`
+			Artist               struct {
+				Id      int         `json:"id"`
+				Name    string      `json:"name"`
+				Type    string      `json:"type"`
+				Picture interface{} `json:"picture"`
+			} `json:"artist"`
+			Artists []struct {
+				Id      int     `json:"id"`
+				Name    string  `json:"name"`
+				Type    string  `json:"type"`
+				Picture *string `json:"picture"`
+			} `json:"artists"`
+			Album struct {
+				Id           int         `json:"id"`
+				Title        string      `json:"title"`
+				Cover        string      `json:"cover"`
+				VibrantColor string      `json:"vibrantColor"`
+				VideoCover   interface{} `json:"videoCover"`
+				ReleaseDate  string      `json:"releaseDate"`
+			} `json:"album"`
+			Mixes struct {
+				TRACKMIX string `json:"TRACK_MIX,omitempty"`
+			} `json:"mixes"`
+			DateAdded string `json:"dateAdded"`
+			Index     int    `json:"index"`
+			ItemUuid  string `json:"itemUuid"`
+		} `json:"item"`
+		Type string      `json:"type"`
+		Cut  interface{} `json:"cut"`
+	} `json:"items"`
+}
