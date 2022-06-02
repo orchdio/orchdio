@@ -151,7 +151,6 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	// here is where we select the best match. Right now, we just select the first result on the list
 	// but ideally if for example we want to filter more "generic" tracks, we can do that here
 	// etc.
-	log.Printf("\n[controllers][platforms][tidal][SearchTrackWithTitle] - result - %v\n", result.Tracks)
 	if len(result.Tracks.Items) > 0 {
 		var track = result.Tracks.Items[0]
 		var artistes []string
@@ -184,7 +183,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 		if err != nil {
 			log.Printf("\n[services][tidal][SearchTrackWithTitle] - could not cache track - %v\n", err)
 		} else {
-			log.Printf("\n[services][tidal][SearchTrackWithTitle] - track cached successfully\n")
+			log.Printf("\n[services][tidal][SearchTrackWithTitle] - track %s cached successfully\n", tidalTrack.Title)
 		}
 		return tidalTrack, nil
 	}
@@ -411,7 +410,6 @@ func FetchPlaylist(id string, red *redis.Client) (*blueprint.PlaylistSearchResul
 // FetchTrackWithTitleChan fetches a track with the title from tidal but using a channel
 func FetchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup, red *redis.Client) {
 	track, err := SearchTrackWithTitle(title, artiste, red)
-	log.Printf("\n[controllers][platforms][tidal][FetchTrackWithTitleChan] - Single track fetched by title - %v\n", track)
 	if err != nil {
 		log.Printf("\n[controllers][platforms][tidal][FetchTrackWithTitleChan] - error fetching title - %v\n", err)
 		c <- nil
@@ -431,9 +429,10 @@ func FetchTrackWithResult(p *blueprint.PlaylistSearchResult, red *redis.Client) 
 	var trackSearch []blueprint.PlatformSearchTrack
 	for _, track := range p.Tracks {
 		trackSearch = append(trackSearch, blueprint.PlatformSearchTrack{
-			Title:   track.Title,
-			Artiste: track.Artistes[0],
-			URL:     track.URL,
+			Title:    track.Title,
+			Artistes: track.Artistes,
+			URL:      track.URL,
+			ID:       track.ID,
 		})
 		continue
 	}
@@ -448,13 +447,14 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]
 	var omittedTracks []blueprint.OmittedTracks
 	var wg sync.WaitGroup
 	for _, track := range tracks {
-		go FetchTrackWithTitleChan(track.Title, track.Artiste, c, &wg, red)
+		// WARNING: unhandled slice index
+		go FetchTrackWithTitleChan(track.Title, track.Artistes[0], c, &wg, red)
 		outputTrack := <-c
 		if outputTrack == nil || outputTrack.URL == "" {
 			omittedTracks = append(omittedTracks, blueprint.OmittedTracks{
-				Title:   track.Title,
-				Artiste: track.Artiste,
-				URL:     track.URL,
+				Title:    track.Title,
+				Artistes: track.Artistes,
+				URL:      track.URL,
 			})
 			continue
 		}
