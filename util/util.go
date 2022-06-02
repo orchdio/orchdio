@@ -128,13 +128,21 @@ func DeezerIsExplicit(v int) bool {
 	return out
 }
 
-// GetFormattedDuration returns the duration of a track in format ``hh:mm``
+// GetFormattedDuration returns the duration of a track in format ``dd:hh:mm`` if it reaches days
+// or ``hh:mm:ss`` if it's less than a day
 func GetFormattedDuration(v int) string {
+	day := 0
 	hour := v / 60
 	sec := v % 60
 	seconds := strconv.Itoa(sec)
 	if len(seconds) == 1 {
 		seconds = "0" + seconds
+	}
+
+	if hour >= 24 {
+		day = hour / 60
+		hour = hour % 60
+		return fmt.Sprintf("%d:%d:%s", day, hour, seconds)
 	}
 	return fmt.Sprintf("%d:%s", hour, seconds)
 }

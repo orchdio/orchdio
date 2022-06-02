@@ -114,6 +114,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 
 func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.PlaylistConversion, error) {
 	var conversion blueprint.PlaylistConversion
+	omittedTracks := map[string][]blueprint.OmittedTracks{}
 	switch info.Platform {
 	case deezer.IDENTIFIER:
 		var deezerPlaylist, tracklistErr = deezer.FetchPlaylistTracklist(info.EntityID, red)
@@ -123,12 +124,12 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 		}
 
 		// then for each of these playlists, search for the tracks on spotify
-		var omittedTracks []blueprint.OmittedTracks
+
 		spotifyTracks, omittedSpotifyTracks := spotify.FetchPlaylistSearchResult(deezerPlaylist, red)
 		tidalTracks, omittedTidalTracks := tidal.FetchTrackWithResult(deezerPlaylist, red)
 
-		omittedTracks = append(omittedTracks, *omittedSpotifyTracks...)
-		omittedTracks = append(omittedTracks, *omittedTidalTracks...)
+		omittedTracks["spotify"] = *omittedSpotifyTracks
+		omittedTracks["tidal"] = *omittedTidalTracks
 
 		conversion.URL = deezerPlaylist.URL
 		conversion.Title = deezerPlaylist.Title
@@ -167,12 +168,11 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 			return nil, err
 		}
 
-		var omittedTracks []blueprint.OmittedTracks
 		deezerTracks, omittedDeezerTracks := deezer.FetchPlaylistSearchResult(spotifyPlaylist, red)
 		tidalTracks, omittedTidalTracks := tidal.FetchTrackWithResult(spotifyPlaylist, red)
 
-		omittedTracks = append(omittedTracks, *omittedDeezerTracks...)
-		omittedTracks = append(omittedTracks, *omittedTidalTracks...)
+		omittedTracks["deezer"] = *omittedDeezerTracks
+		omittedTracks["tidal"] = *omittedTidalTracks
 
 		conversion.URL = spotifyPlaylist.URL
 		conversion.Title = spotifyPlaylist.Title
@@ -201,10 +201,12 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 			log.Printf("\n[controllers][platforms][tidal][ConvertPlaylist] error - could not fetch playlist with ID from tidal: %v\n", err)
 			return nil, err
 		}
-		var omittedTracks []blueprint.OmittedTracks
 		deezerTracks, omittedDeezerTracks := deezer.FetchPlaylistSearchResult(tidalPlaylist, red)
 		spotifyTracks, omittedSpotifyTracks := spotify.FetchPlaylistSearchResult(tidalPlaylist, red)
-		omittedTracks = append(*omittedDeezerTracks, *omittedSpotifyTracks...)
+
+		omittedTracks["deezer"] = *omittedDeezerTracks
+		omittedTracks["spotify"] = *omittedSpotifyTracks
+
 		conversion.URL = tidalPlaylist.URL
 		conversion.Title = tidalPlaylist.Title
 		conversion.Length = tidalPlaylist.Length

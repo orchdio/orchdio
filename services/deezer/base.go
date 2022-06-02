@@ -212,12 +212,14 @@ func SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSear
 
 // FetchTracks searches for the tracks (titles) passed and returns the tracks on deezer.
 // This function is used to search for tracks in the playlists the user is trying to convert, on deezer
-func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) *[]blueprint.TrackSearchResult {
+func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
 	var fetchedTracks []blueprint.TrackSearchResult
+	var omittedTracks []blueprint.OmittedTracks
 	var ch = make(chan *blueprint.TrackSearchResult, len(tracks))
 	var wg sync.WaitGroup
 	for _, track := range tracks {
-		identifierHash := util.HashIdentifier("deezer-" + track.Artiste + "-" + track.Title)
+		// WARNING: unhandled slice index
+		identifierHash := util.HashIdentifier("deezer-" + track.Artistes[0] + "-" + track.Title)
 		// check if its been cached. if so, we grab and return it. if not, we let it search
 		if red.Exists(context.Background(), identifierHash).Val() == 1 {
 			// deserialize the result from redis
@@ -226,23 +228,28 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) *[]b
 			err := json.Unmarshal([]byte(cachedResult), &deserializedTrack)
 			if err != nil {
 				log.Printf("\n[platforms][base][FetchTracks] Could not deserialize cache result. err %v\n", err)
-				return nil
+				return nil, nil
 			}
 			fetchedTracks = append(fetchedTracks, *deserializedTrack)
 			continue
 		}
-
-		go SearchTrackWithTitleChan(track.Title, track.Artiste, ch, &wg, red)
+		// WARNING: unhandled slice index
+		go SearchTrackWithTitleChan(track.Title, track.Artistes[0], ch, &wg, red)
 
 		outputTracks := <-ch
 		if outputTracks == nil {
 			log.Printf("\n[services][deezer][FetchTracks] error - no track found for title: %v\n", track.Title)
+			omittedTracks = append(omittedTracks, blueprint.OmittedTracks{
+				Title:    track.Title,
+				URL:      track.URL,
+				Artistes: track.Artistes,
+			})
 			continue
 		}
 		fetchedTracks = append(fetchedTracks, *outputTracks)
 	}
 	wg.Wait()
-	return &fetchedTracks
+	return &fetchedTracks, &omittedTracks
 }
 
 // FetchPlaylistTracklist fetches tracks under a playlist on deezer with pagination
@@ -369,26 +376,14 @@ func FetchPlaylistTracklist(id string, red *redis.Client) (*blueprint.PlaylistSe
 // from another platform (deezer for now).
 func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Client) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
 	var trackSearch []blueprint.PlatformSearchTrack
-	var omittedTracks []blueprint.OmittedTracks
 	for _, track := range p.Tracks {
-		// for some reason, there is no url which means could not fetch track, we
-		// want to add to the list of "not found" tracks.
-		if track.URL == "" {
-			// log info about empty track
-			log.Printf("\n[services][deezer][base][FetchPlaylistSearchResult] - Could not find track for %s\n", track.Title)
-			omittedTracks = append(omittedTracks, blueprint.OmittedTracks{
-				Title: track.Title,
-				URL:   track.URL,
-			})
-			continue
-		}
 		trackSearch = append(trackSearch, blueprint.PlatformSearchTrack{
-			Artiste: track.Artistes[0],
-			Title:   track.Title,
-			ID:      track.ID,
+			Artistes: track.Artistes,
+			Title:    track.Title,
+			ID:       track.ID,
+			URL:      track.URL,
 		})
 	}
-
-	deezerTracks := FetchTracks(trackSearch, red)
-	return deezerTracks, &omittedTracks
+	deezerTracks, omittedTracks := FetchTracks(trackSearch, red)
+	return deezerTracks, omittedTracks
 }

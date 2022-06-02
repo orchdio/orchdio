@@ -99,10 +99,10 @@ type PlaylistSearchResult struct {
 // PlatformSearchTrack represents the key-value parameter passed
 // when trying to convert playlist from spotify
 type PlatformSearchTrack struct {
-	Artiste string `json:"artiste"`
-	Title   string `json:"title"`
-	ID      string `json:"id"`
-	URL     string `json:"url"`
+	Artistes []string `json:"artiste"`
+	Title    string   `json:"title"`
+	ID       string   `json:"id"`
+	URL      string   `json:"url"`
 }
 
 // Conversion represents the final response for a typical track conversion
@@ -124,12 +124,12 @@ type PlaylistConversion struct {
 		Spotify *[]TrackSearchResult `json:"spotify"`
 		Tidal   *[]TrackSearchResult `json:"tidal"`
 	} `json:"tracks"`
-	Length        string          `json:"length"`
-	Title         string          `json:"title"`
-	Preview       string          `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
-	OmittedTracks []OmittedTracks `json:"omitted_tracks"`
-	Owner         string          `json:"owner"`
-	Cover         string          `json:"cover"`
+	Length        string                     `json:"length"`
+	Title         string                     `json:"title"`
+	Preview       string                     `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
+	OmittedTracks map[string][]OmittedTracks `json:"omitted_tracks"`
+	Owner         string                     `json:"owner"`
+	Cover         string                     `json:"cover"`
 }
 
 //type PlaylistPayload struct {
@@ -153,9 +153,9 @@ type Message struct {
 
 // OmittedTracks represents tracks that could not be processed in a playlist, for whatever reason
 type OmittedTracks struct {
-	Title   string `json:"title"`
-	URL     string `json:"url"`
-	Artiste string `json:"artiste"`
+	Title    string   `json:"title"`
+	URL      string   `json:"url"`
+	Artistes []string `json:"artistes"`
 }
 
 // WebsocketErrorMessage represents the error message sent from the server to the client over websocket

@@ -400,7 +400,8 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]
 	var omittedTracks []blueprint.OmittedTracks
 	var wg sync.WaitGroup
 	for _, t := range tracks {
-		go SearchTrackWithTitleChan(t.Title, t.Artiste, ch, &wg, red)
+		// WARNING: unhandled slice index
+		go SearchTrackWithTitleChan(t.Title, t.Artistes[0], ch, &wg, red)
 		outputTrack := <-ch
 		// for some reason, there is no spotify url which means could not fetch track, we
 		// want to add to the list of "not found" tracks.
@@ -408,9 +409,10 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]
 			// log info about empty track
 			log.Printf("\n[services][spotify][base][FetchPlaylistSearchResult][warn] - Could not find track for %s\n", t.Title)
 			omittedTracks = append(omittedTracks, blueprint.OmittedTracks{
-				Title:   t.Title,
-				URL:     t.URL,
-				Artiste: t.Artiste,
+				Title: t.Title,
+				URL:   t.URL,
+				// WARNING: unhandled slice index
+				Artistes: t.Artistes,
 			})
 			continue
 		}
@@ -428,10 +430,10 @@ func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Cli
 	var trackSearch []blueprint.PlatformSearchTrack
 	for _, track := range p.Tracks {
 		trackSearch = append(trackSearch, blueprint.PlatformSearchTrack{
-			Artiste: track.Artistes[0],
-			Title:   track.Title,
-			ID:      track.ID,
-			URL:     track.URL,
+			Artistes: track.Artistes,
+			Title:    track.Title,
+			ID:       track.ID,
+			URL:      track.URL,
 		})
 	}
 	track, omittedTracks := FetchTracks(trackSearch, red)
