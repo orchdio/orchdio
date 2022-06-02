@@ -5,10 +5,10 @@ import (
 	"github.com/antoniodipinto/ikisocket"
 	"github.com/go-redis/redis/v8"
 	"log"
+	"oratorio/blueprint"
+	"oratorio/services"
+	"oratorio/util"
 	"strings"
-	"zoove/blueprint"
-	"zoove/services"
-	"zoove/util"
 )
 
 // TrackConversion Listener listens for track conversion events and converts the track

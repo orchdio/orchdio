@@ -1,1 +1,1 @@
-web: ./cmd/oratorio --port %PORT%
+web: bin/oratorio --port %PORT%

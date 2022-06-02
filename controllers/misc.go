@@ -3,8 +3,8 @@ package controllers
 import (
 	"github.com/gofiber/fiber/v2"
 	"net/http"
-	"zoove/blueprint"
-	"zoove/util"
+	"oratorio/blueprint"
+	"oratorio/util"
 )
 
 // LinkInfo returns the information about link that the information has been extracted from in the middleware

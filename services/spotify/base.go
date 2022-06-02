@@ -10,10 +10,10 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 	"log"
+	"oratorio/blueprint"
+	"oratorio/util"
 	"os"
 	"sync"
-	"zoove/blueprint"
-	"zoove/util"
 )
 
 // createNewSpotifyUInstance creates a new spotify client to make API request that doesn't need user auth
@@ -318,6 +318,11 @@ func FetchPlaylistTracksAndInfo(id string, red *redis.Client) (*blueprint.Playli
 
 			playlistLength += track.Track.Duration / 1000
 
+			var cover string
+			if len(track.Track.Album.Images) > 0 {
+				cover = track.Track.Album.Images[0].URL
+			}
+
 			trackCopy := blueprint.TrackSearchResult{
 				URL:      track.Track.ExternalURLs["spotify"],
 				Artistes: artistes,
@@ -328,7 +333,7 @@ func FetchPlaylistTracksAndInfo(id string, red *redis.Client) (*blueprint.Playli
 				Preview:  track.Track.PreviewURL,
 				Album:    track.Track.Album.Name,
 				ID:       track.Track.ID.String(),
-				Cover:    track.Track.Album.Images[0].URL,
+				Cover:    cover,
 			}
 			tracks = append(tracks, trackCopy)
 			// cache the track. the scheme is: "spotify:track_id"
@@ -347,7 +352,7 @@ func FetchPlaylistTracksAndInfo(id string, red *redis.Client) (*blueprint.Playli
 
 		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - playlist trcaks length: %v\n", len(tracks))
 
-		//log.Printf("Here is the playlist image: %v\n", info.Images)
+		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - Owner info is: %v\n", info.Owner)
 
 		playlistResult := blueprint.PlaylistSearchResult{
 			URL:    info.ExternalURLs["spotify"],
