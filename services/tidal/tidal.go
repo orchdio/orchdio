@@ -9,11 +9,11 @@ import (
 	"github.com/vicanso/go-axios"
 	"log"
 	"net/url"
+	"oratorio/blueprint"
+	"oratorio/util"
 	"os"
 	"strconv"
 	"sync"
-	"zoove/blueprint"
-	"zoove/util"
 )
 
 const ApiUrl = "https://listen.tidal.com/v1"

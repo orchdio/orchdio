@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
-	"zoove/db/queries"
+	"oratorio/db/queries"
 )
 
 type NewDB struct {

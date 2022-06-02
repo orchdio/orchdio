@@ -18,13 +18,13 @@ import (
 	"github.com/shirou/gopsutil/mem"
 	"log"
 	"net/http"
+	"oratorio/blueprint"
+	"oratorio/controllers"
+	"oratorio/controllers/account"
+	"oratorio/controllers/platforms"
+	"oratorio/middleware"
+	"oratorio/universal"
 	"os"
-	"zoove/blueprint"
-	"zoove/controllers"
-	"zoove/controllers/account"
-	"zoove/controllers/platforms"
-	"zoove/middleware"
-	"zoove/universal"
 )
 
 func init() {

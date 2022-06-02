@@ -7,15 +7,15 @@ import (
 	"github.com/google/uuid"
 	"log"
 	"net/http"
+	"oratorio/blueprint"
+	"oratorio/db"
+	"oratorio/db/queries"
+	"oratorio/services/deezer"
+	"oratorio/services/spotify"
+	"oratorio/util"
 	"os"
 	"strconv"
 	"strings"
-	"zoove/blueprint"
-	"zoove/db"
-	"zoove/db/queries"
-	"zoove/services/deezer"
-	"zoove/services/spotify"
-	"zoove/util"
 )
 
 type UserController struct {

@@ -5,13 +5,13 @@ import (
 	"github.com/badoux/goscraper"
 	"log"
 	"net/url"
+	"oratorio/blueprint"
+	"oratorio/services/deezer"
+	"oratorio/services/spotify"
+	"oratorio/services/tidal"
+	"oratorio/util"
 	"os"
 	"strings"
-	"zoove/blueprint"
-	"zoove/services/deezer"
-	"zoove/services/spotify"
-	"zoove/services/tidal"
-	"zoove/util"
 )
 
 // ExtractLinkInfo extracts a URL from a URL.

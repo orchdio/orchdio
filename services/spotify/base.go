@@ -10,10 +10,10 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 	"log"
+	"oratorio/blueprint"
+	"oratorio/util"
 	"os"
 	"sync"
-	"zoove/blueprint"
-	"zoove/util"
 )
 
 // createNewSpotifyUInstance creates a new spotify client to make API request that doesn't need user auth
