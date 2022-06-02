@@ -1,1 +1,1 @@
-web: ./cmd/zoove --port %PORT%
+web: ./cmd/oratorio --port %PORT%
