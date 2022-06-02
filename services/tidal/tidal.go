@@ -27,6 +27,7 @@ type tidal struct {
 	red *redis.Client
 }
 
+// SearchWithID searches for a track on tidal using the tidal ID
 func SearchWithID(id string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
 	cacheKey := "tidal:" + id
 	log.Println("\n[services][tidal][SearchWithID] - cacheKey - ", cacheKey)
@@ -39,7 +40,6 @@ func SearchWithID(id string, red *redis.Client) (*blueprint.TrackSearchResult, e
 	if err != nil && err == redis.Nil {
 		log.Printf("\n[services][tidal][SearchWithID] - this track has not been cached before %v\n", err)
 
-		// TODO: implement redis caching
 		tracks, err := FetchSingleTrack(id)
 
 		if err != nil {
@@ -386,7 +386,7 @@ func FetchPlaylist(id string, red *redis.Client) (*blueprint.PlaylistSearchResul
 		Length:  util.GetFormattedDuration(info.Duration),
 		Preview: "",
 		Owner:   "", // info.Creator.Id // TODO: implement fetching the user with this ID and populating it here,
-		Cover:   util.BuildTidalAssetURL(info.Image),
+		Cover:   util.BuildTidalAssetURL(info.SquareImage),
 	}
 	log.Printf("Response: %v\n", result)
 	ser, _ := json.Marshal(result)
@@ -408,6 +408,7 @@ func FetchPlaylist(id string, red *redis.Client) (*blueprint.PlaylistSearchResul
 	return result, nil
 }
 
+// FetchTrackWithTitleChan fetches a track with the title from tidal but using a channel
 func FetchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup, red *redis.Client) {
 	track, err := SearchTrackWithTitle(title, artiste, red)
 	log.Printf("\n[controllers][platforms][tidal][FetchTrackWithTitleChan] - Single track fetched by title - %v\n", track)
@@ -424,6 +425,23 @@ func FetchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearc
 	return
 }
 
+// FetchTrackWithResult fetches the tracks for a playlist from tidal, using the result from search
+// from another platform. This function builds the `PlatformSearchTrack` used to fetch the track
+func FetchTrackWithResult(p *blueprint.PlaylistSearchResult, red *redis.Client) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
+	var trackSearch []blueprint.PlatformSearchTrack
+	for _, track := range p.Tracks {
+		trackSearch = append(trackSearch, blueprint.PlatformSearchTrack{
+			Title:   track.Title,
+			Artiste: track.Artistes[0],
+			URL:     track.URL,
+		})
+		continue
+	}
+	tracks, omittedTracks := FetchTracks(trackSearch, red)
+	return tracks, omittedTracks
+}
+
+// FetchTracks fetches all the tracks for a playlist from tidal, using the built `PlatformSearchTrack` type
 func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
 	var c = make(chan *blueprint.TrackSearchResult, len(tracks))
 	var fetchedTracks []blueprint.TrackSearchResult
@@ -445,22 +463,6 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]
 
 	wg.Wait()
 	return &fetchedTracks, &omittedTracks
-}
-
-// FetchTrackWithResult fetches the tracks for a playlist from tidal, using the result from search
-// from another platform. This function builds the `PlatformSearchTrack` used to fetch the track
-func FetchTrackWithResult(p *blueprint.PlaylistSearchResult, red *redis.Client) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
-	var trackSearch []blueprint.PlatformSearchTrack
-	for _, track := range p.Tracks {
-		trackSearch = append(trackSearch, blueprint.PlatformSearchTrack{
-			Title:   track.Title,
-			Artiste: track.Artistes[0],
-			URL:     track.URL,
-		})
-		continue
-	}
-	tracks, omittedTracks := FetchTracks(trackSearch, red)
-	return tracks, omittedTracks
 }
 
 func FetchNewAuthToken() (string, error) {
