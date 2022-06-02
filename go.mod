@@ -1,5 +1,5 @@
 // +heroku goVersion go1.15
-module zoove
+module oratorio
 
 go 1.16
 
