@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"github.com/antoniodipinto/ikisocket"
@@ -121,6 +122,11 @@ func main() {
 	}
 
 	redisClient := redis.NewClient(redisOpts)
+	if redisClient.Ping(context.Background()).Err() != nil {
+		log.Printf("\n[main] [error] - Could not connect to redis. Are you sure redis is configured correctly?")
+		panic("Could not connect to redis. Please check your redis configuration.")
+	}
+
 	platformsControllers := platforms.NewPlatform(redisClient)
 
 	/**
@@ -161,8 +167,6 @@ func main() {
 
 	baseRouter.Get("/me", userController.FetchProfile)
 	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
-
-
 
 	// WEBSOCKET EVENT HANDLERS
 	ikisocket.On(ikisocket.EventConnect, func(payload *ikisocket.EventPayload) {
