@@ -139,8 +139,6 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 		spSingleTrack = spotifySearch.Tracks.Tracks[0]
 	}
 
-	// log spotify response first
-	log.Printf("Spotify response is %v", spSingleTrack)
 	var cover string
 	// fetch the spotify image preview.
 	if len(spSingleTrack.Album.Images) > 0 {
