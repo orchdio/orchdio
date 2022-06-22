@@ -5,9 +5,9 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"log"
 	"net/http"
-	"oratorio/blueprint"
-	"oratorio/services"
-	"oratorio/util"
+	"orchdio/blueprint"
+	"orchdio/services"
+	"orchdio/util"
 )
 
 // VerifyToken verifies a token and set the context local called "claim" to a type of *blueprint.ZooveUserToken

@@ -1,5 +1,5 @@
 // +heroku goVersion go1.15
-module oratorio
+module orchdio
 
 go 1.16
 
