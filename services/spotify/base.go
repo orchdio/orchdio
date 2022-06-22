@@ -13,15 +13,27 @@ import (
 	"oratorio/blueprint"
 	"oratorio/util"
 	"os"
+	"strings"
 	"sync"
 )
 
 // createNewSpotifyUInstance creates a new spotify client to make API request that doesn't need user auth
+// NOT SURE WHAT I REALLY MEANT BY THIS BUT WHATEVER, KEEP AN EYE ON IT.
 func createNewSpotifyUInstance() *spotify.Client {
 	token := fetchNewAuthToken()
 	httpClient := spotifyauth.New().Client(context.Background(), token)
 	client := spotify.New(httpClient)
 	return client
+}
+
+// ExtractArtiste retrieves an artiste from a passed string containing something like
+// feat.
+func ExtractArtiste(artiste string) string {
+	featIndex := strings.Index(artiste, "feat")
+	if featIndex != -1 {
+		return strings.Trim(artiste[:featIndex], " ")
+	}
+	return artiste
 }
 
 // fetchNewAuthToken returns a fresh oauth2 token to be used for spotify api calls
@@ -88,7 +100,8 @@ func SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSear
 // This is typically expected to be used when the track we want to fetch is the one we just
 // want to search on. That is, the other platforms that the user is trying to convert to.
 func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
-	identifierHash := util.HashIdentifier(fmt.Sprintf("spotify-%s-%s", artiste, title))
+	strippedArtiste := ExtractArtiste(artiste)
+	identifierHash := util.HashIdentifier(fmt.Sprintf("spotify-%s-%s", strippedArtiste, title))
 
 	// if we have searched for this specific track before, we return the cached result
 	// And how do we know if we have cached it before?
@@ -109,8 +122,9 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 		}
 		return result, nil
 	}
-	spotifySearch := FetchSingleTrack(title, artiste)
-	if spotifySearch == nil {
+
+	spotifySearch := FetchSingleTrack(title, strippedArtiste)
+	if spotifySearch.Tracks == nil {
 		log.Printf("\n[controllers][platforms][spotify][ConvertTrack] error - error fetching single track on spotify\n")
 		// panic for now.. at least until i figure out how to handle it if it can fail at all or not or can fail but be taken care of
 		return nil, blueprint.ENORESULT
@@ -123,6 +137,12 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	// then, this is where to probably start.
 	if len(spotifySearch.Tracks.Tracks) > 0 {
 		spSingleTrack = spotifySearch.Tracks.Tracks[0]
+	}
+
+	var cover string
+	// fetch the spotify image preview.
+	if len(spSingleTrack.Album.Images) > 0 {
+		cover = spSingleTrack.Album.Images[0].URL
 	}
 
 	// fetch all the tracks from the contributors.
@@ -142,7 +162,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 		Preview:  spSingleTrack.PreviewURL,
 		Album:    spSingleTrack.Album.Name,
 		ID:       spSingleTrack.SimpleTrack.ID.String(),
-		Cover:    spSingleTrack.Album.Images[0].URL,
+		Cover:    cover,
 	}
 
 	// serialize the track
