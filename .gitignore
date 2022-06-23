@@ -7,3 +7,4 @@ go
 .idea
 TODO.md
 cmd
+go.sum
