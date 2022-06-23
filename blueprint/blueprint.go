@@ -48,14 +48,11 @@ type ControllerResult struct {
 	Status  int         `json:"status"`
 }
 
-type ZooveUserToken struct {
+type OrchdioUserToken struct {
 	jwt.RegisteredClaims
-	//Platform   string `json:"platform"`
-	//PlatformID string `json:"platform_id"`
 	Email    string    `json:"email"`
 	Username string    `json:"username"`
 	UUID     uuid.UUID `json:"uuid"`
-	//Role       string `json:"role"`
 }
 
 type LinkInfo struct {

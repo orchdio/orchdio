@@ -90,8 +90,8 @@ func ErrorResponse(ctx *fiber.Ctx, statusCode int, err interface{}) error {
 }
 
 // SignJwt create a new jwt token
-func SignJwt(claims *blueprint.ZooveUserToken) ([]byte, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &blueprint.ZooveUserToken{
+func SignJwt(claims *blueprint.OrchdioUserToken) ([]byte, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &blueprint.OrchdioUserToken{
 		//PlatformID: claims.PlatformID,
 		//Platform:   claims.Platform,
 		//Role:       claims.Role,

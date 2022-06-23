@@ -103,7 +103,7 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	}
 	log.Printf("\n[user][controller][AuthUser] Method - User with the email %s just signed up or logged in with their Spotify account.\n", user.Email)
 	// create a jwt
-	claim := &blueprint.ZooveUserToken{
+	claim := &blueprint.OrchdioUserToken{
 		//Role:       "user",
 		Email:    user.Email,
 		Username: user.DisplayName,
@@ -157,7 +157,7 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 	)
 
 	// now create a token
-	claims := &blueprint.ZooveUserToken{
+	claims := &blueprint.OrchdioUserToken{
 		Email:    user.Email,
 		Username: user.Name,
 		UUID:     uniqueID,
@@ -173,7 +173,7 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 
 // FetchProfile fetches the playlist of the person, on the platform
 func (c *UserController) FetchProfile(ctx *fiber.Ctx) error {
-	claims := ctx.Locals("claims").(*blueprint.ZooveUserToken)
+	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
 
 	database := db.NewDB{
 		DB: c.DB,

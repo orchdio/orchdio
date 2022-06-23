@@ -177,7 +177,7 @@ func main() {
 	// MIDDLEWARE DEFINITION
 	app.Use(jwtware.New(jwtware.Config{
 		SigningKey: []byte(os.Getenv("JWT_SECRET")),
-		Claims:     &blueprint.ZooveUserToken{},
+		Claims:     &blueprint.OrchdioUserToken{},
 		ContextKey: "authToken",
 	}))
 	app.Use(middleware.VerifyToken)

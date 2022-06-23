@@ -10,10 +10,10 @@ import (
 	"orchdio/util"
 )
 
-// VerifyToken verifies a token and set the context local called "claim" to a type of *blueprint.ZooveUserToken
+// VerifyToken verifies a token and set the context local called "claim" to a type of *blueprint.OrchdioUserToken
 func VerifyToken(ctx *fiber.Ctx) error {
 	jwtToken := ctx.Locals("authToken").(*jwt.Token)
-	claims := jwtToken.Claims.(*blueprint.ZooveUserToken)
+	claims := jwtToken.Claims.(*blueprint.OrchdioUserToken)
 	ctx.Locals("claims", claims)
 	return ctx.Next()
 }
