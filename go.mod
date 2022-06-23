@@ -12,10 +12,11 @@ require (
 	github.com/gofiber/websocket/v2 v2.0.18
 	github.com/golang-jwt/jwt/v4 v4.3.0
 	github.com/golang-migrate/migrate v3.5.4+incompatible
+	github.com/golang-migrate/migrate/v4 v4.15.2
 	github.com/google/uuid v1.3.0
 	github.com/joho/godotenv v1.4.0
 	github.com/lib/pq v1.10.4
-	github.com/nleeper/goment v1.4.4 // indirect
+	github.com/nleeper/goment v1.4.4
 	github.com/savsgio/gotils v0.0.0-20220201163454-d252f0a44d5b // indirect
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/tklauser/go-sysconf v0.3.10 // indirect
@@ -23,5 +24,4 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.2 // indirect
 	github.com/zmb3/spotify/v2 v2.0.1
 	golang.org/x/oauth2 v0.0.0-20220309155454-6242fa91716a
-	golang.org/x/sys v0.0.0-20220310020820-b874c991c1a5 // indirect
 )

@@ -3,6 +3,7 @@ package blueprint
 import (
 	"errors"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/uuid"
 )
 
 var DeezerHost = []string{"deezer.page.link", "www.deezer.com"}
@@ -49,10 +50,12 @@ type ControllerResult struct {
 
 type ZooveUserToken struct {
 	jwt.RegisteredClaims
-	Platform   string `json:"platform"`
-	PlatformID string `json:"platform_id"`
-	Email      string `json:"email"`
-	Role       string `json:"role"`
+	//Platform   string `json:"platform"`
+	//PlatformID string `json:"platform_id"`
+	Email    string    `json:"email"`
+	Username string    `json:"username"`
+	UUID     uuid.UUID `json:"uuid"`
+	//Role       string `json:"role"`
 }
 
 type LinkInfo struct {

@@ -6,10 +6,10 @@ import (
 	"github.com/go-redis/redis/v8"
 	spotify2 "github.com/zmb3/spotify/v2"
 	"log"
-	"oratorio/blueprint"
-	"oratorio/services/deezer"
-	"oratorio/services/spotify"
-	"oratorio/services/tidal"
+	"orchdio/blueprint"
+	"orchdio/services/deezer"
+	"orchdio/services/spotify"
+	"orchdio/services/tidal"
 )
 
 // ConvertTrack fetches all the tracks converted from all the supported platforms

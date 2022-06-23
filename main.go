@@ -9,21 +9,21 @@ import (
 	"github.com/gofiber/fiber/v2"
 	jwtware "github.com/gofiber/jwt/v3"
 	"github.com/gofiber/websocket/v2"
-	_ "github.com/golang-migrate/migrate/source/file"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/joho/godotenv"
-	_ "github.com/lib/pq"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/host"
 	"github.com/shirou/gopsutil/mem"
 	"log"
 	"net/http"
-	"oratorio/blueprint"
-	"oratorio/controllers"
-	"oratorio/controllers/account"
-	"oratorio/controllers/platforms"
-	"oratorio/middleware"
-	"oratorio/universal"
+	"orchdio/blueprint"
+	"orchdio/controllers"
+	"orchdio/controllers/account"
+	"orchdio/controllers/platforms"
+	"orchdio/middleware"
+	"orchdio/universal"
 	"os"
 )
 
@@ -116,6 +116,23 @@ func main() {
 	userController := account.UserController{
 		DB: db,
 	}
+
+	// ==========================================
+	// Migrate
+
+	//log.Printf("Here is the db url %s", dbURL)
+	//m, err := migrate.New("file://db/migration", dbURL)
+
+	//if err != nil {
+	//	log.Printf("Error firing up migrate %v", err)
+	//}
+
+	//log.Printf("Here is the migrate stuff")
+	//if err := m.Up(); err != nil {
+	//	log.Printf("Error migrating :sadface:")
+	//	panic(err)
+	//}
+
 	redisOpts, err := redis.ParseURL(os.Getenv("REDISCLOUD_URL"))
 	if err != nil {
 		panic(err)

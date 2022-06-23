@@ -14,7 +14,6 @@ import (
 	"orchdio/services/spotify"
 	"orchdio/util"
 	"os"
-	"strconv"
 	"strings"
 )
 
@@ -28,7 +27,7 @@ func NewUserController(db *sql.DB) *UserController {
 	}
 }
 
-// RedirectAuth returns the authorization URL when a user wants to connect their platform
+// RedirectAuth returns the authorization URL when a user wants to connect their platform.
 func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 	var uniqueID, _ = uuid.NewUUID()
 	dz := &deezer.Deezer{
@@ -59,8 +58,10 @@ func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 	return util.ErrorResponse(ctx, http.StatusNotImplemented, "Other Platforms have not been implemented")
 }
 
-// AuthSpotifyUser authorizes a user with spotify account
+// AuthSpotifyUser authorizes a user with spotify account. It generates a JWT token for
+// a new user
 func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
+	var uniqueID, _ = uuid.NewUUID()
 	state := ctx.Query("state")
 	encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
 	if state == "" {
@@ -71,12 +72,12 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	r, err := http.NewRequest("GET", string(ctx.Request().RequestURI()), nil)
 
 	if err != nil {
-		log.Println("[controllers][account][user] Error - error creating a new http request - %v\n", err)
+		log.Printf("[controllers][account][user] Error - error creating a new http request - %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 	}
 
 	client, refreshToken := spotify.CompleteUserAuth(context.Background(), r)
-	encryptedToken, encErr := util.Encrypt(refreshToken, []byte(encryptionSecretKey))
+	_, encErr := util.Encrypt(refreshToken, []byte(encryptionSecretKey))
 	if encErr != nil {
 		log.Printf("\n[controllers][account][user] Error - could not encrypt refreshToken - %v\n", encErr)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, encErr)
@@ -92,11 +93,8 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	query := queries.CreateUserQuery
 	_, dbErr := c.DB.Exec(query,
 		user.Email,
-		user.ID,
 		user.DisplayName,
-		user.ExternalURLs["spotify"], // FIXME: handle this properly
-		spotify.IDENTIFIER,
-		encryptedToken,
+		uniqueID,
 	)
 
 	if dbErr != nil {
@@ -106,17 +104,19 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	log.Printf("\n[user][controller][AuthUser] Method - User with the email %s just signed up or logged in with their Spotify account.\n", user.Email)
 	// create a jwt
 	claim := &blueprint.ZooveUserToken{
-		Role:       "user",
-		Email:      user.Email,
-		Platform:   "spotify",
-		PlatformID: user.ID,
+		//Role:       "user",
+		Email:    user.Email,
+		Username: user.DisplayName,
+		UUID:     uniqueID,
 	}
 	token, err := util.SignJwt(claim)
 	return util.SuccessResponse(ctx, http.StatusOK, string(token))
 }
 
-// AuthDeezerUser authorizes a user with deezer account
+// AuthDeezerUser authorizes a user with deezer account. It generates a JWT token for
+// a new user
 func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
+	var uniqueID, _ = uuid.NewUUID()
 	code := ctx.Query("code")
 	state := ctx.Query("state")
 	encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
@@ -140,7 +140,7 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "Could not fetch deezer token")
 	}
 
-	encryptedToken, err := util.Encrypt(token, []byte(encryptionSecretKey))
+	_, err := util.Encrypt(token, []byte(encryptionSecretKey))
 	if err != nil {
 		log.Printf("\n[controllers][account][users][AuthDeezerUser] Method - Error encrypting deezer token: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
@@ -152,21 +152,15 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 	}
 	_, err = c.DB.Exec(queries.CreateUserQuery,
 		user.Email,
-		// it seems to work when i dont convert to string.
-		// postgres still saves as string but I am not taking chances
-		strconv.Itoa(user.ID),
 		user.Name,
-		user.Link,
-		deezer.IDENTIFIER,
-		encryptedToken,
+		uniqueID,
 	)
 
 	// now create a token
 	claims := &blueprint.ZooveUserToken{
-		Role:       "user",
-		Email:      user.Email,
-		Platform:   "deezer",
-		PlatformID: strconv.Itoa(user.ID),
+		Email:    user.Email,
+		Username: user.Name,
+		UUID:     uniqueID,
 	}
 	jToken, err := util.SignJwt(claims)
 	if err != nil {
@@ -190,4 +184,37 @@ func (c *UserController) FetchProfile(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, err)
 	}
 	return util.SuccessResponse(ctx, http.StatusOK, user)
+}
+
+// GenerateAPIKeys generates API keys for users
+func (c *UserController) GenerateAPIKeys(ctx *fiber.Ctx) error {
+	/**
+	  SPEC
+	=====================================================================================================
+	  When a user wants to generate keys, first they obviously must have an account
+	  At the moment, there shall be no rate limit on the APIs.
+
+	  The API key would be like so: "xxx-xxx-xxx-xxx". A UUID v4 seems to fit this the most
+	  but if there are other ways to generate an ID similar to that, then its okay. Specific way/tool to
+	  arrive at the solution is up to be decided when implementing.
+
+	  The API key shall keep count of how many requests have been made. This is to ensure that there is
+	  good tracking of requests per app since there are no specific rate-limiting yet.
+
+	  The API key shall be used in the header like: "x-orchdio-key".
+
+	  There shall be just one key allowed per user for the moment.
+	  =====================================================================================================
+
+
+	  IMPLEMENTATION NOTES
+	  Create a new table called apiKeys
+	  Create a 1-1 (for now) relationship for apiKeys to users
+
+
+	  First, check if the access token is valid. An api key is valid for indefinite time (for now)
+	  If its valid, then the user can make calls. If not, they need to auth again.
+	*/
+
+	return nil
 }

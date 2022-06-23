@@ -92,10 +92,11 @@ func ErrorResponse(ctx *fiber.Ctx, statusCode int, err interface{}) error {
 // SignJwt create a new jwt token
 func SignJwt(claims *blueprint.ZooveUserToken) ([]byte, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &blueprint.ZooveUserToken{
-		PlatformID: claims.PlatformID,
-		Platform:   claims.Platform,
-		Role:       claims.Role,
-		Email:      claims.Email,
+		//PlatformID: claims.PlatformID,
+		//Platform:   claims.Platform,
+		//Role:       claims.Role,
+		UUID:  claims.UUID,
+		Email: claims.Email,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 12)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

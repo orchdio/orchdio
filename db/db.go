@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
-	"oratorio/db/queries"
+	"orchdio/db/queries"
 )
 
 type NewDB struct {
@@ -14,10 +14,10 @@ type NewDB struct {
 }
 
 type SingleUserByEmail struct {
-	Email     string `json:"email"`
-	Usernames Map    `json:"usernames"`
-	Tokens    Map    `json:"tokens"`
-	IDs       Map    `json:"ids"`
+	Email    string `json:"email"`
+	Username Map    `json:"username"`
+	//Tokens    Map    `json:"tokens"`
+	ID Map `json:"id"`
 }
 
 type Map map[string]interface{}
@@ -40,7 +40,7 @@ func (d *NewDB) FindUserByEmail(email string) (interface{}, error) {
 	result := d.DB.QueryRow(queries.FindUserByEmail, email)
 	user := SingleUserByEmail{}
 
-	err := result.Scan(&user.Email, &user.Usernames, &user.IDs)
+	err := result.Scan(&user.Email, &user.Username, &user.ID)
 	if err != nil {
 		log.Printf("Error scanning here %v", err)
 	}
