@@ -16,8 +16,7 @@ type NewDB struct {
 type SingleUserByEmail struct {
 	Email    string `json:"email"`
 	Username Map    `json:"username"`
-	//Tokens    Map    `json:"tokens"`
-	ID Map `json:"id"`
+	ID       Map    `json:"id"`
 }
 
 type Map map[string]interface{}

@@ -104,7 +104,6 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	log.Printf("\n[user][controller][AuthUser] Method - User with the email %s just signed up or logged in with their Spotify account.\n", user.Email)
 	// create a jwt
 	claim := &blueprint.OrchdioUserToken{
-		//Role:       "user",
 		Email:    user.Email,
 		Username: user.DisplayName,
 		UUID:     uniqueID,

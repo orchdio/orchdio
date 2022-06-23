@@ -5,6 +5,3 @@ const CreateUserQuery = `WITH user_rec as ( INSERT INTO "users"(email, username,
 
 const FindUserByEmail = `SELECT u.email, jsonb_object_agg(platform.identifier, platform.display_name) usernames, jsonb_object_agg(platform.identifier, platform.platform_id) ids
 	FROM platform JOIN "user" u ON u.id = platform.user WHERE u.email = $1 group by u.email;`
-
-// ON CONFLICT("identifier") DO NOTHING
-// platforms_rec as (INSERT INTO platform("users", email, username, uuid) VALUES ( (SELECT user_rec.id FROM user_rec), $1, $2, $3))
