@@ -340,8 +340,6 @@ func (c *UserController) DeleteKey(ctx *fiber.Ctx) error {
 	apiKey := ctx.Get("x-orchdio-key")
 	database := db.NewDB{DB: c.DB}
 
-	log.Printf("Claims %v\n", claims.UUID.String())
-
 	deletedKey, err := database.DeleteApiKey(apiKey, claims.UUID.String())
 	if err != nil {
 		log.Printf("[controller][user][DeleteKey] - error deleting Key from database %s\n", err.Error())

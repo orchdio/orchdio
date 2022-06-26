@@ -176,7 +176,7 @@ func main() {
 	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
 	baseRouter.Get("/generate-key", userController.GenerateAPIKey)
 	baseRouter.Post("/key/revoke", middleware.ValidateKey, userController.RevokeKey)
-	baseRouter.Post("/key/unrevoke", middleware.ValidateKey, userController.UnRevokeKey)
+	baseRouter.Post("/key/allow", middleware.ValidateKey, userController.UnRevokeKey)
 	baseRouter.Delete("/key/delete", middleware.ValidateKey, userController.DeleteKey)
 	baseRouter.Get("/key", userController.RetrieveKey)
 
