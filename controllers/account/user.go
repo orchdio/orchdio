@@ -284,11 +284,6 @@ func (c *UserController) RevokeKey(ctx *fiber.Ctx) error {
 
 	// get the api key from the header
 	apiKey := ctx.Get("x-orchdio-key")
-	isValid := util.IsValidUUID(apiKey)
-	if !isValid {
-		log.Printf("[controller][user][Revoke] invalid key. Bad request %s\n", apiKey)
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid apikey")
-	}
 	// we want to set the value of revoked to true
 	database := db.NewDB{DB: c.DB}
 
@@ -309,15 +304,8 @@ func (c *UserController) UnRevokeKey(ctx *fiber.Ctx) error {
 
 	// get the api key from the header
 	apiKey := ctx.Get("x-orchdio-key")
-	isValid := util.IsValidUUID(apiKey)
-	if !isValid {
-		log.Printf("[controller][user][Revoke] invalid key. Bad request %s\n", apiKey)
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid apikey")
-	}
 	// we want to set the value of revoked to true
 	database := db.NewDB{DB: c.DB}
-
-	log.Printf("CLaims are: %v", claims)
 
 	err := database.UnRevokeApiKey(apiKey, claims.UUID.String())
 	if err != nil {
@@ -326,4 +314,21 @@ func (c *UserController) UnRevokeKey(ctx *fiber.Ctx) error {
 	}
 	log.Printf("[controller][user][UnRevokeKey] UnRevoked key")
 	return util.SuccessResponse(ctx, http.StatusOK, nil)
+}
+
+// RetrieveKey retrieves an API key associated with the user
+func (c *UserController) RetrieveKey(ctx *fiber.Ctx) error {
+	log.Printf("[controller][user][RetrieveKey] - Retrieving API key")
+	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+	database := db.NewDB{
+		DB: c.DB,
+	}
+
+	key, err := database.FetchUserApikey(claims.UUID)
+	if err != nil {
+		log.Printf("[controller][user][RetrieveKey] - Could not retrieve user key. %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
+	}
+	log.Printf("[controller][user][RetrieveKey] - Retrieved apikey for user %s\n", claims)
+	return util.SuccessResponse(ctx, http.StatusOK, key.Key)
 }

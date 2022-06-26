@@ -175,8 +175,9 @@ func main() {
 	// FIXME: move this endpoint thats fetching link info from the `controllers` package
 	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
 	baseRouter.Get("/generate-key", userController.GenerateAPIKey)
-	baseRouter.Post("/revoke", userController.RevokeKey)
-	baseRouter.Post("/unrevoke", userController.UnRevokeKey)
+	baseRouter.Post("/revoke", middleware.ValidateKey, userController.RevokeKey)
+	baseRouter.Post("/unrevoke", middleware.ValidateKey, userController.UnRevokeKey)
+	baseRouter.Get("/key", userController.RetrieveKey)
 
 	// now to the WS endpoint to connect to when they visit the website and want to "convert"
 	app.Get("/portal", ikisocket.New(func(kws *ikisocket.Websocket) {

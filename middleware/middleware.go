@@ -43,3 +43,24 @@ func ExtractLinkInfo(ctx *fiber.Ctx) error {
 	ctx.Locals("linkInfo", linkInfo)
 	return ctx.Next()
 }
+
+// ValidateKey validates that the key is valid
+func ValidateKey(ctx *fiber.Ctx) error {
+	// get the api key from the header
+	apiKey := ctx.Get("x-orchdio-key")
+
+	if len([]byte(apiKey)) > 36 {
+		log.Printf("[middleware][ValidateKey] key is too long. %s\n", apiKey)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Key too long")
+	}
+
+	isValid := util.IsValidUUID(apiKey)
+
+	if !isValid {
+		log.Printf("[controller][user][Revoke] invalid key. Bad request %s\n", apiKey)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid apikey")
+	}
+
+	log.Printf("[middleware][ValidateKey] API key is valid")
+	return ctx.Next()
+}
