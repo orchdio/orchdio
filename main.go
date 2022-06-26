@@ -161,7 +161,6 @@ func main() {
 	baseRouter.Get("/deezer/auth", userController.AuthDeezerUser)
 	baseRouter.Get("/track/convert", middleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
 	baseRouter.Get("/playlist/convert", middleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
-	// TODO: implement middleware to check for api key where neccessary
 
 	// MIDDLEWARE DEFINITION
 	app.Use(jwtware.New(jwtware.Config{
@@ -174,6 +173,7 @@ func main() {
 	baseRouter.Get("/me", userController.FetchProfile)
 	// FIXME: move this endpoint thats fetching link info from the `controllers` package
 	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
+
 	baseRouter.Get("/generate-key", userController.GenerateAPIKey)
 	baseRouter.Post("/key/revoke", middleware.ValidateKey, userController.RevokeKey)
 	baseRouter.Post("/key/allow", middleware.ValidateKey, userController.UnRevokeKey)

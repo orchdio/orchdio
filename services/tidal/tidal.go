@@ -152,6 +152,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	// but ideally if for example we want to filter more "generic" tracks, we can do that here
 	// etc.
 	if len(result.Tracks.Items) > 0 {
+		log.Printf("Responses are: %v \n", result.Tracks.Items)
 		var track = result.Tracks.Items[0]
 		var artistes []string
 		for _, artist := range track.Artists {
@@ -192,6 +193,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 
 // FetchSingleTrackByTitle fetches a track from tidal by title and artist
 func FetchSingleTrackByTitle(title, artiste string) (*SearchResult, error) {
+	log.Printf("[controllers][platforms][tidal][FetchSingleTrackByTitle] - searching single track by title: %s %s\n", title, artiste)
 	accessToken, err := FetchNewAuthToken()
 	if err != nil {
 		log.Printf("\n[controllers][platforms][tidal][FetchSingleTrackByTitle] - error - %v\n", err)
@@ -208,6 +210,8 @@ func FetchSingleTrackByTitle(title, artiste string) (*SearchResult, error) {
 	})
 
 	query := url.QueryEscape(fmt.Sprintf("%s %s", artiste, title))
+
+	log.Printf("[controllers][[platforms][tidal][FetchSingleTrackByTitle]  - Search URL %s\n", fmt.Sprintf("%s %s", artiste, title))
 
 	response, err := instance.Get(fmt.Sprintf("/search/top-hits?query=%s&countryCode=US&limit=2&offset=0&types=TRACKS", query))
 	if err != nil {

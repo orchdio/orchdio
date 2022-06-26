@@ -36,18 +36,21 @@ type (
 	}
 )
 
+// ControllerError represents a valid error response
 type ControllerError struct {
 	Message string      `json:"message"`
 	Status  int         `json:"status"`
 	Error   interface{} `json:"error,omitempty"`
 }
 
+// ControllerResult represents a valid success response
 type ControllerResult struct {
 	Message string      `json:"message"`
 	Data    interface{} `json:"data,omitempty"`
 	Status  int         `json:"status"`
 }
 
+// OrchdioUserToken represents a parsed user JWT claim
 type OrchdioUserToken struct {
 	jwt.RegisteredClaims
 	Email    string    `json:"email"`
@@ -55,6 +58,7 @@ type OrchdioUserToken struct {
 	UUID     uuid.UUID `json:"uuid"`
 }
 
+// LinkInfo represents the metadata about a link user wants to convert
 type LinkInfo struct {
 	Platform   string `json:"platform"`
 	TargetLink string `json:"target_link"`
@@ -117,8 +121,7 @@ type Conversion struct {
 
 // PlaylistConversion represents the final response for a typical playlist conversion
 type PlaylistConversion struct {
-	URL string `json:"url"`
-	//Tracks  []map[string]*[]blueprint.TrackSearchResult `json:"tracks"`
+	URL    string `json:"url"`
 	Tracks struct {
 		Deezer  *[]TrackSearchResult `json:"deezer"`
 		Spotify *[]TrackSearchResult `json:"spotify"`
@@ -131,17 +134,6 @@ type PlaylistConversion struct {
 	Owner         string                     `json:"owner"`
 	Cover         string                     `json:"cover"`
 }
-
-//type PlaylistPayload struct {
-//	Length        int64               `json:"length"`
-//	Name          string              `json:"name"`
-//	Preview       string              `json:"preview,omitempty"`
-//	OmittedTracks []TrackSearchResult `json:"omitted_tracks"`
-//	Platforms     struct {
-//		Deezer  *[]TrackSearchResult `json:"deezer"`
-//		Spotify *[]TrackSearchResult `json:"spotify"`
-//	}
-//}
 
 // Message represents a message sent from the client to the server over websocket
 type Message struct {
@@ -172,8 +164,3 @@ type WebsocketMessage struct {
 	Event   string      `json:"event_name"`
 	Payload interface{} `json:"payload,omitempty"`
 }
-
-//type ApiErroResponse struct {
-//	Error  interface{} `json:"error"`
-//	Status int         `json:"status"`
-//}
