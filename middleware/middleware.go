@@ -30,6 +30,12 @@ func ExtractLinkInfo(ctx *fiber.Ctx) error {
 		if err == blueprint.EHOSTUNSUPPORTED {
 			return util.ErrorResponse(ctx, http.StatusNotImplemented, err)
 		}
+
+		if err == blueprint.EINVALIDLINK {
+			log.Printf("[middleware][ExtractLinkInfo][warning] invalid link. are you sure its a url? %s\n", link)
+			return util.ErrorResponse(ctx, http.StatusBadRequest, err)
+		}
+		
 		log.Printf("\n[middleware][ExtractLinkInfo] error - Could not extract link info: %v: for link: %v\n", err, link)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 	}

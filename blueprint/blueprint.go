@@ -20,6 +20,7 @@ var (
 	ENORESULT        = errors.New("ENORESULT")
 	ENOTIMPLEMENTED  = errors.New("NOT_IMPLEMENTED")
 	EGENERAL         = errors.New("EGENERAL")
+	EINVALIDLINK     = errors.New("invalid link")
 )
 
 var (
