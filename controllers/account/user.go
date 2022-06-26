@@ -332,3 +332,27 @@ func (c *UserController) RetrieveKey(ctx *fiber.Ctx) error {
 	log.Printf("[controller][user][RetrieveKey] - Retrieved apikey for user %s\n", claims)
 	return util.SuccessResponse(ctx, http.StatusOK, key.Key)
 }
+
+// DeleteKey deletes a user's api key
+func (c *UserController) DeleteKey(ctx *fiber.Ctx) error {
+	log.Printf("[controller][user][DeleteKey] - deleting key")
+	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+	apiKey := ctx.Get("x-orchdio-key")
+	database := db.NewDB{DB: c.DB}
+
+	log.Printf("Claims %v\n", claims.UUID.String())
+
+	deletedKey, err := database.DeleteApiKey(apiKey, claims.UUID.String())
+	if err != nil {
+		log.Printf("[controller][user][DeleteKey] - error deleting Key from database %s\n", err.Error())
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
+	}
+
+	if len(deletedKey) == 0 {
+		log.Printf("[controller][user][DeleteKey] - key already deleted")
+		return util.ErrorResponse(ctx, http.StatusNotFound, "Key not found. You already deleted this key")
+	}
+
+	log.Printf("[controller][user][DeleteKey] - deleted key for user %v\n", claims)
+	return util.SuccessResponse(ctx, http.StatusOK, string(deletedKey))
+}

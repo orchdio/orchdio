@@ -159,8 +159,8 @@ func main() {
 	baseRouter.Get("/:platform/connect", userController.RedirectAuth)
 	baseRouter.Get("/spotify/auth", userController.AuthSpotifyUser)
 	baseRouter.Get("/deezer/auth", userController.AuthDeezerUser)
-	baseRouter.Get("/track/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
-	baseRouter.Get("/playlist/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
+	baseRouter.Get("/track/convert", middleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
+	baseRouter.Get("/playlist/convert", middleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
 	// TODO: implement middleware to check for api key where neccessary
 
 	// MIDDLEWARE DEFINITION
@@ -175,8 +175,9 @@ func main() {
 	// FIXME: move this endpoint thats fetching link info from the `controllers` package
 	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
 	baseRouter.Get("/generate-key", userController.GenerateAPIKey)
-	baseRouter.Post("/revoke", middleware.ValidateKey, userController.RevokeKey)
-	baseRouter.Post("/unrevoke", middleware.ValidateKey, userController.UnRevokeKey)
+	baseRouter.Post("/key/revoke", middleware.ValidateKey, userController.RevokeKey)
+	baseRouter.Post("/key/unrevoke", middleware.ValidateKey, userController.UnRevokeKey)
+	baseRouter.Delete("/key/delete", middleware.ValidateKey, userController.DeleteKey)
 	baseRouter.Get("/key", userController.RetrieveKey)
 
 	// now to the WS endpoint to connect to when they visit the website and want to "convert"

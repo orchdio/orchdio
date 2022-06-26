@@ -23,3 +23,4 @@ const UnRevokeApiKey = `UPDATE apiKeys
 							FROM users AS u
 							WHERE u.uuid = $2
   AND KEY = $1;`
+const DeleteApiKey = `DELETE FROM apiKeys api USING users u WHERE u.uuid = api.user AND api.key = $1 AND api.user = $2 RETURNING key;`
