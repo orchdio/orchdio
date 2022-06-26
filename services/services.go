@@ -1,15 +1,16 @@
 package services
 
 import (
+	"errors"
 	"fmt"
 	"github.com/badoux/goscraper"
 	"log"
 	"net/url"
-	"oratorio/blueprint"
-	"oratorio/services/deezer"
-	"oratorio/services/spotify"
-	"oratorio/services/tidal"
-	"oratorio/util"
+	"orchdio/blueprint"
+	"orchdio/services/deezer"
+	"orchdio/services/spotify"
+	"orchdio/services/tidal"
+	"orchdio/util"
 	"os"
 	"strings"
 )
@@ -40,6 +41,18 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 		return nil, escapeErr
 	}
 	// TODO: before parsing, check if it looks like a valid track/playlist url on supported services
+	// check if the "song" is a url
+	contains := strings.Contains(song, "https://")
+	if !contains {
+		log.Printf("[services][s: Track][warning] link doesnt seem to be https.")
+		return nil, blueprint.EINVALIDLINK
+	}
+
+	if len([]byte(song)) > 100 {
+		log.Printf("[services][s: Track][warning] link is larger than 100 bytes")
+		return nil, errors.New("too large")
+	}
+
 	parsedURL, parseErr := url.Parse(song)
 	if parseErr != nil {
 		log.Printf("\n[services][s: Track][error] Error parsing escaped URL: %v\n", parseErr)

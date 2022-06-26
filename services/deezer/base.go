@@ -8,8 +8,8 @@ import (
 	"github.com/vicanso/go-axios"
 	"log"
 	"net/url"
-	"oratorio/blueprint"
-	"oratorio/util"
+	"orchdio/blueprint"
+	"orchdio/util"
 	"os"
 	"strconv"
 	"strings"
@@ -35,7 +35,6 @@ func FetchSingleTrack(link string) (*Track, error) {
 	response, err := axios.Get(link)
 	if err != nil {
 		log.Printf("\n[services][deezer][playlist][FetchSingleTrack] error - Could not fetch single track from deezer %v\n", err)
-		// TODO: return something here.
 		return nil, err
 	}
 

@@ -5,9 +5,9 @@ import (
 	"github.com/antoniodipinto/ikisocket"
 	"github.com/go-redis/redis/v8"
 	"log"
-	"oratorio/blueprint"
-	"oratorio/services"
-	"oratorio/util"
+	"orchdio/blueprint"
+	"orchdio/services"
+	"orchdio/util"
 	"strings"
 )
 

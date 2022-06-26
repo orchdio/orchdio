@@ -14,9 +14,10 @@ import (
 	"github.com/antoniodipinto/ikisocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/uuid"
 	"io"
 	"log"
-	"oratorio/blueprint"
+	"orchdio/blueprint"
 	"os"
 	"strconv"
 	"strings"
@@ -90,12 +91,10 @@ func ErrorResponse(ctx *fiber.Ctx, statusCode int, err interface{}) error {
 }
 
 // SignJwt create a new jwt token
-func SignJwt(claims *blueprint.ZooveUserToken) ([]byte, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &blueprint.ZooveUserToken{
-		PlatformID: claims.PlatformID,
-		Platform:   claims.Platform,
-		Role:       claims.Role,
-		Email:      claims.Email,
+func SignJwt(claims *blueprint.OrchdioUserToken) ([]byte, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &blueprint.OrchdioUserToken{
+		UUID:  claims.UUID,
+		Email: claims.Email,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 12)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -219,4 +218,10 @@ func BuildTidalAssetURL(id string) string {
 	// for now, we get the asset type of image, at 320/320 by default
 	id = strings.Replace(id, "-", "/", -1)
 	return fmt.Sprintf("https://resources.tidal.com/images/%s/320x320.jpg", id)
+}
+
+// IsValidUUID checks if an id is a valid UUID
+func IsValidUUID(id string) bool {
+	_, err := uuid.Parse(id)
+	return err == nil
 }

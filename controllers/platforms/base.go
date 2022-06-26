@@ -5,9 +5,9 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"log"
 	"net/http"
-	"oratorio/blueprint"
-	"oratorio/universal"
-	"oratorio/util"
+	"orchdio/blueprint"
+	"orchdio/universal"
+	"orchdio/util"
 	"strings"
 )
 

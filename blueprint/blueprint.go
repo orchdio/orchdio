@@ -3,6 +3,7 @@ package blueprint
 import (
 	"errors"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/uuid"
 )
 
 var DeezerHost = []string{"deezer.page.link", "www.deezer.com"}
@@ -19,6 +20,7 @@ var (
 	ENORESULT        = errors.New("ENORESULT")
 	ENOTIMPLEMENTED  = errors.New("NOT_IMPLEMENTED")
 	EGENERAL         = errors.New("EGENERAL")
+	EINVALIDLINK     = errors.New("invalid link")
 )
 
 var (
@@ -35,26 +37,29 @@ type (
 	}
 )
 
+// ControllerError represents a valid error response
 type ControllerError struct {
 	Message string      `json:"message"`
 	Status  int         `json:"status"`
 	Error   interface{} `json:"error,omitempty"`
 }
 
+// ControllerResult represents a valid success response
 type ControllerResult struct {
 	Message string      `json:"message"`
 	Data    interface{} `json:"data,omitempty"`
 	Status  int         `json:"status"`
 }
 
-type ZooveUserToken struct {
+// OrchdioUserToken represents a parsed user JWT claim
+type OrchdioUserToken struct {
 	jwt.RegisteredClaims
-	Platform   string `json:"platform"`
-	PlatformID string `json:"platform_id"`
-	Email      string `json:"email"`
-	Role       string `json:"role"`
+	Email    string    `json:"email"`
+	Username string    `json:"username"`
+	UUID     uuid.UUID `json:"uuid"`
 }
 
+// LinkInfo represents the metadata about a link user wants to convert
 type LinkInfo struct {
 	Platform   string `json:"platform"`
 	TargetLink string `json:"target_link"`
@@ -117,8 +122,7 @@ type Conversion struct {
 
 // PlaylistConversion represents the final response for a typical playlist conversion
 type PlaylistConversion struct {
-	URL string `json:"url"`
-	//Tracks  []map[string]*[]blueprint.TrackSearchResult `json:"tracks"`
+	URL    string `json:"url"`
 	Tracks struct {
 		Deezer  *[]TrackSearchResult `json:"deezer"`
 		Spotify *[]TrackSearchResult `json:"spotify"`
@@ -131,17 +135,6 @@ type PlaylistConversion struct {
 	Owner         string                     `json:"owner"`
 	Cover         string                     `json:"cover"`
 }
-
-//type PlaylistPayload struct {
-//	Length        int64               `json:"length"`
-//	Name          string              `json:"name"`
-//	Preview       string              `json:"preview,omitempty"`
-//	OmittedTracks []TrackSearchResult `json:"omitted_tracks"`
-//	Platforms     struct {
-//		Deezer  *[]TrackSearchResult `json:"deezer"`
-//		Spotify *[]TrackSearchResult `json:"spotify"`
-//	}
-//}
 
 // Message represents a message sent from the client to the server over websocket
 type Message struct {

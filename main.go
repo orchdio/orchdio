@@ -2,28 +2,28 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"github.com/antoniodipinto/ikisocket"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	jwtware "github.com/gofiber/jwt/v3"
 	"github.com/gofiber/websocket/v2"
-	_ "github.com/golang-migrate/migrate/source/file"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/jmoiron/sqlx"
 	"github.com/joho/godotenv"
-	_ "github.com/lib/pq"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/host"
 	"github.com/shirou/gopsutil/mem"
 	"log"
 	"net/http"
-	"oratorio/blueprint"
-	"oratorio/controllers"
-	"oratorio/controllers/account"
-	"oratorio/controllers/platforms"
-	"oratorio/middleware"
-	"oratorio/universal"
+	"orchdio/blueprint"
+	"orchdio/controllers"
+	"orchdio/controllers/account"
+	"orchdio/controllers/platforms"
+	"orchdio/middleware"
+	"orchdio/universal"
 	"os"
 )
 
@@ -95,12 +95,12 @@ func main() {
 		dbURL = dbURL + "?sslmode=disable"
 	}
 
-	db, err := sql.Open("postgres", dbURL)
+	db, err := sqlx.Open("postgres", dbURL)
 	if err != nil {
 		log.Printf("Error connecting to postgresql db")
 		panic(err)
 	}
-	defer func(db *sql.DB) {
+	defer func(db *sqlx.DB) {
 		err := db.Close()
 		if err != nil {
 			log.Printf("Error closing")
@@ -116,6 +116,23 @@ func main() {
 	userController := account.UserController{
 		DB: db,
 	}
+
+	// ==========================================
+	// Migrate
+
+	//log.Printf("Here is the db url %s", dbURL)
+	//m, err := migrate.New("file://db/migration", dbURL)
+
+	//if err != nil {
+	//	log.Printf("Error firing up migrate %v", err)
+	//}
+
+	//log.Printf("Here is the migrate stuff")
+	//if err := m.Up(); err != nil {
+	//	log.Printf("Error migrating :sadface:")
+	//	panic(err)
+	//}
+
 	redisOpts, err := redis.ParseURL(os.Getenv("REDISCLOUD_URL"))
 	if err != nil {
 		panic(err)
@@ -142,8 +159,31 @@ func main() {
 	baseRouter.Get("/:platform/connect", userController.RedirectAuth)
 	baseRouter.Get("/spotify/auth", userController.AuthSpotifyUser)
 	baseRouter.Get("/deezer/auth", userController.AuthDeezerUser)
-	baseRouter.Get("/track/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
-	baseRouter.Get("/playlist/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
+	baseRouter.Get("/track/convert", middleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
+	baseRouter.Get("/playlist/convert", middleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
+
+	// MIDDLEWARE DEFINITION
+	app.Use(jwtware.New(jwtware.Config{
+		SigningKey: []byte(os.Getenv("JWT_SECRET")),
+		Claims:     &blueprint.OrchdioUserToken{},
+		ContextKey: "authToken",
+	}))
+	app.Use(middleware.VerifyToken)
+
+	baseRouter.Get("/me", userController.FetchProfile)
+	// FIXME: move this endpoint thats fetching link info from the `controllers` package
+	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
+
+	baseRouter.Get("/generate-key", userController.GenerateAPIKey)
+	baseRouter.Post("/key/revoke", middleware.ValidateKey, userController.RevokeKey)
+	baseRouter.Post("/key/allow", middleware.ValidateKey, userController.UnRevokeKey)
+	baseRouter.Delete("/key/delete", middleware.ValidateKey, userController.DeleteKey)
+	baseRouter.Get("/key", userController.RetrieveKey)
+
+	// now to the WS endpoint to connect to when they visit the website and want to "convert"
+	app.Get("/portal", ikisocket.New(func(kws *ikisocket.Websocket) {
+		log.Printf("\nClient with ID %v connected\n", kws.UUID)
+	}))
 
 	app.Use(func(c *fiber.Ctx) error {
 		if websocket.IsWebSocketUpgrade(c) {
@@ -152,21 +192,6 @@ func main() {
 		}
 		return fiber.ErrUpgradeRequired
 	})
-	// now to the WS endpoint to connect to when they visit the website and want to "convert"
-	app.Get("/portal", ikisocket.New(func(kws *ikisocket.Websocket) {
-		log.Printf("\nClient with ID %v connected\n", kws.UUID)
-	}))
-
-	// MIDDLEWARE DEFINITION
-	app.Use(jwtware.New(jwtware.Config{
-		SigningKey: []byte(os.Getenv("JWT_SECRET")),
-		Claims:     &blueprint.ZooveUserToken{},
-		ContextKey: "authToken",
-	}))
-	app.Use(middleware.VerifyToken)
-
-	baseRouter.Get("/me", userController.FetchProfile)
-	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
 
 	// WEBSOCKET EVENT HANDLERS
 	ikisocket.On(ikisocket.EventConnect, func(payload *ikisocket.EventPayload) {
