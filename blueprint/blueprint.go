@@ -172,3 +172,8 @@ type WebsocketMessage struct {
 	Event   string      `json:"event_name"`
 	Payload interface{} `json:"payload,omitempty"`
 }
+
+//type ApiErroResponse struct {
+//	Error  interface{} `json:"error"`
+//	Status int         `json:"status"`
+//}

@@ -14,6 +14,7 @@ import (
 	"github.com/antoniodipinto/ikisocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/uuid"
 	"io"
 	"log"
 	"orchdio/blueprint"
@@ -217,4 +218,10 @@ func BuildTidalAssetURL(id string) string {
 	// for now, we get the asset type of image, at 320/320 by default
 	id = strings.Replace(id, "-", "/", -1)
 	return fmt.Sprintf("https://resources.tidal.com/images/%s/320x320.jpg", id)
+}
+
+// IsValidUUID checks if an id is a valid UUID
+func IsValidUUID(id string) bool {
+	_, err := uuid.Parse(id)
+	return err == nil
 }

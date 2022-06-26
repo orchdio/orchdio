@@ -2,9 +2,9 @@ package account
 
 import (
 	"context"
-	"database/sql"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
@@ -18,10 +18,10 @@ import (
 )
 
 type UserController struct {
-	DB *sql.DB
+	DB *sqlx.DB
 }
 
-func NewUserController(db *sql.DB) *UserController {
+func NewUserController(db *sqlx.DB) *UserController {
 	return &UserController{
 		DB: db,
 	}
@@ -149,23 +149,41 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 		log.Printf("[user][controller][AuthDeezerUser] Method - Error fetching deezer user: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 	}
-	_, err = c.DB.Exec(queries.CreateUserQuery,
+
+	// for lack of better naming. thisn is the "temp" struct that we're scanning the result of the db upsert into
+	profScan := struct {
+		Email    string
+		Username string
+		UUID     uuid.UUID
+	}{}
+
+	userProfile := c.DB.QueryRowx(queries.CreateUserQuery,
 		user.Email,
 		user.Name,
 		uniqueID,
 	)
 
+	scanErr := userProfile.StructScan(&profScan)
+
+	if scanErr != nil {
+		log.Printf("[user][controller][AuthDeezerUser] could not upsert createUserQuery. %v\n", scanErr)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error occurred")
+	}
+
 	// now create a token
 	claims := &blueprint.OrchdioUserToken{
 		Email:    user.Email,
 		Username: user.Name,
-		UUID:     uniqueID,
+		UUID:     profScan.UUID,
 	}
+
 	jToken, err := util.SignJwt(claims)
 	if err != nil {
 		log.Printf("[user][controller][AuthDeezerUser] Method - Error signing token: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 	}
+
+	log.Printf("[user][controller][AuthDeezerUser] new user login/signup. Created new login.")
 
 	return util.SuccessResponse(ctx, http.StatusOK, string(jToken))
 }
@@ -185,8 +203,8 @@ func (c *UserController) FetchProfile(ctx *fiber.Ctx) error {
 	return util.SuccessResponse(ctx, http.StatusOK, user)
 }
 
-// GenerateAPIKeys generates API keys for users
-func (c *UserController) GenerateAPIKeys(ctx *fiber.Ctx) error {
+// GenerateAPIKey generates API key for users
+func (c *UserController) GenerateAPIKey(ctx *fiber.Ctx) error {
 	/**
 	  SPEC
 	=====================================================================================================
@@ -215,5 +233,97 @@ func (c *UserController) GenerateAPIKeys(ctx *fiber.Ctx) error {
 	  If its valid, then the user can make calls. If not, they need to auth again.
 	*/
 
-	return nil
+	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+
+	apiToken, _ := uuid.NewUUID()
+
+	database := db.NewDB{
+		DB: c.DB,
+	}
+
+	// first fetch user
+	user, err := database.FindUserByEmail(claims.Email)
+	existingKey, err := database.FetchUserApikey(user.UUID)
+	if err != nil {
+		log.Printf("[controller][user][GenerateApiKey] could not fetch api key from db. %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+	}
+
+	// first check if the user already has an api key. if they do, return a
+	// http conflict status
+	if existingKey != nil {
+		log.Printf("[controller][user][Generate] warning - user already has key")
+		errResponse := "You already have a key"
+		return util.ErrorResponse(ctx, http.StatusConflict, errResponse)
+	}
+
+	// save into db
+	query := queries.CreateNewKey
+	_, dbErr := c.DB.Exec(query,
+		apiToken.String(),
+		user.UUID,
+	)
+
+	if dbErr != nil {
+		log.Printf("\n[controller][account][user] : [AuthUser] Error executing query: %v\n. Could not create new key", dbErr)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+	}
+
+	response := map[string]string{
+		"key": apiToken.String(),
+	}
+	log.Printf("[controller][accounnt][user]: Created a new api key for user\n")
+	return util.SuccessResponse(ctx, http.StatusCreated, response)
+
+}
+
+// RevokeKey revokes an api key.
+func (c *UserController) RevokeKey(ctx *fiber.Ctx) error {
+	// get the current user
+	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+
+	// get the api key from the header
+	apiKey := ctx.Get("x-orchdio-key")
+	isValid := util.IsValidUUID(apiKey)
+	if !isValid {
+		log.Printf("[controller][user][Revoke] invalid key. Bad request %s\n", apiKey)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid apikey")
+	}
+	// we want to set the value of revoked to true
+	database := db.NewDB{DB: c.DB}
+
+	err := database.RevokeApiKey(apiKey, claims.UUID.String())
+	if err != nil {
+		log.Printf("[controller][user][RevokeKey] error revoking key. %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error occured")
+	}
+
+	return util.SuccessResponse(ctx, http.StatusOK, nil)
+}
+
+// UnRevokeKey unrevokes an api key.
+func (c *UserController) UnRevokeKey(ctx *fiber.Ctx) error {
+
+	// get the current user
+	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+
+	// get the api key from the header
+	apiKey := ctx.Get("x-orchdio-key")
+	isValid := util.IsValidUUID(apiKey)
+	if !isValid {
+		log.Printf("[controller][user][Revoke] invalid key. Bad request %s\n", apiKey)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid apikey")
+	}
+	// we want to set the value of revoked to true
+	database := db.NewDB{DB: c.DB}
+
+	log.Printf("CLaims are: %v", claims)
+
+	err := database.UnRevokeApiKey(apiKey, claims.UUID.String())
+	if err != nil {
+		log.Printf("[controller][user][RevokeKey] error revoking key. %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error occured")
+	}
+	log.Printf("[controller][user][UnRevokeKey] UnRevoked key")
+	return util.SuccessResponse(ctx, http.StatusOK, nil)
 }
