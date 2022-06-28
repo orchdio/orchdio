@@ -5,18 +5,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"log"
+	"orchdio/blueprint"
 	"orchdio/db/queries"
 )
 
 type NewDB struct {
 	DB *sqlx.DB
-}
-
-type User struct {
-	Email    string    `json:"email"`
-	Username string    `json:"username"`
-	ID       int       `json:"id"`
-	UUID     uuid.UUID `json:"uuid"`
 }
 
 type ApiKey struct {
@@ -27,9 +21,9 @@ type ApiKey struct {
 }
 
 // FindUserByEmail finds a user by their email
-func (d *NewDB) FindUserByEmail(email string) (*User, error) {
+func (d *NewDB) FindUserByEmail(email string) (*blueprint.User, error) {
 	result := d.DB.QueryRowx(queries.FindUserByEmail, email)
-	user := &User{}
+	user := &blueprint.User{}
 
 	err := result.StructScan(user)
 	if err != nil {
@@ -83,10 +77,10 @@ func (d *NewDB) UnRevokeApiKey(key, user string) error {
 // DeleteApiKey deletes a user's api key
 func (d *NewDB) DeleteApiKey(key, user string) ([]byte, error) {
 	log.Printf("[db][DeleteKey] Ran Query: %s\n", queries.DeleteApiKey)
-	result, err := d.DB.Queryx(queries.DeleteApiKey, key, user)
-	if err != nil {
-		log.Printf("[db][DeleteApikey] could not delete key. %v\n", err)
-		return nil, err
+	result := d.DB.QueryRowx(queries.DeleteApiKey, key, user)
+	if result == nil {
+		log.Printf("[db][DeleteApikey] could not delete key. Seems there is no row to delete\n")
+		return nil, sql.ErrNoRows
 	}
 
 	deleteRes := struct {
@@ -96,9 +90,104 @@ func (d *NewDB) DeleteApiKey(key, user string) ([]byte, error) {
 	scanErr := result.StructScan(&deleteRes)
 	if scanErr != nil {
 		log.Printf("[db][DeleteApiKey] - could not scan query result %v\n", scanErr)
-		return nil, err
+		return nil, scanErr
 	}
 
 	log.Printf("[db][DeleteApiKey] - Deleted apiKey")
 	return nil, nil
+}
+
+// FetchWebhook fetches the webhook for a user
+func (d *NewDB) FetchWebhook(user string) ([]byte, error) {
+	log.Printf("[db][FetchWebhook] fetching webhook for user %s\n. Running query: %s\n", user, queries.FetchUserWebhook)
+	result := d.DB.QueryRowx(queries.FetchUserWebhook, user)
+
+	if result.Err() != nil {
+		log.Printf("[db][FetchWebhook] error fetching webhook for user %s\n", user)
+		return nil, result.Err()
+	}
+
+	webhook := blueprint.WebhookUrl{}
+
+	scanErr := result.StructScan(&webhook)
+	if scanErr != nil {
+		if scanErr == sql.ErrNoRows {
+			log.Printf("[db][FetchWebhook] no webhook found for user %s\n", user)
+			return nil, sql.ErrNoRows
+		}
+		log.Printf("[db][FetchWebhook] error scanning row result. %v\n", scanErr)
+		return nil, scanErr
+	}
+
+	webhookUrl := []byte(webhook.Url)
+
+	log.Printf("[db][FetchWebhook] fetched webhook for user %s\n", user)
+	return webhookUrl, nil
+}
+
+// CreateUserWebhook creates a webhook for a user
+func (d *NewDB) CreateUserWebhook(user, url string) error {
+	// first fetch the user's webhook
+	_, err := d.FetchWebhook(user)
+
+	if err == nil {
+		log.Printf("[db][CreateUserWebhook] user %s already has a webhook.\n", user)
+		return blueprint.EALREADY_EXISTS
+	}
+	// TODO: handle more errors FetchWebhook can return
+
+	log.Printf("[db][CreateUserWebhook] creating webhook for user %s\n. Running query: %s\n", user, queries.CreateWebhook)
+	_, execErr := d.DB.Exec(queries.CreateWebhook, url, user)
+
+	if execErr != nil {
+		log.Printf("[db][CreateUserWebhook] error creating webhook for user %s. %v\n", user, execErr)
+		return execErr
+	}
+
+	log.Printf("[db][CreateUserWebhook] created webhook for user %s\n", user)
+	return nil
+}
+
+// FetchUserWithApiKey fetches a user with an api key
+func (d *NewDB) FetchUserWithApiKey(key string) (*blueprint.User, error) {
+	log.Printf("[db][FetchUserWithApiKey] Running query %s %s\n", queries.FetchUserWithApiKey, key)
+	result := d.DB.QueryRowx(queries.FetchUserWithApiKey, key)
+
+	if result == nil {
+		log.Printf("[db][FetchUserWithApiKey] no user found with api key %s\n", key)
+		return nil, sql.ErrNoRows
+	}
+	log.Printf("[db][FetchUserWithApiKey] Ran query %s\n", queries.FetchUserWithApiKey)
+	usr := blueprint.User{}
+	scanErr := result.StructScan(&usr)
+	if scanErr != nil {
+		log.Printf("[db][FetchUserWithApiKey] error scanning row result. %v\n", scanErr)
+		return nil, scanErr
+	}
+	log.Printf("[db][FetchUserWithApiKey] fetched user %s\n", usr.Username)
+	return &usr, nil
+}
+
+// UpdateUserWebhook updates a user's webhook
+func (d *NewDB) UpdateUserWebhook(user, url string) error {
+	log.Printf("[db][UpdateUserWebhook] Running query %s with '%s', '%s' \n", queries.UpdateUserWebhook, user, url)
+	_, execErr := d.DB.Exec(queries.UpdateUserWebhook, url, user)
+	if execErr != nil {
+		log.Printf("[db][UpdateUserWebhook] error updating user webhook. %v\n", execErr)
+		return execErr
+	}
+	log.Printf("[db][UpdateUserWebhook] updated user webhook\n")
+	return nil
+}
+
+// DeleteUserWebhook deletes a user's webhook
+func (d *NewDB) DeleteUserWebhook(user string) error {
+	log.Printf("[db][DeleteUserWebhook] Running query %s with '%s'\n", queries.DeleteUserWebhook, user)
+	_, execErr := d.DB.Exec(queries.DeleteUserWebhook, user)
+	if execErr != nil {
+		log.Printf("[db][DeleteUserWebhook] error deleting user webhook. %v\n", execErr)
+		return execErr
+	}
+	log.Printf("[db][DeleteUserWebhook] deleted user webhook\n")
+	return nil
 }

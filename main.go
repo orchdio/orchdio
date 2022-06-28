@@ -117,6 +117,10 @@ func main() {
 		DB: db,
 	}
 
+	userController = *account.NewUserController(db)
+	webhookController := account.NewWebhookController(db)
+	authMiddleware := middleware.NewAuthMiddleware(db)
+
 	// ==========================================
 	// Migrate
 
@@ -127,7 +131,7 @@ func main() {
 	//	log.Printf("Error firing up migrate %v", err)
 	//}
 
-	//log.Printf("Here is the migrate stuff")
+	//log.Printf("Here is the migrate stuff")userController
 	//if err := m.Up(); err != nil {
 	//	log.Printf("Error migrating :sadface:")
 	//	panic(err)
@@ -159,8 +163,17 @@ func main() {
 	baseRouter.Get("/:platform/connect", userController.RedirectAuth)
 	baseRouter.Get("/spotify/auth", userController.AuthSpotifyUser)
 	baseRouter.Get("/deezer/auth", userController.AuthDeezerUser)
-	baseRouter.Get("/track/convert", middleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
-	baseRouter.Get("/playlist/convert", middleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
+	baseRouter.Get("/track/convert", authMiddleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
+	baseRouter.Get("/playlist/convert", authMiddleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
+
+	baseRouter.Get("/generate-key", userController.GenerateAPIKey)
+	baseRouter.Post("/key/revoke", authMiddleware.ValidateKey, userController.RevokeKey)
+	baseRouter.Post("/key/allow", authMiddleware.ValidateKey, userController.UnRevokeKey)
+	baseRouter.Delete("/key/delete", authMiddleware.ValidateKey, userController.DeleteKey)
+	baseRouter.Post("/webhook/add", authMiddleware.ValidateKey, webhookController.CreateWebhookUrl)
+	baseRouter.Post("/webhook/update", authMiddleware.ValidateKey, webhookController.UpdateUserWebhookUrl)
+	baseRouter.Get("/webhook", authMiddleware.ValidateKey, webhookController.FetchWebhookUrl)
+	baseRouter.Delete("/webhook", authMiddleware.ValidateKey, webhookController.DeleteUserWebhookUrl)
 
 	// MIDDLEWARE DEFINITION
 	app.Use(jwtware.New(jwtware.Config{
@@ -174,10 +187,6 @@ func main() {
 	// FIXME: move this endpoint thats fetching link info from the `controllers` package
 	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
 
-	baseRouter.Get("/generate-key", userController.GenerateAPIKey)
-	baseRouter.Post("/key/revoke", middleware.ValidateKey, userController.RevokeKey)
-	baseRouter.Post("/key/allow", middleware.ValidateKey, userController.UnRevokeKey)
-	baseRouter.Delete("/key/delete", middleware.ValidateKey, userController.DeleteKey)
 	baseRouter.Get("/key", userController.RetrieveKey)
 
 	// now to the WS endpoint to connect to when they visit the website and want to "convert"

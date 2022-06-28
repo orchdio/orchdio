@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
+	"time"
 )
 
 var DeezerHost = []string{"deezer.page.link", "www.deezer.com"}
@@ -21,12 +22,22 @@ var (
 	ENOTIMPLEMENTED  = errors.New("NOT_IMPLEMENTED")
 	EGENERAL         = errors.New("EGENERAL")
 	EINVALIDLINK     = errors.New("invalid link")
+	EALREADY_EXISTS  = errors.New("already exists")
 )
 
 var (
 	EEDESERIALIZE        = "EVENT_DESERIALIZE_MESSAGE_ERROR"
 	EEPLAYLISTCONVERSION = "EVENT_PLAYLIST_CONVERSION_ERROR"
 )
+
+type User struct {
+	Email     string    `json:"email" db:"email"`
+	Username  string    `json:"username" db:"username"`
+	ID        int       `json:"id" db:"id"`
+	UUID      uuid.UUID `json:"uuid" db:"uuid"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+}
 
 type (
 	SpotifyUser struct {
@@ -164,4 +175,10 @@ type WebsocketMessage struct {
 	Message string      `json:"message"`
 	Event   string      `json:"event_name"`
 	Payload interface{} `json:"payload,omitempty"`
+}
+
+type WebhookUrl struct {
+	Id   int
+	User uuid.UUID
+	Url  string
 }

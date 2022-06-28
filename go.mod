@@ -11,13 +11,12 @@ require (
 	github.com/gofiber/jwt/v3 v3.2.12
 	github.com/gofiber/websocket/v2 v2.0.22
 	github.com/golang-jwt/jwt/v4 v4.4.2
-	github.com/golang-migrate/migrate v3.5.4+incompatible
 	github.com/golang-migrate/migrate/v4 v4.15.2
 	github.com/google/uuid v1.3.0
-	github.com/jmoiron/sqlx v1.3.5 // indirect
+	github.com/jmoiron/sqlx v1.3.5
 	github.com/joho/godotenv v1.4.0
 	github.com/klauspost/compress v1.15.6 // indirect
-	github.com/lib/pq v1.10.6
+	github.com/lib/pq v1.10.6 // indirect
 	github.com/nleeper/goment v1.4.4
 	github.com/savsgio/gotils v0.0.0-20220530130905-52f3993e8d6d // indirect
 	github.com/shirou/gopsutil v3.21.11+incompatible
