@@ -14,10 +14,12 @@ type NewDB struct {
 }
 
 type ApiKey struct {
-	ID      int       `json:"id"`
-	Key     uuid.UUID `json:"key"`
-	User    uuid.UUID `json:"user"`
-	Revoked bool      `json:"revoked"`
+	ID        int       `json:"id" db:"id"`
+	Key       uuid.UUID `json:"key" db:"key"`
+	User      uuid.UUID `json:"user" db:"user"`
+	Revoked   bool      `json:"revoked" db:"revoked"`
+	CreatedAt string    `json:"created_at" db:"created_at"`
+	UpdatedAt string    `json:"updated_at" db:"updated_at"`
 }
 
 // FindUserByEmail finds a user by their email
