@@ -1,11 +1,14 @@
 package middleware
 
 import (
+	"database/sql"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/jmoiron/sqlx"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
+	"orchdio/db"
 	"orchdio/services"
 	"orchdio/util"
 )
@@ -35,7 +38,7 @@ func ExtractLinkInfo(ctx *fiber.Ctx) error {
 			log.Printf("[middleware][ExtractLinkInfo][warning] invalid link. are you sure its a url? %s\n", link)
 			return util.ErrorResponse(ctx, http.StatusBadRequest, err)
 		}
-		
+
 		log.Printf("\n[middleware][ExtractLinkInfo] error - Could not extract link info: %v: for link: %v\n", err, link)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 	}
@@ -50,8 +53,16 @@ func ExtractLinkInfo(ctx *fiber.Ctx) error {
 	return ctx.Next()
 }
 
+type AuthMiddleware struct {
+	DB *sqlx.DB
+}
+
+func NewAuthMiddleware(db *sqlx.DB) *AuthMiddleware {
+	return &AuthMiddleware{DB: db}
+}
+
 // ValidateKey validates that the key is valid
-func ValidateKey(ctx *fiber.Ctx) error {
+func (a *AuthMiddleware) ValidateKey(ctx *fiber.Ctx) error {
 	// get the api key from the header
 	apiKey := ctx.Get("x-orchdio-key")
 
@@ -67,6 +78,21 @@ func ValidateKey(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid apikey")
 	}
 
+	// fetch the user from the database
+	database := db.NewDB{DB: a.DB}
+
+	user, err := database.FetchUserWithApiKey(apiKey)
+	if err != nil {
+
+		if err == sql.ErrNoRows {
+			log.Printf("[middleware][ValidateKey] key not found. %s\n", apiKey)
+			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid apikey")
+		}
+
+		log.Printf("[middleware][ValidateKey] error - Could not fetch user with api key: %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+	}
+	ctx.Locals("user", user)
 	log.Printf("[middleware][ValidateKey] API key is valid")
 	return ctx.Next()
 }
