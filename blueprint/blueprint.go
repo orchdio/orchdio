@@ -177,8 +177,10 @@ type WebsocketMessage struct {
 	Payload interface{} `json:"payload,omitempty"`
 }
 
-type WebhookUrl struct {
-	Id   int
-	User uuid.UUID
-	Url  string
+type Webhook struct {
+	Id        int       `json:"id" db:"id"`
+	User      uuid.UUID `json:"user" db:"user"`
+	Url       string    `json:"url" db:"url"`
+	CreatedAt string    `json:"created_at" db:"created_at"`
+	UpdatedAt string    `json:"updated_at" db:"updated_at"`
 }

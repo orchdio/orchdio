@@ -107,7 +107,7 @@ func (d *NewDB) FetchWebhook(user string) ([]byte, error) {
 		return nil, result.Err()
 	}
 
-	webhook := blueprint.WebhookUrl{}
+	webhook := blueprint.Webhook{}
 
 	scanErr := result.StructScan(&webhook)
 	if scanErr != nil {
