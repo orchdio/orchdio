@@ -13,15 +13,6 @@ type NewDB struct {
 	DB *sqlx.DB
 }
 
-type ApiKey struct {
-	ID        int       `json:"id" db:"id"`
-	Key       uuid.UUID `json:"key" db:"key"`
-	User      uuid.UUID `json:"user" db:"user"`
-	Revoked   bool      `json:"revoked" db:"revoked"`
-	CreatedAt string    `json:"created_at" db:"created_at"`
-	UpdatedAt string    `json:"updated_at" db:"updated_at"`
-}
-
 // FindUserByEmail finds a user by their email
 func (d *NewDB) FindUserByEmail(email string) (*blueprint.User, error) {
 	result := d.DB.QueryRowx(queries.FindUserByEmail, email)
@@ -36,9 +27,9 @@ func (d *NewDB) FindUserByEmail(email string) (*blueprint.User, error) {
 }
 
 // FetchUserApikey fetches the user api key
-func (d *NewDB) FetchUserApikey(uid uuid.UUID) (*ApiKey, error) {
+func (d *NewDB) FetchUserApikey(uid uuid.UUID) (*blueprint.ApiKey, error) {
 	result := d.DB.QueryRowx(queries.FetchUserApiKey, uid)
-	apiKey := &ApiKey{}
+	apiKey := &blueprint.ApiKey{}
 
 	err := result.StructScan(apiKey)
 

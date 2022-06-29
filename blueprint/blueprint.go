@@ -184,3 +184,12 @@ type Webhook struct {
 	CreatedAt string    `json:"created_at" db:"created_at"`
 	UpdatedAt string    `json:"updated_at" db:"updated_at"`
 }
+
+type ApiKey struct {
+	ID        int       `json:"id" db:"id"`
+	Key       uuid.UUID `json:"key" db:"key"`
+	User      uuid.UUID `json:"user" db:"user"`
+	Revoked   bool      `json:"revoked" db:"revoked"`
+	CreatedAt string    `json:"created_at" db:"created_at"`
+	UpdatedAt string    `json:"updated_at" db:"updated_at"`
+}
