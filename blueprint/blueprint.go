@@ -27,7 +27,7 @@ var (
 
 var (
 	EEDESERIALIZE        = "EVENT_DESERIALIZE_MESSAGE_ERROR"
-	EEPLAYLISTCONVERSION = "EVENT_PLAYLIST_CONVERSION_ERROR"
+	EEPLAYLISTCONVERSION = "playlist:conversion"
 )
 
 type User struct {
@@ -172,6 +172,13 @@ type WebsocketErrorMessage struct {
 
 // WebsocketMessage represents the message sent from the server to the client over websocket
 type WebsocketMessage struct {
+	Message string      `json:"message"`
+	Event   string      `json:"event_name"`
+	Payload interface{} `json:"payload,omitempty"`
+}
+
+// WebhookMessage struct represents the message sent from the server to the client over webhook
+type WebhookMessage struct {
 	Message string      `json:"message"`
 	Event   string      `json:"event_name"`
 	Payload interface{} `json:"payload,omitempty"`

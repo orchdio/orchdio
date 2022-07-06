@@ -26,6 +26,7 @@ import (
 	"orchdio/controllers/account"
 	"orchdio/controllers/conversion"
 	"orchdio/controllers/platforms"
+	"orchdio/controllers/webhook"
 	"orchdio/middleware"
 	"orchdio/universal"
 	"os"
@@ -178,6 +179,7 @@ func main() {
 	//}
 
 	platformsControllers := platforms.NewPlatform(redisClient)
+	whController := webhook.NewWebhookController(db, redisClient)
 
 	/**
 	 ==================================================================
@@ -203,6 +205,7 @@ func main() {
 	baseRouter.Post("/webhook/update", authMiddleware.ValidateKey, webhookController.UpdateUserWebhookUrl)
 	baseRouter.Get("/webhook", authMiddleware.ValidateKey, webhookController.FetchWebhookUrl)
 	baseRouter.Delete("/webhook", authMiddleware.ValidateKey, webhookController.DeleteUserWebhookUrl)
+	baseRouter.Post("/white-tiger", whController.Handle)
 
 	// ==========================================
 	// NEXT ROUTES

@@ -6,7 +6,9 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
+	"github.com/vicanso/go-axios"
 	"log"
+	"net/http"
 	"orchdio/blueprint"
 	"orchdio/db"
 	"orchdio/universal"
@@ -94,7 +96,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, use
 		log.Printf("[queue][EnqueueTask] - error marshalling playlist conversion: %v", mErr)
 		return mErr
 	}
-	_, rErr := database.UpdateTask(taskId, string(ser))
+	result, rErr := database.UpdateTask(taskId, string(ser))
 
 	if rErr != nil {
 		log.Printf("[queue][EnqueueTask] - error updating task status: %v", rErr)
@@ -107,18 +109,29 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, use
 		log.Printf("[queue][EnqueueTask] - error updating task status: %v", taskErr)
 		return taskErr
 	}
-	log.Printf("[queue][EnqueueTask] - successfully processed task: %v", taskId)
-	return nil
-}
 
-func (o *OrchdioQueue) ConversionHandler(ctx context.Context, t *asynq.Task) error {
-	// get the data passed first by serializing the task payload
-	var info blueprint.LinkInfo
-	err := json.Unmarshal(t.Payload(), &info)
-	if err != nil {
-		log.Printf("[queue][ProcessConversionTask][conversion] - error unmarshalling task payload: %v", err)
-		return err
+	// post to the developer webhook
+	webhook, wErr := database.FetchWebhook(user.UUID.String())
+	if wErr != nil {
+		log.Printf("[queue][PlaylistHandler] - error fetching developer webhook: %v", wErr)
+		return wErr
 	}
 
+	r := blueprint.WebhookMessage{
+		Message: "playlist conversion done",
+		Event:   blueprint.EEPLAYLISTCONVERSION,
+		Payload: result,
+	}
+	re, evErr := axios.Post(string(webhook), r)
+	if re.Status != http.StatusOK {
+		log.Printf("[queue][PlaylistHandler] - error posting webhook: %v", re)
+		return evErr
+	}
+	if evErr != nil {
+		log.Printf("[queue][PlaylistHandler] - error posting webhook to endpoint %s=%v", string(webhook), evErr)
+		return evErr
+	}
+
+	log.Printf("[queue][EnqueueTask] - successfully processed task: %v", taskId)
 	return nil
 }
