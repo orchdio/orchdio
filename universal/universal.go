@@ -117,6 +117,7 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 	omittedTracks := map[string][]blueprint.OmittedTracks{}
 	switch info.Platform {
 	case deezer.IDENTIFIER:
+		log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist][deezer] converting playlist %s\n", info.EntityID)
 		var deezerPlaylist, tracklistErr = deezer.FetchPlaylistTracklist(info.EntityID, red)
 		if tracklistErr != nil {
 			log.Printf("\n[controllers][platforms][ConvertPlaylist][error] - Could not fetch tracklist from deezer %v\n", tracklistErr)
@@ -125,8 +126,13 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 
 		// then for each of these playlists, search for the tracks on spotify
 
+		log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist][deezer] fetching tracks for playlist from spotify %s\n", info.EntityID)
 		spotifyTracks, omittedSpotifyTracks := spotify.FetchPlaylistSearchResult(deezerPlaylist, red)
+		log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist][deezer] fetchde playlist tracks from spotify %s\n", info.EntityID)
+
+		log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist][deezer] fetching tracks for playlist from tidal %s\n", info.EntityID)
 		tidalTracks, omittedTidalTracks := tidal.FetchTrackWithResult(deezerPlaylist, red)
+		log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist][deezer] fetchde playlist tracks from tidal %s\n", info.EntityID)
 
 		omittedTracks["spotify"] = *omittedSpotifyTracks
 		omittedTracks["tidal"] = *omittedTidalTracks
@@ -148,16 +154,17 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 			  "deezer": [{ Title: '', URL: ''}, { Title: '', URL: ''}]
 			}
 		*/
-
+		log.Printf("\n[controllers][platforms][ConvertPlaylist][deezer] - fetching track in the playlist with url: %v\n", deezerPlaylist.URL)
 		err := CachePlaylistTracksWithID(&deezerPlaylist.Tracks, red)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][ConvertPlaylist][warning] - Could not cache tracks for playlist %s: %v\n", deezerPlaylist.Title, err)
+			log.Printf("\n[controllers][platforms][ConvertPlaylist][deezer][warning] - Could not cache tracks for playlist %s: %v\n", deezerPlaylist.Title, err)
 		} else {
 			log.Printf("\n[controllers][platforms][ConvertPlaylist][success] - Cached tracks for playlist %s\n", deezerPlaylist.Title)
 		}
-
+		log.Printf("\n[controllers][platforms][ConvertPlaylist][deezer] - converted playlist %v\n", deezerPlaylist.URL)
 		return &conversion, nil
 	case spotify.IDENTIFIER:
+		log.Printf("\n[controllers][platforms][ConvertPlaylist][spotify] - converting playlist with id: %v\n", info.EntityID)
 		entityID := info.EntityID
 
 		spotifyPlaylist, _, err := spotify.FetchPlaylistTracksAndInfo(entityID, red)
@@ -167,9 +174,13 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 			log.Printf("\n[controllers][platforms][base] Error fetching playlist tracks and info from spotify: %v\n", err)
 			return nil, err
 		}
-
+		log.Printf("\n[controllers][platforms][base][spotify] - fetching playlist tracks and info from deezer: %v\n", spotifyPlaylist)
 		deezerTracks, omittedDeezerTracks := deezer.FetchPlaylistSearchResult(spotifyPlaylist, red)
+		log.Printf("\n[controllers][platforms][base][spotify] - fetched playlist tracks and info from deezer: %v\n", spotifyPlaylist)
+
+		log.Printf("\n[controllers][platforms][base][spotify] - fetching playlist tracks and info from tidal: %v\n", spotifyPlaylist)
 		tidalTracks, omittedTidalTracks := tidal.FetchTrackWithResult(spotifyPlaylist, red)
+		log.Printf("\n[controllers][platforms][base][spotify] - fetched playlist tracks and info from tidal: %v\n", spotifyPlaylist)
 
 		omittedTracks["deezer"] = *omittedDeezerTracks
 		omittedTracks["tidal"] = *omittedTidalTracks
@@ -181,6 +192,7 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 		conversion.OmittedTracks = omittedTracks
 		conversion.Cover = spotifyPlaylist.Cover
 
+		log.Printf("\n[controllers][platforms][ConvertPlaylist][spotify] - caching tracks in playlist %v\n", spotifyPlaylist.URL)
 		err = CachePlaylistTracksWithID(deezerTracks, red)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][base] warning - could not cache tracks: %v %v\n\n", err, deezerTracks)
@@ -188,21 +200,28 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 		conversion.Tracks.Spotify = &spotifyPlaylist.Tracks
 		conversion.Tracks.Deezer = deezerTracks
 		conversion.Tracks.Tidal = tidalTracks
-
+		log.Printf("\n[controllers][platforms][ConvertPlaylist][spotify] - fetching tracks in playlist %v\n", spotifyPlaylist.URL)
 		err = CachePlaylistTracksWithID(&spotifyPlaylist.Tracks, red)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][base] warning - could not cache tracks: %v %v\n\n", err, spotifyPlaylist.Tracks)
 		}
+		log.Printf("\n[controllers][platforms][ConvertPlaylist][spotify] - converted playlist %v\n", spotifyPlaylist.URL)
 		return &conversion, nil
 
 	case tidal.IDENTIFIER:
+		log.Printf("\n[controllers][platforms][ConvertPlaylist][tidal] - converting playlist %v\n", info.EntityID)
 		tidalPlaylist, err := tidal.FetchPlaylist(info.EntityID, red)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][tidal][ConvertPlaylist] error - could not fetch playlist with ID from tidal: %v\n", err)
 			return nil, err
 		}
+		log.Printf("\n[controllers][platforms][base][tidal] - fetching playlist tracks and info from deezer: %v\n", tidalPlaylist)
 		deezerTracks, omittedDeezerTracks := deezer.FetchPlaylistSearchResult(tidalPlaylist, red)
+		log.Printf("\n[controllers][platforms][base][tidal] - fetched playlist tracks and info from deezer: %v\n", tidalPlaylist)
+
+		log.Printf("\n[controllers][platforms][base][tidal] - fetching playlist tracks and info from spotify: %v\n", tidalPlaylist)
 		spotifyTracks, omittedSpotifyTracks := spotify.FetchPlaylistSearchResult(tidalPlaylist, red)
+		log.Printf("\n[controllers][platforms][base][tidal] - fetched playlist tracks and info from spotify: %v\n", tidalPlaylist)
 
 		omittedTracks["deezer"] = *omittedDeezerTracks
 		omittedTracks["spotify"] = *omittedSpotifyTracks
@@ -218,13 +237,15 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 		conversion.Tracks.Deezer = deezerTracks
 		conversion.Tracks.Spotify = spotifyTracks
 		conversion.Tracks.Tidal = &tidalPlaylist.Tracks
+
+		log.Printf("\n[controllers][platforms][ConvertPlaylist][tidal] - caching tracks in playlist %v\n", tidalPlaylist.URL)
 		err = CachePlaylistTracksWithID(deezerTracks, red)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][tidal][ConvertPlaylist] warning - could not cache tracks: %v %v\n\n", err, deezerTracks)
 		} else {
 			log.Printf("\n[controllers][platforms][tidal][ConvertPlaylist] success - cached tracks: %v\n\n", tidalPlaylist.Title)
 		}
-
+		log.Printf("\n[controllers][platforms][ConvertPlaylist][tidal] - converted playlist %v\n", tidalPlaylist.URL)
 		return &conversion, nil
 	default:
 		return nil, blueprint.ENOTIMPLEMENTED

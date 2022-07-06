@@ -10,17 +10,21 @@ import (
 	"github.com/gofiber/websocket/v2"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
 	"github.com/joho/godotenv"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/host"
 	"github.com/shirou/gopsutil/mem"
+	"github.com/vmihailenco/taskq/v3"
+	"github.com/vmihailenco/taskq/v3/redisq"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
 	"orchdio/controllers"
 	"orchdio/controllers/account"
+	"orchdio/controllers/conversion"
 	"orchdio/controllers/platforms"
 	"orchdio/middleware"
 	"orchdio/universal"
@@ -117,9 +121,45 @@ func main() {
 		DB: db,
 	}
 
+	/**
+	 ===========================================================
+	+ Redis connections here
+	*/
+
+	redisOpts, err := redis.ParseURL(os.Getenv("REDISCLOUD_URL"))
+	if err != nil {
+		log.Printf("Error parsing redis url")
+		panic(err)
+	}
+
+	redisClient := redis.NewClient(redisOpts)
+	if redisClient.Ping(context.Background()).Err() != nil {
+		log.Printf("\n[main] [error] - Could not connect to redis. Are you sure redis is configured correctly?")
+		panic("Could not connect to redis. Please check your redis configuration.")
+	}
+
+	var QueueFactory = redisq.NewFactory()
+
+	var playlistQueue = QueueFactory.RegisterQueue(&taskq.QueueOptions{
+		Name:  "orchdio-playlist-queue",
+		Redis: redisClient,
+	})
+
+	asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisOpts.Addr})
+	asynqServer := asynq.NewServer(asynq.RedisClientOpt{Addr: redisOpts.Addr}, asynq.Config{Concurrency: 10})
+
+	asynqMux := asynq.NewServeMux()
+	//asynqMux.HandleFunc("orchdio-playlist-queue", orchdioQueue.PlaylistTaskHandler)
+
+	// ===========================================================
+	// this is the job queue config shenanigans
+	//conversionContr := conversion.
+	// ===========================================================
+
 	userController = *account.NewUserController(db)
 	webhookController := account.NewWebhookController(db)
 	authMiddleware := middleware.NewAuthMiddleware(db)
+	conversionController := conversion.NewConversionController(db, redisClient, playlistQueue, QueueFactory, asyncClient, asynqServer, asynqMux)
 
 	// ==========================================
 	// Migrate
@@ -136,17 +176,6 @@ func main() {
 	//	log.Printf("Error migrating :sadface:")
 	//	panic(err)
 	//}
-
-	redisOpts, err := redis.ParseURL(os.Getenv("REDISCLOUD_URL"))
-	if err != nil {
-		panic(err)
-	}
-
-	redisClient := redis.NewClient(redisOpts)
-	if redisClient.Ping(context.Background()).Err() != nil {
-		log.Printf("\n[main] [error] - Could not connect to redis. Are you sure redis is configured correctly?")
-		panic("Could not connect to redis. Please check your redis configuration.")
-	}
 
 	platformsControllers := platforms.NewPlatform(redisClient)
 
@@ -174,6 +203,17 @@ func main() {
 	baseRouter.Post("/webhook/update", authMiddleware.ValidateKey, webhookController.UpdateUserWebhookUrl)
 	baseRouter.Get("/webhook", authMiddleware.ValidateKey, webhookController.FetchWebhookUrl)
 	baseRouter.Delete("/webhook", authMiddleware.ValidateKey, webhookController.DeleteUserWebhookUrl)
+
+	// ==========================================
+	// NEXT ROUTES
+	nextRouter := baseRouter.Group("/next", authMiddleware.ValidateKey)
+
+	nextRouter.Post("/playlist/convert", middleware.ExtractLinkInfoFromBody, conversionController.ConvertPlaylist)
+	nextRouter.Get("/task/:taskId", conversionController.GetPlaylistTask)
+	nextRouter.Delete("/task/:taskId", conversionController.DeletePlaylistTask)
+
+	// FIXME: remove later. this is just for compatibility with the ping api for dev.
+	nextRouter.Post("/job/ping", conversionController.ConvertPlaylist)
 
 	// MIDDLEWARE DEFINITION
 	app.Use(jwtware.New(jwtware.Config{
@@ -219,6 +259,13 @@ func main() {
 
 	/**
 	 ==================================================================
+	+ some job queue shenanigans here
+	*/
+	// consume all the jobs in the queue
+	//if err :=
+
+	/**
+	 ==================================================================
 	+
 	+
 	+	SERVER PORT CONFIGURATIONS AND SERVER STARTING THINGS HERE
@@ -233,6 +280,11 @@ func main() {
 	}
 
 	port = fmt.Sprintf(":%s", port)
+
+	//if aErr := asynqServer.Run(asynqMux); aErr != nil {
+	//	log.Printf("\n[main] [error] - Could not start asynq server. Are you sure redis is configured correctly? Also, something else might be wrong")
+	//	panic(aErr)
+	//}
 
 	log.Printf("Server is up and running on port: %s", port)
 	err = app.Listen(port)

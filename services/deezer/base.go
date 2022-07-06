@@ -253,7 +253,7 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]
 
 // FetchPlaylistTracklist fetches tracks under a playlist on deezer with pagination
 func FetchPlaylistTracklist(id string, red *redis.Client) (*blueprint.PlaylistSearchResult, error) {
-
+	log.Printf("\n[services][deezer][FetchPlaylistTracklist] Fetching playlist %v\n", id)
 	infoLink := "https://api.deezer.com/playlist/" + id + "?limit=1"
 	info, err := axios.Get(infoLink)
 	if err != nil {

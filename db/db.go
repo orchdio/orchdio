@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"log"
@@ -9,6 +10,7 @@ import (
 	"orchdio/db/queries"
 )
 
+// NewDB represents a new DB layer struct for performing DB related operations
 type NewDB struct {
 	DB *sqlx.DB
 }
@@ -182,5 +184,86 @@ func (d *NewDB) DeleteUserWebhook(user string) error {
 		return execErr
 	}
 	log.Printf("[db][DeleteUserWebhook] deleted user webhook\n")
+	return nil
+}
+
+// CreateOrUpdateTask creates or updates a task and returns the id of the task or an error
+func (d *NewDB) CreateOrUpdateTask(uid, user, entity_id string) ([]byte, error) {
+	log.Printf("[db][CreateOrUpdateNewTask] Running query %s with '%s', '%s', '%s'\n", queries.CreateOrUpdateTask, uid, user, entity_id)
+	r := d.DB.QueryRowx(queries.CreateOrUpdateTask, uid, user, entity_id)
+	var res string
+	execErr := r.Scan(&res)
+	if execErr != nil {
+		log.Printf("[db][CreateOrUpdateNewTask] error creating or updating new task. %v\n", execErr)
+		return nil, execErr
+	}
+	log.Printf("[db][CreateOrUpdateNewTask] created or updated new task\n")
+	return []byte(res), nil
+}
+
+// UpdateTaskStatus updates a task's status and returns an error
+func (d *NewDB) UpdateTaskStatus(uid, status string) error {
+	log.Printf("[db][UpdateTaskStatus] Running query %s with '%s'\n", queries.UpdateTaskStatus, status)
+	_, execErr := d.DB.Exec(queries.UpdateTaskStatus, uid, status)
+	if execErr != nil {
+		log.Printf("[db][UpdateTaskStatus] error updating task status. %v\n", execErr)
+		return execErr
+	}
+	log.Printf("[db][UpdateTaskStatus] updated task status\n")
+	return nil
+}
+
+// UpdateTask updates a task and returns the result of the task or an error
+func (d *NewDB) UpdateTask(uid, data string) (*blueprint.PlaylistConversion, error) {
+	log.Printf("[db][UpdateTask] Running query %s with '%s'\n", queries.UpdateTask, uid)
+	r := d.DB.QueryRowx(queries.UpdateTask, uid, data)
+	//var res blueprint.PlaylistConversion
+	var res string
+	execErr := r.Scan(&res)
+
+	if execErr != nil {
+		log.Printf("[db][UpdateTask] error updating task. %v\n", execErr)
+		return nil, execErr
+	}
+
+	// deserialize into a playlist conversion
+	var pc blueprint.PlaylistConversion
+	err := json.Unmarshal([]byte(res), &pc)
+	if err != nil {
+		log.Printf("[db][UpdateTask] error deserializing task. %v\n", err)
+		return nil, err
+	}
+	return &pc, nil
+}
+
+// FetchTask fetches a task and returns the task or an error
+func (d *NewDB) FetchTask(uid string) (*blueprint.TaskRecord, error) {
+	log.Printf("[db][FetchTask] Running query %s with '%s'\n", queries.FetchTask, uid)
+	r := d.DB.QueryRowx(queries.FetchTask, uid)
+	//var res blueprint.PlaylistConversion
+	var res blueprint.TaskRecord
+	err := r.StructScan(&res)
+
+	// deserialize into a playlist conversion
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("[db][FetchTask] no task found with uid %s\n", uid)
+			return nil, sql.ErrNoRows
+		}
+		log.Printf("[db][FetchTask] error deserializing task. %v\n", err)
+		return nil, err
+	}
+	return &res, nil
+}
+
+// DeleteTask deletes a task
+func (d *NewDB) DeleteTask(uid string) error {
+	log.Printf("[db][DeleteTask] Running query %s with '%s'\n", queries.DeleteTask, uid)
+	_, execErr := d.DB.Exec(queries.DeleteTask, uid)
+	if execErr != nil {
+		log.Printf("[db][DeleteTask] error deleting task. %v\n", execErr)
+		return execErr
+	}
+	log.Printf("[db][DeleteTask] deleted task\n")
 	return nil
 }

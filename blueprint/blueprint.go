@@ -177,6 +177,7 @@ type WebsocketMessage struct {
 	Payload interface{} `json:"payload,omitempty"`
 }
 
+// Webhook represents a webhook record in the db
 type Webhook struct {
 	Id        int       `json:"id" db:"id"`
 	User      uuid.UUID `json:"user" db:"user"`
@@ -185,6 +186,7 @@ type Webhook struct {
 	UpdatedAt string    `json:"updated_at" db:"updated_at"`
 }
 
+// ApiKey represents an API key record
 type ApiKey struct {
 	ID        int       `json:"id" db:"id"`
 	Key       uuid.UUID `json:"key" db:"key"`
@@ -192,4 +194,22 @@ type ApiKey struct {
 	Revoked   bool      `json:"revoked" db:"revoked"`
 	CreatedAt string    `json:"created_at" db:"created_at"`
 	UpdatedAt string    `json:"updated_at" db:"updated_at"`
+}
+
+// PlaylistTaskData represents the payload of a playlist task
+type PlaylistTaskData struct {
+	LinkInfo *LinkInfo `json:"link_info"`
+	User     *User     `json:"user"`
+}
+
+// TaskRecord represents a task record in the database
+type TaskRecord struct {
+	Id        int       `json:"id,omitempty" db:"id"`
+	User      uuid.UUID `json:"user,omitempty" db:"user"`
+	UID       uuid.UUID `json:"uid,omitempty" db:"uuid"`
+	CreatedAt string    `json:"created_at,omitempty" db:"created_at"`
+	UpdatedAt string    `json:"updated_at,omitempty" db:"updated_at"`
+	Result    string    `json:"result,omitempty" db:"result"`
+	Status    string    `json:"status,omitempty" db:"status"`
+	EntityID  string    `json:"entity_id,omitempty" db:"entity_id"`
 }

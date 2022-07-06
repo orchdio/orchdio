@@ -13,6 +13,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.4.2
 	github.com/golang-migrate/migrate/v4 v4.15.2
 	github.com/google/uuid v1.3.0
+	github.com/hibiken/asynq v0.23.0 // indirect
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/joho/godotenv v1.4.0
 	github.com/klauspost/compress v1.15.6 // indirect
@@ -20,15 +21,18 @@ require (
 	github.com/nleeper/goment v1.4.4
 	github.com/savsgio/gotils v0.0.0-20220530130905-52f3993e8d6d // indirect
 	github.com/shirou/gopsutil v3.21.11+incompatible
+	github.com/spf13/cast v1.5.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.10 // indirect
 	github.com/tklauser/numcpus v0.5.0 // indirect
 	github.com/tkuchiki/go-timezone v0.2.2 // indirect
 	github.com/vicanso/go-axios v1.4.3
+	github.com/vmihailenco/taskq/v3 v3.2.8 // indirect
 	github.com/yusufpapurcu/wmi v1.2.2 // indirect
 	github.com/zmb3/spotify/v2 v2.2.0
 	go.uber.org/atomic v1.9.0 // indirect
 	golang.org/x/net v0.0.0-20220622184535-263ec571b305 // indirect
 	golang.org/x/oauth2 v0.0.0-20220622183110-fd043fe589d2
-	golang.org/x/sys v0.0.0-20220622161953-175b2fd9d664 // indirect
+	golang.org/x/sys v0.0.0-20220704084225-05e143d24a9e // indirect
+	golang.org/x/time v0.0.0-20220609170525-579cf78fd858 // indirect
 	google.golang.org/protobuf v1.28.0 // indirect
 )
