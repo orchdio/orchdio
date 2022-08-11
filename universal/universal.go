@@ -176,11 +176,10 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 		}
 		log.Printf("\n[controllers][platforms][base][spotify] - fetching playlist tracks and info from deezer: %v\n", spotifyPlaylist)
 		deezerTracks, omittedDeezerTracks := deezer.FetchPlaylistSearchResult(spotifyPlaylist, red)
-		log.Printf("\n[controllers][platforms][base][spotify] - fetched playlist tracks and info from deezer: %v\n", spotifyPlaylist)
+		log.Printf("\n[controllers][platforms][base][spotify] - fetched playlist tracks and info from deezer: %v\n", deezerTracks)
 
-		log.Printf("\n[controllers][platforms][base][spotify] - fetching playlist tracks and info from tidal: %v\n", spotifyPlaylist)
 		tidalTracks, omittedTidalTracks := tidal.FetchTrackWithResult(spotifyPlaylist, red)
-		log.Printf("\n[controllers][platforms][base][spotify] - fetched playlist tracks and info from tidal: %v\n", spotifyPlaylist)
+		log.Printf("\n[controllers][platforms][base][spotify] - fetched playlist tracks and info from tidal: %v\n", tidalTracks)
 
 		omittedTracks["deezer"] = *omittedDeezerTracks
 		omittedTracks["tidal"] = *omittedTidalTracks
@@ -215,13 +214,11 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 			log.Printf("\n[controllers][platforms][tidal][ConvertPlaylist] error - could not fetch playlist with ID from tidal: %v\n", err)
 			return nil, err
 		}
-		log.Printf("\n[controllers][platforms][base][tidal] - fetching playlist tracks and info from deezer: %v\n", tidalPlaylist)
 		deezerTracks, omittedDeezerTracks := deezer.FetchPlaylistSearchResult(tidalPlaylist, red)
-		log.Printf("\n[controllers][platforms][base][tidal] - fetched playlist tracks and info from deezer: %v\n", tidalPlaylist)
+		log.Printf("\n[controllers][platforms][base][tidal] - fetched playlist tracks and info from deezer: %v\n", deezerTracks)
 
-		log.Printf("\n[controllers][platforms][base][tidal] - fetching playlist tracks and info from spotify: %v\n", tidalPlaylist)
 		spotifyTracks, omittedSpotifyTracks := spotify.FetchPlaylistSearchResult(tidalPlaylist, red)
-		log.Printf("\n[controllers][platforms][base][tidal] - fetched playlist tracks and info from spotify: %v\n", tidalPlaylist)
+		log.Printf("\n[controllers][platforms][base][tidal] - fetched playlist tracks and info from spotify: %v\n", spotifyTracks)
 
 		omittedTracks["deezer"] = *omittedDeezerTracks
 		omittedTracks["spotify"] = *omittedSpotifyTracks

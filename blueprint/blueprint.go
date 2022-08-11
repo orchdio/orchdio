@@ -110,7 +110,7 @@ type TrackSearchResult struct {
 	Released string   `json:"released"`
 	Duration string   `json:"duration"`
 	Explicit bool     `json:"explicit"`
-	Titl1e   string   `json:"title"`
+	Title    string   `json:"title"`
 	Preview  string   `json:"preview"`
 	Album    string   `json:"album,omitempty"`
 	ID       string   `json:"id"`
