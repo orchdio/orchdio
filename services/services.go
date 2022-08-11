@@ -1,9 +1,14 @@
 package services
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/badoux/goscraper"
+	"github.com/go-redis/redis/v8"
+	"github.com/jmoiron/sqlx"
+	"github.com/samber/lo"
 	"log"
 	"net/url"
 	"orchdio/blueprint"
@@ -37,25 +42,25 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 
 	song, escapeErr := url.QueryUnescape(t)
 	if escapeErr != nil {
-		log.Printf("\n[services][s: Track][error] Error escaping URL: %v\n", escapeErr)
+		log.Printf("\n[services][ExtractLinkInfo][error] Error escaping URL: %v\n", escapeErr)
 		return nil, escapeErr
 	}
 	// TODO: before parsing, check if it looks like a valid track/playlist url on supported services
 	// check if the "song" is a url
 	contains := strings.Contains(song, "https://")
 	if !contains {
-		log.Printf("[services][s: Track][warning] link doesnt seem to be https.")
+		log.Printf("[services][ExtractLinkInfo][warning] link doesnt seem to be https.")
 		return nil, blueprint.EINVALIDLINK
 	}
 
 	if len([]byte(song)) > 100 {
-		log.Printf("[services][s: Track][warning] link is larger than 100 bytes")
+		log.Printf("[services][ExtractLinkInfo][warning] link is larger than 100 bytes")
 		return nil, errors.New("too large")
 	}
 
 	parsedURL, parseErr := url.Parse(song)
 	if parseErr != nil {
-		log.Printf("\n[services][s: Track][error] Error parsing escaped URL: %v\n", parseErr)
+		log.Printf("\n[services][ExtractLinkInfo][error] Error parsing escaped URL: %v\n", parseErr)
 		return nil, parseErr
 	}
 	// index of the beginning of useless params/query (aka tracking links) in our link
@@ -79,7 +84,7 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 			// it contains a shortlink.
 			previewResult, err := goscraper.Scrape(song, 10)
 			if err != nil {
-				log.Printf("\n[services][s: Track][error] could not retrieve preview of link: %v", previewResult)
+				log.Printf("\n[services][ExtractLinkInfo][error] could not retrieve preview of link: %v", previewResult)
 				return nil, err
 			}
 
@@ -183,4 +188,65 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 		log.Printf(host)
 		return nil, blueprint.EHOSTUNSUPPORTED
 	}
+}
+
+type SyncFollowTask struct {
+	DB  *sqlx.DB
+	Red *redis.Client
+}
+
+func NewFollowTask(db *sqlx.DB, red *redis.Client) *SyncFollowTask {
+	return &SyncFollowTask{
+		DB:  db,
+		Red: red,
+	}
+}
+
+func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId string) ([]byte, bool, error) {
+	// first check the hash in redis
+	cachedSnapshot, cacheErr := s.Red.Get(context.Background(), fmt.Sprintf("%s:snapshot:%s", platform, entityId)).Result()
+
+	// entity comes from the link info. so we need to check if the entity is a playlist or a track and for some
+	// platforms, the entity can be returned in plural, i.e playlists or tracks.
+	supportedEntities := []string{"playlists", "tracks"}
+
+	log.Printf("\n[services][SyncFollowTask][info] entity is: %v\n", entity)
+	if cacheErr != nil {
+		// TODO: handle possible redis.Nil error
+		if cacheErr == redis.Nil {
+			log.Printf("[follow][FetchPlaylistHash] - Entity hasnt been cached: %v", cacheErr)
+			return nil, false, cacheErr
+		}
+		log.Printf("[follow][FetchPlaylistHash] - error getting playlist hash from redis: %v", cacheErr)
+		return nil, false, cacheErr
+	}
+
+	// if we got a cached snapshot, we want to get the latest snapshot for a playlist by making a request
+	// to the platform's api
+	var entitySnapshot string
+	// FIXME: use magic strings instead of hardcoded values
+	if lo.Contains(supportedEntities, entity) {
+		switch platform {
+		// TODO: implement other platforms
+		case "spotify":
+			log.Printf("[follow][FetchPlaylistHash] - checking if playlist has been updated")
+			ent := string(spotify.FetchPlaylistHash(entityId))
+			log.Printf("[follow][FetchPlaylistHash] - playlist hash is: %v", ent)
+			entitySnapshot = ent
+			log.Printf("[follow][FetchPlaylistHash] - fetched playlist hash from spotify: %v", entitySnapshot)
+		}
+	}
+
+	serializesHash, err := json.Marshal(entitySnapshot)
+	if err != nil {
+		log.Printf("[follow][FetchPlaylistHash] - error marshalling playlist hash: %v", err)
+		return nil, false, err
+	}
+
+	sanitizedCachedSnapshot := strings.Replace(string(cachedSnapshot), "\"", "", -1)
+
+	if sanitizedCachedSnapshot == entitySnapshot {
+		return serializesHash, false, nil
+	}
+	return serializesHash, true, nil
 }

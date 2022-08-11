@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/gofiber/fiber/v2"
 	"github.com/jmoiron/sqlx"
+	"github.com/vicanso/go-axios"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
@@ -27,7 +28,7 @@ func (w *WebhookController) FetchWebhookUrl(c *fiber.Ctx) error {
 	user := c.Locals("user").(*blueprint.User)
 
 	database := db.NewDB{DB: w.DB}
-	webhookUrl, err := database.FetchWebhook(user.UUID.String())
+	webhook, err := database.FetchWebhook(user.UUID.String())
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("[controller][user][FetchWebhookUrl] - error - no webhook url found for user %v\n", user.UUID)
@@ -37,9 +38,9 @@ func (w *WebhookController) FetchWebhookUrl(c *fiber.Ctx) error {
 		return util.ErrorResponse(c, http.StatusInternalServerError, "An unexpected error")
 	}
 	response := map[string]string{
-		"url": string(webhookUrl),
+		"url": string(webhook.Url),
 	}
-	log.Printf("[controller][user][FetchWebhookUrl] - fetched webhook url: '%s' for user %v\n", string(webhookUrl), user)
+	log.Printf("[controller][user][FetchWebhookUrl] - fetched webhook url: '%s' for user %v\n", string(webhook.Url), user)
 	return util.SuccessResponse(c, http.StatusCreated, response)
 }
 
@@ -57,17 +58,26 @@ func (w *WebhookController) CreateWebhookUrl(ctx *fiber.Ctx) error {
 		}
 	*/
 
-	webhoookBody := map[string]string{}
+	webhoookBody := struct {
+		Url         string `json:"url"`
+		VerifyToken string `json:"verify_token"`
+	}{}
+
 	err := json.Unmarshal(bod, &webhoookBody)
 	if err != nil {
 		log.Printf("[controller][user][CreateWebhookUrl] - error unmarshalling webhook body %s\n", err.Error())
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
 	}
 
-	webhookUrl := webhoookBody["url"]
+	webhookUrl := webhoookBody.Url
 	if webhookUrl == "" {
 		log.Printf("[controller][user][CreateWebhookUrl] - error - webhook url is empty")
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Webhook url is empty")
+	}
+
+	if webhoookBody.VerifyToken == "" {
+		log.Printf("[controller][user][CreateWebhookUrl] - error - verify token is empty")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Verify token is empty")
 	}
 
 	log.Printf("[controller][user][CreateWebhookUrl] - webhook passed is: '%s' \n", webhookUrl)
@@ -90,10 +100,24 @@ func (w *WebhookController) CreateWebhookUrl(ctx *fiber.Ctx) error {
 	//	return util.ErrorResponse(ctx, http.StatusBadRequest, "User already has a webhook url")
 	//}
 
-	// save into the database
-	//res, err := database.D(webhookUrl, claims.UUID.String())
+	webhook, err := axios.Get(webhookUrl)
+	if err != nil {
+		log.Printf("[controller][user][CreateWebhookUrl] - error - webhook url is invalid: %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Webhook url is invalid")
+	}
 
-	err = database.CreateUserWebhook(user.UUID.String(), webhookUrl)
+	if webhook.Status != http.StatusOK {
+		log.Printf("[controller][user][Create WebhookUrl] - error - webhook url is invalid")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Webhook url is invalid")
+	}
+
+	var VerifyWebhookResponse blueprint.WebhookVerificationResponse
+
+	err = json.Unmarshal(webhook.Data, &VerifyWebhookResponse)
+
+	log.Printf("[controller][user][CreateWebhookUrl] - webhook url is valid %s\n", string(webhook.Data))
+
+	err = database.CreateUserWebhook(user.UUID.String(), webhookUrl, webhoookBody.VerifyToken)
 	if err != nil {
 		if err == blueprint.EALREADY_EXISTS {
 			log.Printf("[controller][user][CreateWebhookUrl] - error - user already has a webhook url")
@@ -102,8 +126,13 @@ func (w *WebhookController) CreateWebhookUrl(ctx *fiber.Ctx) error {
 		log.Printf("[controller][user][CreateWebhookUrl] - error creating webhook url %s\n", err.Error())
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
 	}
+
+	var response = map[string]interface{}{
+		"url": webhookUrl,
+	}
+
 	log.Printf("[controller][user][CreateWebhookUrl] - created webhook url: '%s' for user %v\n", webhookUrl, user)
-	return util.SuccessResponse(ctx, http.StatusCreated, nil)
+	return util.SuccessResponse(ctx, http.StatusCreated, response)
 }
 
 // UpdateUserWebhookUrl updates a webhook for a user
@@ -120,23 +149,31 @@ func (w *WebhookController) UpdateUserWebhookUrl(ctx *fiber.Ctx) error {
 		}
 	*/
 
-	webhoookBody := map[string]string{}
+	webhoookBody := struct {
+		Url         string `json:"url"`
+		VerifyToken string `json:"verify_token"`
+	}{}
 	err := json.Unmarshal(bod, &webhoookBody)
 	if err != nil {
 		log.Printf("[controller][user][UpdateWebhookUrl] - error unmarshalling webhook body %s\n", err.Error())
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
 	}
 
-	webhookUrl := webhoookBody["url"]
+	webhookUrl := webhoookBody.Url
 	if webhookUrl == "" {
 		log.Printf("[controller][user][UpdateWebhookUrl] - error - webhook url is empty")
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Webhook url is empty")
 	}
 
+	if webhoookBody.VerifyToken == "" {
+		log.Printf("[controller][user][UpdateWebhookUrl] - error - webhook verify token is empty")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Webhook verify token is empty")
+	}
+
 	log.Printf("[controller][user][UpdateWebhookUrl] - webhook passed is: '%s' \n", webhookUrl)
 
 	database := db.NewDB{DB: w.DB}
-	upErr := database.UpdateUserWebhook(user.UUID.String(), webhookUrl)
+	upErr := database.UpdateUserWebhook(user.UUID.String(), webhookUrl, webhoookBody.VerifyToken)
 	if upErr != nil {
 		if upErr == sql.ErrNoRows {
 			log.Printf("[controller][user][UpdateWebhookUrl] - error - user does not have a webhook url")
@@ -146,10 +183,8 @@ func (w *WebhookController) UpdateUserWebhookUrl(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
 	}
 	log.Printf("[controller][user][UpdateWebhookUrl] - updated webhook url: '%s' for user %v\n", webhookUrl, user)
-	res := map[string]string{
-		"url": string(webhookUrl),
-	}
-	return util.SuccessResponse(ctx, http.StatusOK, res)
+
+	return util.SuccessResponse(ctx, http.StatusOK, webhoookBody)
 }
 
 // DeleteUserWebhookUrl deletes a webhook for a user
@@ -170,5 +205,40 @@ func (w *WebhookController) DeleteUserWebhookUrl(ctx *fiber.Ctx) error {
 	}
 
 	log.Printf("[controller][user][DeleteUserWebhookUrl] - deleted webhook url for user %v\n", user)
+	return util.SuccessResponse(ctx, http.StatusOK, nil)
+}
+
+func (w *WebhookController) Verify(ctx *fiber.Ctx) error {
+	log.Printf("[controller][user][Verify] - verifying webhook")
+	user := ctx.Locals("user").(*blueprint.User)
+	// in order to verify a webhook, we send a request to the webhook url.
+	//we expect a response with a status code of 200.
+	// we expect the URL to contain the verify_token, which is the token they set in the webhook settings.
+
+	database := db.NewDB{DB: w.DB}
+	webhook, err := database.FetchWebhook(user.UUID.String())
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("[controller][user][Verify] - error - user does not have a webhook url")
+			return util.ErrorResponse(ctx, http.StatusNotFound, "Webhook not found")
+		}
+		log.Printf("[controller][user][Verify] - error fetching webhook url %s\n", err.Error())
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
+	}
+
+	log.Printf("[controller][user][Verify] - webhook url is: '%s' \n", webhook)
+	// make a GET request to the webhook url
+	res, err := axios.Get(webhook.Url)
+	if err != nil {
+		log.Printf("[controller][user][Verify] - error making GET request to webhook url %s\n", err.Error())
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
+	}
+
+	if res.Status != 200 {
+		log.Printf("[controller][user][Verify] - error - webhook url returned status code %d\n", res.Status)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
+	}
+
+	log.Printf("[controller][user][Verify] - webhook response is %v\n", string(res.Data))
 	return util.SuccessResponse(ctx, http.StatusOK, nil)
 }

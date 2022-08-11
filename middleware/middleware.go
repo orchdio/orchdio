@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"database/sql"
+	"encoding/json"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/jmoiron/sqlx"
@@ -18,6 +19,48 @@ func VerifyToken(ctx *fiber.Ctx) error {
 	jwtToken := ctx.Locals("authToken").(*jwt.Token)
 	claims := jwtToken.Claims.(*blueprint.OrchdioUserToken)
 	ctx.Locals("claims", claims)
+	return ctx.Next()
+}
+
+func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
+	linkBody := ctx.Body()
+
+	link := map[string]string{}
+
+	err := json.Unmarshal(linkBody, &link)
+	if err != nil {
+		log.Printf("[middleware][ExtractLinkInfoFromBody] error - Could not unmarshal link body: %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+	}
+	url := link["url"]
+
+	if url == "" {
+		log.Printf("\n[middleware][ExtractLinkInfoFromBody] warning - Link not detected. Skipping...\n")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Bad request. Check you're using the '?link' query string")
+	}
+	linkInfo, err := services.ExtractLinkInfo(url)
+
+	if err != nil {
+		if err == blueprint.EHOSTUNSUPPORTED {
+			return util.ErrorResponse(ctx, http.StatusNotImplemented, err)
+		}
+
+		if err == blueprint.EINVALIDLINK {
+			log.Printf("[middleware][ExtractLinkInfoFromBody][warning] invalid link. are you sure its a url? %s\n", link)
+			return util.ErrorResponse(ctx, http.StatusBadRequest, err)
+		}
+
+		log.Printf("\n[middleware][ExtractLinkInfoFromBody] error - Could not extract link info: %v: for link: %v\n", err, link)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+	}
+
+	if linkInfo == nil {
+		log.Printf("\n[middleware][ExtractLinkInfoFromBody] error - No linkInfo retrieved for link: %v: \n", link)
+		return util.ErrorResponse(ctx, http.StatusNotFound, "Link info not found.")
+	}
+
+	log.Printf("\n[middleware][ExtractLinkInfoFromBody] method - Extracted link info is: %v\n", linkInfo)
+	ctx.Locals("linkInfo", linkInfo)
 	return ctx.Next()
 }
 

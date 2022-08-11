@@ -29,6 +29,29 @@ func NewUserController(db *sqlx.DB) *UserController {
 
 // RedirectAuth returns the authorization URL when a user wants to connect their platform.
 func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
+	// swagger:route GET /:platform/connect RedirectAuth
+	//
+	// Redirects the user to the authorization URL for the platform.
+	//
+	// ---
+	// Consumes:
+	//  - application/json
+	//
+	// Produces:
+	//  - application/json
+	//
+	// Schemes: https
+	//
+	// Parameters:
+	//  + name: platform
+	//    in: path
+	//    description: The platform to connect to.
+	//    required: true
+	//    type: string
+	//
+	// Responses:
+	//  200: redirectAuthResponse
+
 	var uniqueID, _ = uuid.NewUUID()
 	dz := &deezer.Deezer{
 		ClientID:     os.Getenv("DEEZER_ID"),
@@ -61,6 +84,21 @@ func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 // AuthSpotifyUser authorizes a user with spotify account. It generates a JWT token for
 // a new user
 func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
+	// swagger:route GET /spotify/auth AuthSpotifyUser
+	//
+	// Authorizes a user with spotify account. This is connects a user with a spotify account, with Orchdio.
+	//
+	// ---
+	// Consumes:
+	//  - application/json
+	//
+	// Produces:
+	//  - application/json
+	//
+	// Schemes: https
+	//
+	// Responses:
+	//  200: redirectAuthResponse
 	var uniqueID, _ = uuid.NewUUID()
 	state := ctx.Query("state")
 	encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
@@ -115,6 +153,32 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 // AuthDeezerUser authorizes a user with deezer account. It generates a JWT token for
 // a new user
 func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
+	//// swagger:route GET /deezer/auth AuthSpotifyUser
+	////
+	//// Authorizes a user with spotify account. This is connects a user with a deezer account, with Orchdio.
+	////
+	//// ---
+	//// Consumes:
+	////  - application/json
+	////
+	//// Produces:
+	////  - application/json
+	////
+	//// Schemes: https
+	////
+	//// Responses:
+	////  200: deezerAuthResponse
+	//
+	//// swagger:response deezerAuthResponse
+	//type DeezerAuthResponse struct {
+	//	Message string `json:"message"`
+	//	Status  string `json:"status"`
+	//	// Example: "https://connect.deezer.com/oauth/auth.php?app_id=&redirect_uri=&perms=basic_access,email"
+	//	//
+	//	// Required: true
+	//	Data interface{} `json:"data"`
+	//}
+
 	var uniqueID, _ = uuid.NewUUID()
 	code := ctx.Query("code")
 	state := ctx.Query("state")
@@ -318,6 +382,48 @@ func (c *UserController) UnRevokeKey(ctx *fiber.Ctx) error {
 
 // RetrieveKey retrieves an API key associated with the user
 func (c *UserController) RetrieveKey(ctx *fiber.Ctx) error {
+	// swagger:route GET /key RetrieveKey
+	//
+	// Retrieves an API key associated with the user. The user is known by examining the request header and as such, the user must be authenticated
+	//
+	// ---
+	// Consumes:
+	//  - application/json
+	//
+	// Produces:
+	//  - application/json
+	//
+	// Schemes: https
+	//
+	// Security:
+	// 	api_key:
+	// 		[x-orchdio-key]:
+	//
+	// Responses:
+	//  200: retrieveApiKeyResponse
+
+	// swagger:response retrieveApiKeyResponse
+	type RetrieveApiKeyResponse struct {
+		// The message attached to the response.
+		//
+		// Required: true
+		//
+		// Example: "This is a message about whatever i can tell you about the error"
+		Message string `json:"message"`
+		// Description: The error code attached to the response. This will return 200 (or 201), depending on the endpoint. It returns 4xx - 5xx as suitable, otherwise.
+		//
+		// Required: true
+		//
+		// Example: 201
+		Status string `json:"status"`
+		// The key attached to the response.
+		//
+		// Example: c8e51d6c-4d6f-42f6-bcb6-9da19fc5b848
+		//
+		// Required: true
+		Data interface{} `json:"data"`
+	}
+
 	log.Printf("[controller][user][RetrieveKey] - Retrieving API key")
 	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
 	database := db.NewDB{

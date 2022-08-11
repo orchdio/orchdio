@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"log"
@@ -9,6 +10,7 @@ import (
 	"orchdio/db/queries"
 )
 
+// NewDB represents a new DB layer struct for performing DB related operations
 type NewDB struct {
 	DB *sqlx.DB
 }
@@ -91,7 +93,7 @@ func (d *NewDB) DeleteApiKey(key, user string) ([]byte, error) {
 }
 
 // FetchWebhook fetches the webhook for a user
-func (d *NewDB) FetchWebhook(user string) ([]byte, error) {
+func (d *NewDB) FetchWebhook(user string) (*blueprint.Webhook, error) {
 	log.Printf("[db][FetchWebhook] fetching webhook for user %s\n. Running query: %s\n", user, queries.FetchUserWebhook)
 	result := d.DB.QueryRowx(queries.FetchUserWebhook, user)
 
@@ -112,14 +114,12 @@ func (d *NewDB) FetchWebhook(user string) ([]byte, error) {
 		return nil, scanErr
 	}
 
-	webhookUrl := []byte(webhook.Url)
-
 	log.Printf("[db][FetchWebhook] fetched webhook for user %s\n", user)
-	return webhookUrl, nil
+	return &webhook, nil
 }
 
 // CreateUserWebhook creates a webhook for a user
-func (d *NewDB) CreateUserWebhook(user, url string) error {
+func (d *NewDB) CreateUserWebhook(user, url, verifyToken string) error {
 	// first fetch the user's webhook
 	_, err := d.FetchWebhook(user)
 
@@ -130,7 +130,7 @@ func (d *NewDB) CreateUserWebhook(user, url string) error {
 	// TODO: handle more errors FetchWebhook can return
 
 	log.Printf("[db][CreateUserWebhook] creating webhook for user %s\n. Running query: %s\n", user, queries.CreateWebhook)
-	_, execErr := d.DB.Exec(queries.CreateWebhook, url, user)
+	_, execErr := d.DB.Exec(queries.CreateWebhook, url, user, verifyToken)
 
 	if execErr != nil {
 		log.Printf("[db][CreateUserWebhook] error creating webhook for user %s. %v\n", user, execErr)
@@ -162,9 +162,9 @@ func (d *NewDB) FetchUserWithApiKey(key string) (*blueprint.User, error) {
 }
 
 // UpdateUserWebhook updates a user's webhook
-func (d *NewDB) UpdateUserWebhook(user, url string) error {
+func (d *NewDB) UpdateUserWebhook(user, url, verifyToken string) error {
 	log.Printf("[db][UpdateUserWebhook] Running query %s with '%s', '%s' \n", queries.UpdateUserWebhook, user, url)
-	_, execErr := d.DB.Exec(queries.UpdateUserWebhook, url, user)
+	_, execErr := d.DB.Exec(queries.UpdateUserWebhook, url, user, verifyToken)
 	if execErr != nil {
 		log.Printf("[db][UpdateUserWebhook] error updating user webhook. %v\n", execErr)
 		return execErr
@@ -183,4 +183,223 @@ func (d *NewDB) DeleteUserWebhook(user string) error {
 	}
 	log.Printf("[db][DeleteUserWebhook] deleted user webhook\n")
 	return nil
+}
+
+// CreateOrUpdateTask creates or updates a task and returns the id of the task or an error
+func (d *NewDB) CreateOrUpdateTask(uid, user, entity_id string) ([]byte, error) {
+	log.Printf("[db][CreateOrUpdateNewTask] Running query %s with '%s', '%s', '%s'\n", queries.CreateOrUpdateTask, uid, user, entity_id)
+	r := d.DB.QueryRowx(queries.CreateOrUpdateTask, uid, user, entity_id)
+	var res string
+	execErr := r.Scan(&res)
+	if execErr != nil {
+		log.Printf("[db][CreateOrUpdateNewTask] error creating or updating new task. %v\n", execErr)
+		return nil, execErr
+	}
+	log.Printf("[db][CreateOrUpdateNewTask] created or updated new task\n")
+	return []byte(res), nil
+}
+
+// UpdateTaskStatus updates a task's status and returns an error
+func (d *NewDB) UpdateTaskStatus(uid, status string) error {
+	log.Printf("[db][UpdateTaskStatus] Running query %s with '%s'\n", queries.UpdateTaskStatus, status)
+	_, execErr := d.DB.Exec(queries.UpdateTaskStatus, uid, status)
+	if execErr != nil {
+		log.Printf("[db][UpdateTaskStatus] error updating task status. %v\n", execErr)
+		return execErr
+	}
+	log.Printf("[db][UpdateTaskStatus] updated task status\n")
+	return nil
+}
+
+// UpdateTask updates a task and returns the result of the task or an error
+func (d *NewDB) UpdateTask(uid, data string) (*blueprint.PlaylistConversion, error) {
+	log.Printf("[db][UpdateTask] Running query %s with '%s'\n", queries.UpdateTask, uid)
+	r := d.DB.QueryRowx(queries.UpdateTask, uid, data)
+	//var res blueprint.PlaylistConversion
+	var res string
+	execErr := r.Scan(&res)
+
+	if execErr != nil {
+		log.Printf("[db][UpdateTask] error updating task. %v\n", execErr)
+		return nil, execErr
+	}
+
+	// deserialize into a playlist conversion
+	var pc blueprint.PlaylistConversion
+	err := json.Unmarshal([]byte(res), &pc)
+	if err != nil {
+		log.Printf("[db][UpdateTask] error deserializing task. %v\n", err)
+		return nil, err
+	}
+	return &pc, nil
+}
+
+// FetchTask fetches a task and returns the task or an error
+func (d *NewDB) FetchTask(uid string) (*blueprint.TaskRecord, error) {
+	log.Printf("[db][FetchTask] Running query %s with '%s'\n", queries.FetchTask, uid)
+	r := d.DB.QueryRowx(queries.FetchTask, uid)
+	//var res blueprint.PlaylistConversion
+	var res blueprint.TaskRecord
+	err := r.StructScan(&res)
+
+	// deserialize into a playlist conversion
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("[db][FetchTask] no task found with uid %s\n", uid)
+			return nil, sql.ErrNoRows
+		}
+		log.Printf("[db][FetchTask] error deserializing task. %v\n", err)
+		return nil, err
+	}
+	return &res, nil
+}
+
+// DeleteTask deletes a task
+func (d *NewDB) DeleteTask(uid string) error {
+	log.Printf("[db][DeleteTask] Running query %s with '%s'\n", queries.DeleteTask, uid)
+	_, execErr := d.DB.Exec(queries.DeleteTask, uid)
+	if execErr != nil {
+		log.Printf("[db][DeleteTask] error deleting task. %v\n", execErr)
+		return execErr
+	}
+	log.Printf("[db][DeleteTask] deleted task\n")
+	return nil
+}
+
+// FetchFollowTask fetches a task that a developer already sends a request to add a subscriber to. A task is basically
+// a job that runs at interval to check if the playlist has been updated. This method basically fetches this task. The "user"
+// here is the developer.
+func (d *NewDB) FetchFollowTask(entityId string) (*blueprint.FollowTask, error) {
+	log.Printf("[db][FetchUserFollowedTasks] Running query '%s' with '%s'\n", queries.FetchFollowedTask, entityId)
+	rows := d.DB.QueryRowx(queries.FetchFollowedTask, entityId)
+	var res blueprint.FollowTask
+	err := rows.StructScan(&res)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("[db][FetchUserFollowedTasks] no follow found for entity %s\n", entityId)
+			return nil, sql.ErrNoRows
+		}
+		log.Printf("[db][FetchUserFollowedTasks] error fetching user followed tasks. %v\n", err)
+		return nil, err
+	}
+	return &res, nil
+}
+
+// FetchTaskByEntityIDAndType fetches task by entityId and taskType.
+func (d *NewDB) FetchTaskByEntityIDAndType(entityId, taskType string) (*blueprint.FollowTask, error) {
+	log.Printf("[db][FetchTaskByIDAndType] Running query %s with '%s', '%s'\n", queries.FetchTaskByEntityIdAndType, entityId, taskType)
+	rows := d.DB.QueryRowx(queries.FetchTaskByEntityIdAndType, entityId, taskType)
+	var res blueprint.FollowTask
+	err := rows.StructScan(&res)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("[db][FetchTaskByIDAndType] no tasks found for user %s\n", entityId)
+			return nil, sql.ErrNoRows
+		}
+		log.Printf("[db][FetchTaskByIDAndType] error fetching user followed tasks. %v\n", err)
+		return nil, err
+	}
+	return &res, nil
+}
+
+// CreateFollowTask creates a follow task if it does not exist and updates a task if it exists and the subscriber has been subscribed
+func (d *NewDB) CreateFollowTask(developer, taskId, uid, entityId string, subscribers interface{}) ([]byte, error) {
+	log.Printf("[db][CreateFollowTask] Running query %s with '%s', '%s', '%s', '%s'\n", queries.CreateOrAddSubscriberFollow, uid, entityId, taskId, developer)
+	r := d.DB.QueryRowx(queries.CreateOrAddSubscriberFollow, uid, developer, entityId, subscribers)
+	var res string
+	err := r.Scan(&res)
+	if err != nil {
+		log.Printf("[db][CreateFollowTask] error creating follow task. %v\n", err)
+		return nil, err
+	}
+	return []byte(res), nil
+}
+
+func (d *NewDB) FetchFollowByEntityID(entityId string) (*blueprint.FollowTask, error) {
+	log.Printf("[db][FetchFollowByEntityID] Running query '%s' with '%s'\n", queries.FetchFollowByEntityId, entityId)
+	row := d.DB.QueryRowx(queries.FetchFollowByEntityId, entityId)
+	var res blueprint.FollowTask
+	err := row.StructScan(&res)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("[db][FetchFollowByEntityID] no follow found for entity %s\n", entityId)
+			return nil, sql.ErrNoRows
+		}
+		log.Printf("[db][FetchFollowByEntityID] error fetching user followed tasks. %v\n", err)
+		return nil, err
+	}
+	var subscribers []blueprint.User
+	err = json.Unmarshal(res.Subscribers.([]byte), &subscribers)
+	if err != nil {
+		log.Printf("[db][FetchFollowByEntityID] error unmarshalling subscribers. %v\n", err)
+		return nil, err
+	}
+	log.Printf("[db][FetchFollowByEntityID] found %v subscribers\n", subscribers)
+	res.Subscribers = subscribers
+	return &res, nil
+}
+
+func (d *NewDB) CreateFollowNotification(user, followID string, data interface{}) error {
+	log.Printf("[db][CreateNewFollowNotification] Running query %s with '%s', '%s', '%s'\n", queries.CreateFollowNotification, user, followID, data)
+	_, execErr := d.DB.Exec(queries.CreateFollowNotification, user, followID, data)
+	if execErr != nil {
+		log.Printf("[db][CreateNewFollowNotification] error creating new follow notification. %v\n", execErr)
+		return execErr
+	}
+	log.Printf("[db][CreateNewFollowNotification] created new follow notification for playlist %s and subscriber %s\n", followID, user)
+	return nil
+}
+
+// UpdateFollowSubscriber adds a subscriber to a follow task if they already haven't been added
+func (d *NewDB) UpdateFollowSubscriber(subscriber, entityId string) ([]byte, error) {
+	log.Printf("[db][UpdateTaskSubscriber] Running query %s with '%s', '%s'\n", queries.UpdateFollowSubscriber, subscriber, entityId)
+	r := d.DB.QueryRowx(queries.UpdateFollowSubscriber, subscriber, entityId)
+	var res string
+	err := r.Scan(&res)
+	if err != nil {
+		log.Printf("[db][UpdateTaskSubscriber] error updating follow task. %v\n", err)
+		return nil, err
+	}
+	return []byte(res), nil
+}
+
+// FetchFollowsToProcess fetches all follow tasks that need to be processed
+func (d *NewDB) FetchFollowsToProcess() (*[]blueprint.FollowsToProcess, error) {
+	log.Printf("[db][FetchFollowsToProcess] Running query %s\n", queries.FetchPlaylistFollowsToProcess)
+	rows, err := d.DB.Queryx(queries.FetchPlaylistFollowsToProcess)
+
+	if err != nil {
+		log.Printf("[db][FetchFollowsToProcess] error fetching follows to process. %v\n", err)
+		return nil, err
+	}
+
+	var res []blueprint.FollowsToProcess
+	for rows.Next() {
+		var r blueprint.FollowsToProcess
+		err := rows.StructScan(&r)
+		if err != nil {
+			log.Printf("[db][FetchFollowsToProcess] error fetching follow task. %v\n", err)
+			return nil, err
+		}
+
+		var subscribers []blueprint.User
+		err = json.Unmarshal((r.Subscribers).([]byte), &subscribers)
+		if err != nil {
+			log.Printf("[db][FetchFollowsToProcess] error unmarshalling subscribers. %v\n", err)
+			return nil, err
+		}
+
+		log.Printf("[db][FetchFollowsToProcess] fetched follow task %v\n", subscribers)
+
+		if err != nil {
+			log.Printf("[db][FetchFollowsToProcess] error deserializing follow task. I DO NOT EXPECT THIS TO HAPPEN%v\n", err)
+			return nil, err
+		}
+		//r.Result = &deserialize
+
+		// log.Printf("[db][FetchFollowsToProcess] deserialized result %v\n", &deserialize)
+		res = append(res, r)
+	}
+	log.Printf("[db][FetchFollowsToProcess] fetched %d follow tasks\n", len(res))
+	return &res, nil
 }
