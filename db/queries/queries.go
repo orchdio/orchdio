@@ -18,7 +18,7 @@ const UnRevokeApiKey = `UPDATE apiKeys SET revoked = FALSE, updated_at = now() F
 const DeleteApiKey = `DELETE FROM apiKeys api USING users u WHERE u.uuid = api.user AND api.key = $1 AND api.user = $2 RETURNING key;`
 
 const FetchUserWebhook = `SELECT wh.url FROM webhooks wh join users u ON u.uuid = wh.user where wh.user = $1;`
-const CreateWebhook = `INSERT INTO webhooks(url, "user", verify_token, created_at, updated_at) values ($1, $2, $3, now(), now());`
+const CreateWebhook = `INSERT INTO webhooks(url, "user", verify_token, created_at, updated_at, uuid) values ($1, $2, $3, now(), now(), $4);`
 
 const FetchUserWithWebhook = `SELECT u.* FROM webhooks wh join users u ON u.uuid = wh.user where wh.url = $1;`
 const FetchUserWithApiKey = `SELECT u.* FROM apiKeys api join users u ON u.uuid = api.user where api.key = $1 and revoked = false;`
