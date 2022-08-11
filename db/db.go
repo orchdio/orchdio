@@ -122,6 +122,7 @@ func (d *NewDB) FetchWebhook(user string) (*blueprint.Webhook, error) {
 func (d *NewDB) CreateUserWebhook(user, url, verifyToken string) error {
 	// first fetch the user's webhook
 	_, err := d.FetchWebhook(user)
+	uniqueID, _ := uuid.NewUUID()
 
 	if err == nil {
 		log.Printf("[db][CreateUserWebhook] user %s already has a webhook.\n", user)
@@ -130,7 +131,7 @@ func (d *NewDB) CreateUserWebhook(user, url, verifyToken string) error {
 	// TODO: handle more errors FetchWebhook can return
 
 	log.Printf("[db][CreateUserWebhook] creating webhook for user %s\n. Running query: %s\n", user, queries.CreateWebhook)
-	_, execErr := d.DB.Exec(queries.CreateWebhook, url, user, verifyToken)
+	_, execErr := d.DB.Exec(queries.CreateWebhook, url, user, verifyToken, uniqueID.String())
 
 	if execErr != nil {
 		log.Printf("[db][CreateUserWebhook] error creating webhook for user %s. %v\n", user, execErr)

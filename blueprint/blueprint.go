@@ -215,6 +215,7 @@ type Webhook struct {
 	CreatedAt   string    `json:"created_at" db:"created_at"`
 	UpdatedAt   string    `json:"updated_at" db:"updated_at"`
 	VerifyToken string    `json:"verify_token" db:"verify_token"`
+	UID         uuid.UUID `json:"uuid" db:"uuid"`
 }
 
 // ApiKey represents an API key record
