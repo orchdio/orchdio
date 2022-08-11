@@ -1,3 +1,5 @@
+//go:generate swagger generate spec
+
 package main
 
 import (
@@ -13,6 +15,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
 	"github.com/joho/godotenv"
+	"github.com/robfig/cron/v3"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/disk"
 	"github.com/shirou/gopsutil/host"
@@ -25,6 +28,7 @@ import (
 	"orchdio/controllers"
 	"orchdio/controllers/account"
 	"orchdio/controllers/conversion"
+	"orchdio/controllers/follow"
 	"orchdio/controllers/platforms"
 	"orchdio/controllers/webhook"
 	"orchdio/middleware"
@@ -150,6 +154,12 @@ func main() {
 	asynqServer := asynq.NewServer(asynq.RedisClientOpt{Addr: redisOpts.Addr}, asynq.Config{Concurrency: 10})
 
 	asynqMux := asynq.NewServeMux()
+	err = asynqServer.Start(asynqMux)
+	if err != nil {
+		log.Printf("Error starting asynq server")
+		panic(err)
+	}
+
 	//asynqMux.HandleFunc("orchdio-playlist-queue", orchdioQueue.PlaylistTaskHandler)
 
 	// ===========================================================
@@ -161,7 +171,7 @@ func main() {
 	webhookController := account.NewWebhookController(db)
 	authMiddleware := middleware.NewAuthMiddleware(db)
 	conversionController := conversion.NewConversionController(db, redisClient, playlistQueue, QueueFactory, asyncClient, asynqServer, asynqMux)
-
+	followController := follow.NewController(db, redisClient)
 	// ==========================================
 	// Migrate
 
@@ -217,6 +227,7 @@ func main() {
 
 	// FIXME: remove later. this is just for compatibility with the ping api for dev.
 	nextRouter.Post("/job/ping", conversionController.ConvertPlaylist)
+	nextRouter.Post("/follow", followController.FollowPlaylist)
 
 	// MIDDLEWARE DEFINITION
 	app.Use(jwtware.New(jwtware.Config{
@@ -289,6 +300,33 @@ func main() {
 	//	panic(aErr)
 	//}
 
+	//defer func(s *asynq.Server) {
+	//	s.Stop()
+	//}(asynqServer)
+
+	//go func(DB *sqlx.DB) {
+	//	c := make(chan int)
+	//	log.Printf("\n[main] [info] - Process background tasks")
+	//	<-c
+	//	ProcessFollows(c, DB)
+	//}(db)
+
+	// hERE WE WANT TO SETUP A CRONJOB THAT RUNS EVERY 2 MINS TO PROCESS THE FOLLOWS
+	c := cron.New()
+
+	entryId, cErr := c.AddFunc("@every 45s", func() {
+		log.Printf("\n[main] [info] - Process background tasks")
+		follow.SyncFollowsHandler(db, redisClient, asyncClient, asynqMux)
+	})
+
+	if cErr != nil {
+		log.Printf("\n[main] [error] - Could not start cron job.")
+		panic(cErr)
+	}
+
+	c.Start()
+
+	log.Printf("\n[main] [info] - CRONJOB Entry ID is: %v", entryId)
 	log.Printf("Server is up and running on port: %s", port)
 	err = app.Listen(port)
 
@@ -298,3 +336,14 @@ func main() {
 	}
 
 }
+
+//
+//func ProcessFollows(c chan int, redisClient *redis.Client, DB *sqlx.DB, aClient *asynq.Client, aMux *asynq.ServeMux) {
+//	for {
+//		select {
+//		case <-c:
+//			follow.SyncFollowsHandler(DB, redisClient, aClient, aMux)
+//			log.Printf("\n[main] [info] - Follows processed")
+//		}
+//	}
+//}

@@ -20,7 +20,7 @@ import (
 // createNewSpotifyUInstance creates a new spotify client to make API request that doesn't need user auth
 // NOT SURE WHAT I REALLY MEANT BY THIS BUT WHATEVER, KEEP AN EYE ON IT.
 func createNewSpotifyUInstance() *spotify.Client {
-	token := fetchNewAuthToken()
+	token := FetchNewAuthToken()
 	httpClient := spotifyauth.New().Client(context.Background(), token)
 	client := spotify.New(httpClient)
 	return client
@@ -36,8 +36,8 @@ func ExtractArtiste(artiste string) string {
 	return artiste
 }
 
-// fetchNewAuthToken returns a fresh oauth2 token to be used for spotify api calls
-func fetchNewAuthToken() *oauth2.Token {
+// FetchNewAuthToken returns a fresh oauth2 token to be used for spotify api calls
+func FetchNewAuthToken() *oauth2.Token {
 	config := &clientcredentials.Config{
 		ClientID:     os.Getenv("SPOTIFY_ID"),
 		ClientSecret: os.Getenv("SPOTIFY_SECRET"),
@@ -273,7 +273,7 @@ func SearchTrackWithID(id string, red *redis.Client) (*blueprint.TrackSearchResu
 // and the playlist id in the scheme: "spotify:playlist:id"
 func FetchPlaylistTracksAndInfo(id string, red *redis.Client) (*blueprint.PlaylistSearchResult, *blueprint.Pagination, error) {
 	//client := createNewSpotifyUInstance()
-	token := fetchNewAuthToken()
+	token := FetchNewAuthToken()
 	ctx := context.Background()
 	httpClient := spotifyauth.New().Client(ctx, token)
 	client := spotify.New(httpClient)
@@ -420,7 +420,7 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]
 	var omittedTracks []blueprint.OmittedTracks
 	var wg sync.WaitGroup
 	for _, t := range tracks {
-		// WARNING: unhandled slice index
+		// FIXME: unhandled slice index
 		go SearchTrackWithTitleChan(t.Title, t.Artistes[0], ch, &wg, red)
 		outputTrack := <-ch
 		// for some reason, there is no spotify url which means could not fetch track, we
@@ -458,4 +458,19 @@ func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Cli
 	}
 	track, omittedTracks := FetchTracks(trackSearch, red)
 	return track, omittedTracks
+}
+
+func FetchPlaylistHash(playlistId string) []byte {
+	token := FetchNewAuthToken()
+	httpClient := spotifyauth.New().Client(context.Background(), token)
+	client := spotify.New(httpClient)
+	opts := spotify.Fields("snapshot_id")
+
+	info, err := client.GetPlaylist(context.Background(), spotify.ID(playlistId), opts)
+	if err != nil {
+		log.Printf("\n[services][spotify][base][FetchPlaylistHash] error - could not fetch playlist: %v\n", err)
+		return nil
+	}
+
+	return []byte(info.SnapshotID)
 }

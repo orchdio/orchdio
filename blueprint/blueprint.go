@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx/types"
 	"time"
 )
 
@@ -23,6 +24,8 @@ var (
 	EGENERAL         = errors.New("EGENERAL")
 	EINVALIDLINK     = errors.New("invalid link")
 	EALREADY_EXISTS  = errors.New("already exists")
+	EPHANTOMERR      = errors.New("unexpected error")
+	ERRTOOMANY       = errors.New("too many parameters")
 )
 
 var (
@@ -30,13 +33,33 @@ var (
 	EEPLAYLISTCONVERSION = "playlist:conversion"
 )
 
+// MorbinTime because "its morbin time"
+type MorbinTime string
+
 type User struct {
-	Email     string    `json:"email" db:"email"`
-	Username  string    `json:"username" db:"username"`
-	ID        int       `json:"id" db:"id"`
-	UUID      uuid.UUID `json:"uuid" db:"uuid"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+	Email     string     `json:"email" db:"email"`
+	Username  string     `json:"username" db:"username"`
+	ID        int        `json:"id" db:"id"`
+	UUID      uuid.UUID  `json:"uuid" db:"uuid"`
+	CreatedAt MorbinTime `json:"created_at" db:"created_at"`
+	UpdatedAt MorbinTime `json:"updated_at" db:"updated_at"`
+}
+
+// swagger:response redirectAuthResponse
+type ErrorResponse struct {
+	// Description: The message attached to the response.
+	//
+	// Required: true
+	//
+	// Example: "This is a message about whatever i can tell you about the error"
+	Message string `json:"message"`
+	// Description: The error code attached to the response. This will return 200 (or 201), depending on the endpoint. It returns 4xx - 5xx as suitable, otherwise.
+	//
+	// Required: true
+	//
+	// Example: 201
+	Status int         `json:"status"`
+	Error  interface{} `json:"error"`
 }
 
 type (
@@ -87,7 +110,7 @@ type TrackSearchResult struct {
 	Released string   `json:"released"`
 	Duration string   `json:"duration"`
 	Explicit bool     `json:"explicit"`
-	Title    string   `json:"title"`
+	Titl1e   string   `json:"title"`
 	Preview  string   `json:"preview"`
 	Album    string   `json:"album,omitempty"`
 	ID       string   `json:"id"`
@@ -186,11 +209,12 @@ type WebhookMessage struct {
 
 // Webhook represents a webhook record in the db
 type Webhook struct {
-	Id        int       `json:"id" db:"id"`
-	User      uuid.UUID `json:"user" db:"user"`
-	Url       string    `json:"url" db:"url"`
-	CreatedAt string    `json:"created_at" db:"created_at"`
-	UpdatedAt string    `json:"updated_at" db:"updated_at"`
+	Id          int       `json:"id" db:"id"`
+	User        uuid.UUID `json:"user" db:"user"`
+	Url         string    `json:"url" db:"url"`
+	CreatedAt   string    `json:"created_at" db:"created_at"`
+	UpdatedAt   string    `json:"updated_at" db:"updated_at"`
+	VerifyToken string    `json:"verify_token" db:"verify_token"`
 }
 
 // ApiKey represents an API key record
@@ -214,9 +238,67 @@ type TaskRecord struct {
 	Id        int       `json:"id,omitempty" db:"id"`
 	User      uuid.UUID `json:"user,omitempty" db:"user"`
 	UID       uuid.UUID `json:"uid,omitempty" db:"uuid"`
-	CreatedAt string    `json:"created_at,omitempty" db:"created_at"`
-	UpdatedAt string    `json:"updated_at,omitempty" db:"updated_at"`
+	CreatedAt time.Time `json:"created_at,omitempty" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at,omitempty" db:"updated_at"`
 	Result    string    `json:"result,omitempty" db:"result"`
 	Status    string    `json:"status,omitempty" db:"status"`
 	EntityID  string    `json:"entity_id,omitempty" db:"entity_id"`
+	Type      string    `json:"type,omitempty" db:"type"`
+}
+
+type FollowTask struct {
+	Id          int         `json:"id,omitempty" db:"id"`
+	User        uuid.UUID   `json:"user,omitempty" db:"user"`
+	CreatedAt   time.Time   `json:"created_at,omitempty" db:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at,omitempty" db:"updated_at"`
+	UID         uuid.UUID   `json:"uid,omitempty" db:"uuid"`
+	Task        uuid.UUID   `json:"task,omitempty" db:"task"`
+	Subscribers interface{} `json:"subscribers,omitempty" db:"subscribers"`
+	EntityID    string      `json:"entity_id,omitempty" db:"entity_id"`
+	Developer   string      `json:"developer,omitempty" db:"developer"`
+	EntityURL   string      `json:"entity_url,omitempty" db:"entity_url"`
+	//Status      string      `json:"status,omitempty" db:"status"`
+}
+
+type FollowData struct {
+	User uuid.UUID `json:"user"`
+}
+
+type FollowsToProcess struct {
+	ID int `json:"id,omitempty" db:"id"`
+	//UID         uuid.UUID   `json:"uid,omitempty" db:"uuid"`
+	EntityID    string      `json:"entity_id,omitempty" db:"entity_id"`
+	CreatedAt   time.Time   `json:"created_at,omitempty" db:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at,omitempty" db:"updated_at"`
+	Developer   uuid.UUID   `json:"user,omitempty" db:"developer"`
+	Subscribers interface{} `json:"subscribers,omitempty" db:"subscribers"`
+	//Result    interface{} `json:"result,omitempty" db:"result"`
+	//Type      string      `json:"type,omitempty" db:"type"`
+	EntityURL string `json:"entity_url,omitempty" db:"entity_url"`
+}
+
+type PlaylistFollow struct {
+	ID        int       `json:"id,omitempty" db:"id"`
+	UID       uuid.UUID `json:"uid,omitempty" db:"uuid"`
+	EntityID  uuid.UUID `json:"entity_id,omitempty" db:"entity_id"`
+	CreatedAt time.Time `json:"created_at,omitempty" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at,omitempty" db:"updated_at"`
+	User      uuid.UUID `json:"user,omitempty" db:"user"`
+	Status    string    `json:"status,omitempty" db:"status"`
+	// an array of subscribers
+	Result []types.JSONText `json:"result,omitempty" db:"result"`
+	Type   string           `json:"type,omitempty" db:"type"`
+}
+
+type FollowTaskData struct {
+	User     uuid.UUID `json:"user"`
+	Url      string    `json:"url"`
+	EntityID string    `json:"entity_id"`
+	Platform string    `json:"platform"`
+	//Subscribers interface{} `json:"subscribers"`
+}
+
+type WebhookVerificationResponse struct {
+	VerifyToken     string `json:"verify_token"`
+	VerifyChallenge string `json:"verify_challenge"`
 }

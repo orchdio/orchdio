@@ -16,6 +16,7 @@ import (
 	"orchdio/queue"
 	"orchdio/util"
 	"strings"
+	"time"
 )
 
 // Controller is the controller for the conversion service.
@@ -52,7 +53,6 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 
 	user := ctx.Locals("user").(*blueprint.User)
 	linkInfo := ctx.Locals("linkInfo").(*blueprint.LinkInfo)
-	_ = ctx.Locals("user").(*blueprint.User)
 	if !strings.Contains(linkInfo.Entity, "playlist") {
 		log.Printf("[controller][conversion][EchoConversion] - not a playlist")
 		return ctx.Status(http.StatusBadRequest).JSON("not a playlist")
@@ -71,24 +71,27 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 	}
 	uniqueId, _ := uuid.NewUUID()
 	// create new task
-	conversionTask := asynq.NewTask(uniqueId.String(), ser)
+	conversionTask := asynq.NewTask(uniqueId.String(), ser, asynq.Retention(time.Hour*24*7*4))
 	// enqueue the task
-	info, enqErr := c.Asynq.Enqueue(conversionTask)
+	_, enqErr := c.Asynq.Enqueue(conversionTask)
 	if enqErr != nil {
 		log.Printf("[controller][conversion][EchoConversion] - error enqueuing task: %v", enqErr)
 		return ctx.Status(http.StatusInternalServerError).JSON("error enqueuing task")
 	}
 
 	orchdioQueue := queue.NewOrchdioQueue(c.Asynq, c.AsynqServer, c.DB, c.Red)
-
+	// NB: THE SIDE EFFECT OF THIS IS THAT WHEN WE RESTART THE SERVER FOR EXAMPLE, WE LOSE
+	// THE HANDLER ATTACHED. THIS IS BECAUSE WE'RE TRIGGERING THE HANDLER HERE IN THE
+	// CONVERSION HANDLER. WE SHOULD BE ABLE TO FIX THIS BY HAVING A HANDLER THAT
+	// ALWAYS RUNS AND FETCHES TASKS FROM A STORE AND ATTACH THEM TO A HANDLER.
+	// FIXME: more investigations
 	c.AsynqMux.HandleFunc(uniqueId.String(), orchdioQueue.PlaylistTaskHandler)
-	stErr := c.AsynqServer.Start(c.AsynqMux)
-	if stErr != nil {
-		log.Printf("[controller][conversion][EchoConversion][error] - could not start Asynq server: %v", stErr)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "could not start Asynq server")
-	}
+	//stErr := c.AsynqServer.Start(c.AsynqMux)
+	//if stErr != nil {
+	//	log.Printf("[controller][conversion][EchoConversion][error] - could not start Asynq server: %v", stErr)
+	//	return util.ErrorResponse(ctx, http.StatusInternalServerError, "could not start Asynq server")
+	//}
 
-	log.Printf("[controller][conversion][EchoConversion] - enqeued playlist %s. TaskInfo: %v", linkInfo.TargetLink, info)
 	res := map[string]string{
 		"taskId": uniqueId.String(),
 	}

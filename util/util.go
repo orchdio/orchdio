@@ -5,8 +5,10 @@ package util
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/md5"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -74,19 +76,20 @@ func Decrypt(ciphertext []byte, key []byte) (plaintext []byte, err error) {
 
 // SuccessResponse sends back a success http response to the client.
 func SuccessResponse(ctx *fiber.Ctx, statusCode int, data interface{}) error {
-	return ctx.Status(statusCode).JSON(fiber.Map{
-		"message": "Request Ok",
-		"status":  statusCode,
-		"data":    data,
-	})
+	return ctx.Status(statusCode).JSON(
+		fiber.Map{
+			"message": "Request Ok",
+			"status":  statusCode,
+			"data":    data,
+		})
 }
 
 // ErrorResponse sends back an error http response to the client.
 func ErrorResponse(ctx *fiber.Ctx, statusCode int, err interface{}) error {
-	return ctx.Status(statusCode).JSON(fiber.Map{
-		"message": "Error with response",
-		"status":  statusCode,
-		"error":   err,
+	return ctx.Status(statusCode).JSON(&blueprint.ErrorResponse{
+		Message: "Error with response",
+		Status:  statusCode,
+		Error:   err,
 	})
 }
 
@@ -224,4 +227,17 @@ func BuildTidalAssetURL(id string) string {
 func IsValidUUID(id string) bool {
 	_, err := uuid.Parse(id)
 	return err == nil
+}
+
+// GenerateHMAC generates the hmac for a given message
+func GenerateHMAC(message interface{}, secret string) []byte {
+	mac := hmac.New(sha256.New, []byte(secret))
+	// serialize message
+	payload, err := json.Marshal(message)
+	if err != nil {
+		log.Printf("\n[main][SocketEvent][EventMessage] - error serializing message %v\n", err)
+		return nil
+	}
+	mac.Write(payload)
+	return []byte(hex.EncodeToString(mac.Sum(nil)))
 }

@@ -1,6 +1,7 @@
 package webhook
 
 import (
+	hmac2 "crypto/hmac"
 	"encoding/json"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
@@ -8,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"orchdio/blueprint"
+	"orchdio/db"
 	"orchdio/util"
 )
 
@@ -27,7 +29,8 @@ func NewWebhookController(db *sqlx.DB, red *redis.Client) *Controller {
 func (c *Controller) Handle(ctx *fiber.Ctx) error {
 	log.Printf("==========================================================")
 	log.Printf("[controller][webhook][Handle] - webhook event")
-	// TODO: implement HMAC verification
+	orchdioHmac := ctx.Get("x-orchdio-hmac")
+	database := db.NewDB{DB: c.DB}
 
 	// get the type of webhook it is
 	body := ctx.Body()
@@ -37,7 +40,24 @@ func (c *Controller) Handle(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid JSON")
 	}
 
-	log.Printf("[controller][webhook][Handle] - webhook message: %+v", webhookMessage)
+	// FIXME: put this in an environment variable or config file
+	user, uErr := database.FindUserByEmail("onigbindeayomide@gmail.com")
+	if uErr != nil {
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
+	}
+
+	apiKey, aErr := database.FetchUserApikey(user.UUID)
+	log.Printf("[controller][webhook][Handle] - user apikey: %+v", apiKey.Key.String())
+	if aErr != nil {
+		log.Printf("[controller][webhook][Handle] - error fetching user apikey %s\n", aErr.Error())
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
+	}
+	hash := util.GenerateHMAC(webhookMessage, apiKey.Key.String())
+
+	if hmac2.Equal([]byte(orchdioHmac), hash) {
+		log.Printf("[controller][webhook][Handle] - error - hmac verification failed")
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "Unauthorized. Payload tampered with")
+	}
 
 	// get the webhook type
 	webhookType := webhookMessage.Event
@@ -45,7 +65,6 @@ func (c *Controller) Handle(ctx *fiber.Ctx) error {
 	switch webhookType {
 	case blueprint.EEPLAYLISTCONVERSION:
 		log.Printf("[controller][webhook][Handle] - Playlist converted")
-		log.Printf("[controller][webhook][Handle] Message is - %+v\n", webhookMessage)
 		log.Printf("==========================================================")
 		return util.SuccessResponse(ctx, http.StatusOK, "Playlist converted")
 	}
