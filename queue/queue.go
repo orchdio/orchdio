@@ -104,11 +104,10 @@ func (o *OrchdioQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task
 		log.Printf("[queue][PlaylistConversionHandler][conversion] - error processing task: %v", err)
 		return cErr
 	}
-
 	return nil
 }
 
-// PlaylistHandler processes a task in the queue (immediately).
+// PlaylistHandler converts a playlist immediately.
 func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, user *blueprint.User) error {
 	log.Printf("[queue][PlaylistHandler] - processing task: %v", uid)
 	database := db.NewDB{DB: o.DB}
@@ -181,7 +180,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, use
 		},
 	})
 
-	re, evErr := ax.Post(string(webhook.Url), r)
+	re, evErr := ax.Post(webhook.Url, r)
 	if re.Status != http.StatusOK {
 		log.Printf("[queue][PlaylistHandler] - error posting webhook: %v", re)
 		return blueprint.EPHANTOMERR

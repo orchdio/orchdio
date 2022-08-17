@@ -1,9 +1,10 @@
 package queries
 
-const CreateUserQuery = `WITH user_rec as ( INSERT INTO "users"(email, username, uuid, created_at, updated_at) VALUES($1, $2, $3, now(), now()) ON CONFLICT("email") DO UPDATE
-SET email=EXCLUDED.email, username=$2 RETURNING email, uuid)
+const CreateUserQuery = `WITH user_rec as ( INSERT INTO "users"(email, uuid, created_at, updated_at) VALUES($1, $2, now(), now()) ON CONFLICT("email")  DO UPDATE
+SET email=EXCLUDED.email, username=EXCLUDED.username RETURNING email, uuid)
 			SELECT * from user_rec;`
 
+const UpdatePlatformUsernames = `UPDATE users SET usernames = usernames::JSONB || $2 WHERE email = $1;`
 const FindUserByEmail = `SELECT * FROM users where email = $1`
 
 const FetchUserApiKey = `SELECT api.*
@@ -41,13 +42,15 @@ const FetchFollowedTask = `SELECT * FROM  follows where entity_id = $1;`
 
 const FetchTaskByEntityIdAndType = `SELECT * FROM tasks WHERE entity_id = $1 and type = $2;`
 
-const FetchPlaylistFollowsToProcess = `SELECT DISTINCT on(follow.id) follow.id, follow.created_at, follow.updated_at, follow.developer, follow.entity_id, follow.entity_url, json_agg("user".*) subscribers FROM follows follow JOIN users "user" ON "user"::text <> ANY (subscribers::text[]) WHERE entity_id IS NOT NULL AND entity_url IS NOT NULL group by follow.id
-  -- AND follow.updated_at > CURRENT_DATE - interval '10 minutes'
+const FetchPlaylistFollowsToProcess = `SELECT DISTINCT on(follow.id) follow.id, follow.created_at, follow.updated_at, follow.developer, follow.entity_id, follow.entity_url, json_agg("user".*) subscribers FROM follows follow JOIN users "user" ON "user"::text <> ANY (subscribers::text[]) WHERE entity_id IS NOT NULL AND entity_url IS NOT NULL AND follow.updated_at > CURRENT_DATE - interval '10 minutes'
+GROUP BY follow.id;
 `
 
 // FetchFollowByEntityId query is used to fetch a follow and the subscribers to it.
 const FetchFollowByEntityId = `SELECT DISTINCT on(follow.id) follow.id, follow.created_at, follow.updated_at, follow.developer, follow.entity_id, follow.entity_url, json_agg("user".*) subscribers FROM follows follow JOIN users "user" ON "user".uuid::text = ANY (subscribers::text[]) WHERE entity_id = $1 GROUP BY follow.id`
 const CreateFollowNotification = `INSERT INTO notifications(created_at, updated_at, "user", UUID, status, "data") VALUES (now(), now(), :subscriber, :notification_id, 'unread', :data)`
+
+const UpdateFollowLatUpdated = `UPDATE follows SET updated_at = now() where entity_id = $1;`
 
 //const FetchPlaylistFollowsToProcess = `SELECT task.*, COALESCE(follow.entity_url, '') entity_url FROM follows follow JOIN tasks task ON task.uuid = follow.task WHERE task IS NOT NULL
 //--  	AND task.updated_at > CURRENT_DATE - interval '10 minutes'

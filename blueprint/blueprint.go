@@ -37,12 +37,12 @@ var (
 type MorbinTime string
 
 type User struct {
-	Email     string     `json:"email" db:"email"`
-	Username  string     `json:"username" db:"username"`
-	ID        int        `json:"id" db:"id"`
-	UUID      uuid.UUID  `json:"uuid" db:"uuid"`
-	CreatedAt MorbinTime `json:"created_at" db:"created_at"`
-	UpdatedAt MorbinTime `json:"updated_at" db:"updated_at"`
+	Email     string    `json:"email" db:"email"`
+	Username  string    `json:"username" db:"username"`
+	ID        int       `json:"id" db:"id"`
+	UUID      uuid.UUID `json:"uuid" db:"uuid"`
+	CreatedAt string    `json:"created_at" db:"created_at"`
+	UpdatedAt string    `json:"updated_at" db:"updated_at"`
 }
 
 // swagger:response redirectAuthResponse

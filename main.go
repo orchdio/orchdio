@@ -95,8 +95,6 @@ func main() {
 
 	app := fiber.New()
 
-	baseRouter := app.Group("/api/v1")
-
 	// Database and cache setup things
 	envr := os.Getenv("ZOOVE_ENV")
 	dbURL := os.Getenv("DATABASE_URL")
@@ -200,6 +198,10 @@ func main() {
 	+
 	 ==================================================================
 	*/
+
+	baseRouter := app.Group("/api/v1")
+	baseRouter.Use(authMiddleware.LogIncomingRequest)
+
 	baseRouter.Get("/heartbeat", getInfo)
 	baseRouter.Get("/:platform/connect", userController.RedirectAuth)
 	baseRouter.Get("/spotify/auth", userController.AuthSpotifyUser)
@@ -324,7 +326,7 @@ func main() {
 		panic(cErr)
 	}
 
-	c.Start()
+	//c.Start()
 
 	log.Printf("\n[main] [info] - CRONJOB Entry ID is: %v", entryId)
 	log.Printf("Server is up and running on port: %s", port)

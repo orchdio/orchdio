@@ -2,6 +2,7 @@ package account
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -131,7 +132,6 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	query := queries.CreateUserQuery
 	_, dbErr := c.DB.Exec(query,
 		user.Email,
-		user.DisplayName,
 		uniqueID,
 	)
 
@@ -139,6 +139,16 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 		log.Printf("\n[controller][account][user] : [AuthUser] Error executing query: %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 	}
+
+	serialized, err := json.Marshal(map[string]string{
+		"spotify": user.DisplayName,
+	})
+
+	// update the usernames the user has on various playlist.
+	// NB: I wasn't sure how to really handle this, if its better to do it in the createUserQuery above or split here
+	// decided to split here because its just easier for me to bother with right now.
+	_, err = c.DB.Exec(queries.UpdatePlatformUsernames, user.Email, string(serialized))
+
 	log.Printf("\n[user][controller][AuthUser] Method - User with the email %s just signed up or logged in with their Spotify account.\n", user.Email)
 	// create a jwt
 	claim := &blueprint.OrchdioUserToken{
@@ -221,9 +231,10 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 		UUID     uuid.UUID
 	}{}
 
+	log.Printf("[user][controller][AuthDeezerUser] Running create user query: '%s' with '%s', '%s', '%s' \n", queries.CreateUserQuery, user.Email, user.Name, uniqueID)
+
 	userProfile := c.DB.QueryRowx(queries.CreateUserQuery,
 		user.Email,
-		user.Name,
 		uniqueID,
 	)
 
@@ -231,6 +242,16 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 
 	if scanErr != nil {
 		log.Printf("[user][controller][AuthDeezerUser] could not upsert createUserQuery. %v\n", scanErr)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error occurred")
+	}
+
+	serialized, err := json.Marshal(map[string]string{
+		"deezer": user.Name,
+	})
+
+	_, err = c.DB.Exec(queries.UpdatePlatformUsernames, user.Email, string(serialized))
+	if err != nil {
+		log.Printf("[user][controller][AuthDeezerUser] could not upsert createUserQuery. %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error occurred")
 	}
 

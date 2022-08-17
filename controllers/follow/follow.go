@@ -131,6 +131,13 @@ func (s *TaskCronHandler) ProcessFollowTaskHandler(ctx context.Context, task *as
 			log.Printf("[queue][ProcessFollowTaskHandler] - playlist has been cached and converted: %v", convertedPlaylist)
 			return nil
 		}
+
+		_, err = s.DB.Exec(queries.UpdateFollowLatUpdated, linkInfo.EntityID)
+		if err != nil {
+			log.Printf("[queue][ProcessFollowTaskHandler] - error updating follow last updated: %v", err)
+			return err
+		}
+
 		log.Printf("[queue][ProcessFollowTaskHandler][conversion] - error checking if playlist has been updated: %v", err)
 		return err
 	}
@@ -181,9 +188,22 @@ func (s *TaskCronHandler) ProcessFollowTaskHandler(ctx context.Context, task *as
 			return err
 		}
 
+		_, err = s.DB.Exec(queries.UpdateFollowLatUpdated, linkInfo.EntityID)
+		if err != nil {
+			log.Printf("[queue][ProcessFollowTaskHandler] - error updating follow last updated: %v", err)
+			return err
+		}
+
 		log.Printf("[queue][ProcessFollowTaskHandler] - Playlist has been updated and subscribers notified")
 		return nil
 	}
+
+	_, err = s.DB.Exec(queries.UpdateFollowLatUpdated, linkInfo.EntityID)
+	if err != nil {
+		log.Printf("[queue][ProcessFollowTaskHandler] - error updating follow last updated: %v", err)
+		return err
+	}
+
 	log.Printf("[queue][ProcessFollowTaskHandler] - playlist has not been updated")
 	return nil
 }
