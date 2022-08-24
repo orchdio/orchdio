@@ -18,6 +18,7 @@ require (
 	github.com/joho/godotenv v1.4.0
 	github.com/lib/pq v1.10.6
 	github.com/nleeper/goment v1.4.4
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/samber/lo v1.25.0
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/vicanso/go-axios v1.4.3
@@ -42,7 +43,6 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/klauspost/compress v1.15.6 // indirect
-	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/savsgio/gotils v0.0.0-20220530130905-52f3993e8d6d // indirect
 	github.com/spf13/cast v1.5.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.10 // indirect

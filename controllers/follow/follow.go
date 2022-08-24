@@ -34,7 +34,7 @@ func NewFollow(db *sqlx.DB, red *redis.Client) *Follow {
 // FollowPlaylist follows a playlist. It will check if the follow already exists. If it exists, then
 // we want to add the subscriber to the follow. If the subscriber has already followed the playlist,
 // then we do nothing. If it doesn't exist, then we create a new follow and add the subscriber.
-func (f *Follow) FollowPlaylist(developer, entityId string, subscribers []string) ([]byte, error) {
+func (f *Follow) FollowPlaylist(developer string, info *blueprint.LinkInfo, subscribers []string) ([]byte, error) {
 	log.Printf("[follow][FollowPlaylist] - Running follow playlist")
 	if len(subscribers) > 20 {
 		log.Printf("[follow][FollowPlaylist] - too many subscribers. Max is 20")
@@ -44,7 +44,7 @@ func (f *Follow) FollowPlaylist(developer, entityId string, subscribers []string
 	// already been subscribed to the playlist. if they have, we don't need to do anything.
 	// if they haven't, we need to subscribe them to the playlist by simply upserting.
 	database := db.NewDB{DB: f.DB}
-	rows, err := database.FetchFollowTask(entityId)
+	rows, err := database.FetchFollowTask(info.EntityID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("[follow][FollowPlaylist] - no follow created for this entity (playlist)")
@@ -59,7 +59,7 @@ func (f *Follow) FollowPlaylist(developer, entityId string, subscribers []string
 	if rows == nil {
 		subs := pq.Array(subscribers)
 		// TODO: pass taskID
-		followId, err := database.CreateFollowTask(developer, "", uniqueId.String(), entityId, subs)
+		followId, err := database.CreateFollowTask(developer, "", uniqueId.String(), info.EntityID, info.TargetLink, subs)
 		if err != nil {
 			log.Printf("[follow][FollowPlaylist] - error creating follow task: %v", err)
 			return nil, err
@@ -73,7 +73,7 @@ func (f *Follow) FollowPlaylist(developer, entityId string, subscribers []string
 	// FIXME: implement inserting the subscribers in array
 	for _, subscriber := range subscribers {
 		log.Printf("[follow][FollowPlaylist] - adding subscriber: %v", subscriber)
-		updateFollowByte, err = database.UpdateFollowSubscriber(subscriber, entityId)
+		updateFollowByte, err = database.UpdateFollowSubscriber(subscriber, info.EntityID)
 		if err != nil && err != sql.ErrNoRows {
 			log.Printf("[follow][FollowPlaylist] - error updating follow subscriber: %v", err)
 			return nil, err
@@ -131,6 +131,13 @@ func (s *TaskCronHandler) ProcessFollowTaskHandler(ctx context.Context, task *as
 			log.Printf("[queue][ProcessFollowTaskHandler] - playlist has been cached and converted: %v", convertedPlaylist)
 			return nil
 		}
+
+		_, err = s.DB.Exec(queries.UpdateFollowLatUpdated, linkInfo.EntityID)
+		if err != nil {
+			log.Printf("[queue][ProcessFollowTaskHandler] - error updating follow last updated: %v", err)
+			return err
+		}
+
 		log.Printf("[queue][ProcessFollowTaskHandler][conversion] - error checking if playlist has been updated: %v", err)
 		return err
 	}
@@ -181,9 +188,22 @@ func (s *TaskCronHandler) ProcessFollowTaskHandler(ctx context.Context, task *as
 			return err
 		}
 
+		_, err = s.DB.Exec(queries.UpdateFollowLatUpdated, linkInfo.EntityID)
+		if err != nil {
+			log.Printf("[queue][ProcessFollowTaskHandler] - error updating follow last updated: %v", err)
+			return err
+		}
+
 		log.Printf("[queue][ProcessFollowTaskHandler] - Playlist has been updated and subscribers notified")
 		return nil
 	}
+
+	_, err = s.DB.Exec(queries.UpdateFollowLatUpdated, linkInfo.EntityID)
+	if err != nil {
+		log.Printf("[queue][ProcessFollowTaskHandler] - error updating follow last updated: %v", err)
+		return err
+	}
+
 	log.Printf("[queue][ProcessFollowTaskHandler] - playlist has not been updated")
 	return nil
 }
@@ -207,6 +227,10 @@ func SyncFollowsHandler(DB *sqlx.DB, red *redis.Client, asynqClient *asynq.Clien
 		extractLinkInfo, err := services.ExtractLinkInfo(follow.EntityURL)
 		if err != nil {
 			log.Printf("[follow][SyncFollowsHandler] - error extracting link info: %v", err)
+			err := database.UpdateFollowStatus(follow.UID.String(), "failed")
+			if err != nil {
+				log.Printf("[follow][SyncFollowsHandler] - error updating follow status: %v", err)
+			}
 			continue
 		}
 		var followTaskData = &blueprint.FollowTaskData{

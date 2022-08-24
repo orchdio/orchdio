@@ -1,0 +1,776 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Orchdio",
+    "description": "OpenAPI spec for the Orchdio API",
+    "version": "1.0.0"
+  },
+  "host": "www.orchdio.com",
+  "schemes": [
+    "https"
+  ],
+  "paths": {
+    "/api/v1/{platform}/connect": {
+      "get": {
+        "description": "Returns the redirect URL for the platform in order to authenticate the user on the target platform",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+            "200": {
+                "description": "Successful response",
+                "schema": {
+                "$ref": "#/definitions/ConnectPlatformResponse"
+                }
+            }
+        }
+      },
+      "parameters": [
+        {
+          "name": "platform",
+          "in": "path",
+          "description": "The platform to connect to",
+          "required": true,
+          "type": "string",
+          "enum": ["Apple", "Tidal", "Spotify", "Deezer", "YouTube"]
+        }
+      ]
+    },
+    "/api/v1/track/convert": {
+      "get": {
+        "description": "Returns the converted track",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+            "200": {
+                "description": "Successful response",
+                "schema": {
+                "$ref": "#/definitions/TrackConversionResponse"
+                }
+            },
+            "400": {
+                "description": "Bad request",
+                "schema": {
+                "$ref": "#/definitions/ErrorResponse"
+                }
+            }
+        }
+      },
+      "parameters": [
+        {
+          "name": "link",
+            "in": "query",
+            "description": "The link to the track to convert",
+            "required": true,
+            "type": "string"
+        }
+      ]
+    },
+    "/api/v1/playlist/convert": {
+      "get": {
+        "description": "Converts a playlist",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "schema": {
+              "$ref": "#/definitions/PlaylistConversionResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      },
+      "parameters": [
+        {
+          "name": "link",
+          "in": "query",
+          "description": "The link to the track to convert",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/v1/generate-key": {
+      "post": {
+        "description": "Generates a new key",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "schema": {
+              "$ref": "#/definitions/GenerateKeyResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/key/revoke": {
+      "post": {
+        "description": "Revokes a key",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "schema": {
+              "$ref": "#/definitions/RevokeKeyResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/key/allow": {
+        "post": {
+            "description": "Allows a key",
+            "consumes": [
+            "application/json"
+            ],
+            "produces": [
+            "application/json"
+            ],
+            "responses": {
+              "200": {
+                "description": "Successful response",
+                "schema": {
+                "$ref": "#/definitions/AllowKeyResponse"
+                }
+            },
+            "400": {
+                "description": "Bad request",
+                "schema": {
+                "$ref": "#/definitions/ErrorResponse"
+                }
+              }
+            }
+        }
+    },
+    "/api/v1/key/delete": {
+        "delete": {
+            "description": "Deletes a key",
+            "consumes": [
+            "application/json"
+            ],
+            "produces": [
+            "application/json"
+            ],
+            "responses": {
+              "200": {
+                "description": "Successful response",
+                "schema": {
+                "$ref": "#/definitions/DeleteKeyResponse"
+                }
+            },
+            "400": {
+                "description": "Bad request",
+                "schema": {
+                "$ref": "#/definitions/ErrorResponse"
+                }
+              }
+            }
+        }
+    },
+    "/api/v1/webhook/add": {
+      "parameters": [{
+        "name": "url",
+        "description": "The URL to the webhook",
+        "in": "body",
+        "schema": {
+            "$ref": "#/definitions/AddWebhookBody"
+        }
+      }],
+      "post": {
+        "description": "Adds a webhook",
+        "consumes": [
+          "application/json",
+          "Content-Type: application/json",
+          "x-orchdio-key"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "x-orchdio-key",
+            "in": "header",
+            "description": "The orchdio key",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "schema": {
+              "$ref": "#/definitions/AddWebhookResponse"
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "ConnectPlatformResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "The URL to redirect the user to",
+              "example": "https://accounts.spotify.com/authorize?client_id=8d367c0bbfe142d494bcbf1cf2e30f06&redirect_uri=https%3A%2F%2Fstudents-well-operators-steering.trycloudflare.com%2Fapi%2Fv1%2Fspotify%2Fauth&response_type=code&scope=user-read-private+user-library-read+user-read-email&state=274282a8-1da5-11ed-9ecb-e6171390459d"
+            }
+          }
+        },
+        "message": {
+          "type": "string",
+          "example": "Request Ok",
+          "description": "This is an accompanying message to the response"
+        },
+        "status": {
+          "type": "integer",
+          "example": 200,
+          "description": "This is the status of the response. Its the same as the HTTP status"
+        }
+      },
+      "example": {
+        "data": {
+          "url": "https://accounts.spotify.com/authorize?client_id=8d367c0bbfe142d494bcbf1cf2e30f06&redirect_uri=https%3A%2F%2Fstudents-well-operators-steering.trycloudflare.com%2Fapi%2Fv1%2Fspotify%2Fauth&response_type=code&scope=user-read-private+user-library-read+user-read-email&state=274282a8-1da5-11ed-9ecb-e6171390459d"
+        },
+        "message": "Request Ok",
+        "status": 200
+      }
+    },
+    "ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "example": "Request Ok",
+          "description": "This is an accompanying message to the response"
+        },
+        "status": {
+          "type": "integer",
+          "example": 500,
+          "description": "This is the status of the response. Its the same as the HTTP status"
+        },
+        "error": {
+          "type": "string",
+          "example": "Internal Server Error",
+          "description": "This is the error message"
+        }
+      }
+    },
+    "TrackConversionResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "object",
+          "properties": {
+            "entity": {
+              "type": "string",
+              "enum": ["track", "playlist"],
+              "description": "The type of entity that the track is"
+            },
+            "platforms": {
+              "type": "object",
+              "properties": {
+                "deezer": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "description": "The URL to the track on Deezer"
+                    },
+                    "artistes": {
+                      "type": "array",
+                      "description": "The artists that are on the track",
+                      "items": [{
+                        "type": "string",
+                        "description": "The name of the artist",
+                        "example": "Daft Punk"
+                      }
+                      ]
+                    },
+                    "released": {
+                      "type": "string",
+                      "description": "The date the track was released",
+                      "example": "2018-01-01"
+                    },
+                    "duration": {
+                      "type": "string",
+                      "description": "The duration of the track",
+                      "example": "00:00:00"
+                    },
+                    "explicit": {
+                      "type": "boolean",
+                      "description": "Whether the track is explicit or not",
+                      "example": true
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "The title of the track",
+                      "example": "Daft Punk"
+                    },
+                    "preview": {
+                      "type": "string",
+                      "description": "The URL to the preview of the track",
+                      "example": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                    },
+                    "album": {
+                      "type": "string",
+                      "description": "The album the track is on",
+                      "example": "Daft Punk"
+                    },
+                    "id": {
+                      "type": "string",
+                      "description": "The ID of the track",
+                      "example": "dQw4w9WgXcQ"
+                    },
+                    "cover": {
+                      "type": "string",
+                      "description": "The URL to the cover of the track",
+                      "example": "https://i.scdn.co/image/ab67616d0000b273d8f8f8f8f8f8f8f8f8f8f8f8f8"
+                    }
+                  }
+                },
+                "spotify": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "description": "The URL to the track on Spotify"
+                    },
+                    "artistes": {
+                      "type": "array",
+                      "description": "The artists that are on the track",
+                      "items": [{
+                        "type": "string",
+                        "description": "The name of the artist",
+                        "example": "Daft Punk"
+                      }
+                      ]
+                    },
+                    "released": {
+                      "type": "string",
+                      "description": "The date the track was released",
+                      "example": "2018-01-01"
+                    },
+                    "duration": {
+                      "type": "string",
+                      "description": "The duration of the track",
+                      "example": "00:00:00"
+                    },
+                    "explicit": {
+                      "type": "boolean",
+                      "description": "Whether the track is explicit or not",
+                      "example": true
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "The title of the track",
+                      "example": "Daft Punk"
+                    },
+                    "preview": {
+                      "type": "string",
+                      "description": "The URL to the preview of the track",
+                      "example": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                    },
+                    "album": {
+                      "type": "string",
+                      "description": "The album the track is on",
+                      "example": "Daft Punk"
+                    },
+                    "id": {
+                      "type": "string",
+                      "description": "The ID of the track",
+                      "example": "dQw4w9WgXcQ"
+                    },
+                    "cover": {
+                      "type": "string",
+                      "description": "The URL to the cover of the track",
+                      "example": "https://i.scdn.co/image/ab67616d0000b273d8f8f8f8f8f8f8f8f8f8f8f8f8"
+                    }
+                  }
+                },
+                "tidal": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "description": "The URL to the track on Tidal"
+                    },
+                    "artistes": {
+                      "type": "array",
+                      "description": "The artists that are on the track",
+                      "items": [{
+                        "type": "string",
+                        "description": "The name of the artist",
+                        "example": "Daft Punk"
+                      }
+                      ]
+                    },
+                    "released": {
+                        "type": "string",
+                        "description": "The date the track was released",
+                        "example": "2018-01-01"
+                    },
+                    "duration": {
+                        "type": "string",
+                        "description": "The duration of the track",
+                        "example": "00:00:00"
+                    },
+                    "explicit": {
+                        "type": "boolean",
+                        "description": "Whether the track is explicit or not",
+                        "example": true
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "The title of the track",
+                        "example": "Daft Punk"
+                    },
+                    "preview": {
+                        "type": "string",
+                        "description": "The URL to the preview of the track",
+                        "example": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                    },
+                    "album": {
+                        "type": "string",
+                        "description": "The album the track is on",
+                        "example": "Daft Punk"
+                    },
+                    "id": {
+                        "type": "string",
+                        "description": "The ID of the track",
+                        "example": "dQw4w9WgXcQ"
+                    },
+                    "cover": {
+                        "type": "string",
+                        "description": "The URL to the cover of the track",
+                        "example": "https://i.scdn.co/image/ab67616d0000b273d8f8f8f8f8f8f8f8f8f8f8f8f8"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "message": {
+          "type": "string",
+          "description": "The message of the response",
+          "example": "The track was successfully added to the playlist"
+        },
+        "status": {
+          "type": "string",
+          "description": "The status of the response",
+          "example": "success"
+        }
+      },
+      "example": {
+        "url": "https://api.spotify.com/v1/playlists/1/tracks",
+        "title": "Daft Punk",
+        "artistes": [
+          "Daft Punk"
+        ]
+      }
+    },
+    "PlaylistConversionResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "The URL to the playlist",
+              "example": "https://www.youtube.com/playlist?list=PL_dQw4w9WgXcQ"
+            },
+            "tracks": {
+              "type": "object",
+              "description": "The tracks in the playlist",
+              "properties": {
+                "deezer": {
+                  "type": "array",
+                  "$ref": "#/definitions/TrackObject"
+                },
+                "spotify": {
+                  "type": "array",
+                  "$ref": "#/definitions/TrackObject"
+                },
+                "tidal": {
+                  "type": "array",
+                  "$ref": "#/definitions/TrackObject"
+                }
+              }
+            },
+            "length": {
+              "type": "string",
+              "description": "The length of the playlist",
+              "example": "00:00:00"
+            },
+            "title": {
+              "type": "string",
+              "description": "The title of the playlist",
+              "example": "Daft Punk"
+            },
+            "omitted_tracks": {
+              "type": "object",
+              "description": "The tracks that were omitted from the playlist",
+              "properties": {
+                "deezer": {
+                  "type": "array",
+                  "$ref": "#/definitions/TrackConversionResponse"
+                },
+                "spotify": {
+                  "type": "array",
+                  "$ref": "#/definitions/TrackConversionResponse"
+                },
+                "tidal": {
+                  "type": "array",
+                  "$ref": "#/definitions/TrackConversionResponse"
+                }
+              }
+            },
+            "owner": {
+              "type": "string",
+              "description": "The owner of the playlist",
+              "example": "Daft Punk"
+            },
+            "cover": {
+              "type": "string",
+              "description": "The URL to the cover of the playlist",
+              "example": "https://i.scdn.co/image/ab67616d0000b273d8f8f8f8f8f8f8f8f8f8f8f8f8"
+            }
+          }
+        },
+        "message": {
+          "type": "string",
+          "description": "The message of the response",
+          "example": "The playlist was successfully converted"
+        },
+        "status": {
+          "type": "string",
+          "description": "The status of the response",
+          "example": "success"
+        }
+      }
+    },
+    "TrackObject": {
+      "type": "object",
+      "description": "Represents a single track object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "The URL to the track on Deezer"
+        },
+        "artistes": {
+          "type": "array",
+          "description": "The artists that are on the track",
+          "items": [{
+            "type": "string",
+            "description": "The name of the artist",
+            "example": "Daft Punk"
+          }
+          ]
+        },
+        "released": {
+          "type": "string",
+          "description": "The date the track was released",
+          "example": "2018-01-01"
+        },
+        "duration": {
+          "type": "string",
+          "description": "The duration of the track",
+          "example": "00:00:00"
+        },
+        "explicit": {
+          "type": "boolean",
+          "description": "Whether the track is explicit or not",
+          "example": true
+        },
+        "title": {
+          "type": "string",
+          "description": "The title of the track",
+          "example": "Daft Punk"
+        },
+        "preview": {
+          "type": "string",
+          "description": "The URL to the preview of the track",
+          "example": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        },
+        "album": {
+          "type": "string",
+          "description": "The album the track is on",
+          "example": "Daft Punk"
+        },
+        "id": {
+          "type": "string",
+          "description": "The ID of the track",
+          "example": "dQw4w9WgXcQ"
+        },
+        "cover": {
+          "type": "string",
+          "description": "The URL to the cover of the track",
+          "example": "https://i.scdn.co/image/ab67616d0000b273d8f8f8f8f8f8f8f8f8f8f8f8f8"
+        }
+      }
+    },
+    "GenerateKeyResponse": {
+      "type": "object",
+      "properties": {
+      "data": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "The generated key",
+            "example": "some-uuid-here-sxsw"
+          }
+        }
+      },
+        "message": {
+          "type": "string",
+          "description": "The message of the response",
+          "example": "The key was successfully generated"
+        },
+        "status": {
+          "type": "string",
+          "description": "The status of the response",
+          "example": "success"
+        }
+      }
+    },
+    "RevokeKeyResponse": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "description": "The message of the response",
+          "example": "The key was successfully revoked"
+        },
+        "status": {
+          "type": "string",
+          "description": "The status of the response",
+          "example": "success"
+        }
+      }
+    },
+    "AllowKeyResponse": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "description": "The message of the response",
+          "example": "The key was successfully allowed"
+        },
+        "status": {
+          "type": "string",
+          "description": "The status of the response",
+          "example": "success"
+        }
+      },
+      "example": {
+        "message": "The key was successfully allowed",
+        "status": 200
+      }
+    },
+    "DeleteKeyResponse": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "description": "The message of the response",
+          "example": "The key was successfully deleted"
+        },
+        "status": {
+          "type": "string",
+          "description": "The status of the response",
+          "example": "success"
+        }
+      },
+      "example": {
+        "message": "The key was successfully deleted",
+        "status": 200
+      }
+    },
+    "AddWebhookResponse": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "description": "The message of the response",
+          "example": "The webhook was successfully added"
+        },
+        "status": {
+          "type": "string",
+          "description": "The status of the response",
+          "example": "success"
+        }
+      },
+      "example": {
+        "message": "The webhook was successfully added",
+        "status": 201
+      }
+    },
+    "AddWebhookBody": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "The URL to the webhook",
+          "example": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        },
+        "verify_token": {
+          "type": "string",
+          "description": "The token to be used to verify the webhook",
+          "example": "dQw4w9WgXcQ"
+        }
+      }
+    }
+  }
+}

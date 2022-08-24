@@ -139,3 +139,8 @@ func (a *AuthMiddleware) ValidateKey(ctx *fiber.Ctx) error {
 	log.Printf("[middleware][ValidateKey] API key is valid")
 	return ctx.Next()
 }
+
+func (a *AuthMiddleware) LogIncomingRequest(ctx *fiber.Ctx) error {
+	log.Printf("[middleware][LogIncomingRequest] incoming request: %s: %s\n", ctx.Method(), ctx.Path())
+	return ctx.Next()
+}
