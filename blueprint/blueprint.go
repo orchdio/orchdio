@@ -37,12 +37,13 @@ var (
 type MorbinTime string
 
 type User struct {
-	Email     string    `json:"email" db:"email"`
-	Username  string    `json:"username" db:"username"`
-	ID        int       `json:"id" db:"id"`
-	UUID      uuid.UUID `json:"uuid" db:"uuid"`
-	CreatedAt string    `json:"created_at" db:"created_at"`
-	UpdatedAt string    `json:"updated_at" db:"updated_at"`
+	Email     string      `json:"email" db:"email"`
+	Usernames interface{} `json:"usernames" db:"usernames"`
+	Username  string      `json:"username" db:"username"`
+	ID        int         `json:"id" db:"id"`
+	UUID      uuid.UUID   `json:"uuid" db:"uuid"`
+	CreatedAt string      `json:"created_at" db:"created_at"`
+	UpdatedAt string      `json:"updated_at" db:"updated_at"`
 }
 
 // swagger:response redirectAuthResponse
@@ -234,7 +235,7 @@ type PlaylistTaskData struct {
 	User     *User     `json:"user"`
 }
 
-// TaskRecord represents a task record in the database
+// TaskRecord representsUs a task record in the database
 type TaskRecord struct {
 	Id        int       `json:"id,omitempty" db:"id"`
 	User      uuid.UUID `json:"user,omitempty" db:"user"`
@@ -266,8 +267,8 @@ type FollowData struct {
 }
 
 type FollowsToProcess struct {
-	ID int `json:"id,omitempty" db:"id"`
-	//UID         uuid.UUID   `json:"uid,omitempty" db:"uuid"`
+	ID          int         `json:"id,omitempty" db:"id"`
+	UID         uuid.UUID   `json:"uid,omitempty" db:"uuid"`
 	EntityID    string      `json:"entity_id,omitempty" db:"entity_id"`
 	CreatedAt   time.Time   `json:"created_at,omitempty" db:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at,omitempty" db:"updated_at"`

@@ -1,10 +1,10 @@
 package queries
 
-const CreateUserQuery = `WITH user_rec as ( INSERT INTO "users"(email, uuid, created_at, updated_at) VALUES($1, $2, now(), now()) ON CONFLICT("email")  DO UPDATE
+const CreateUserQuery = `WITH user_rec as ( INSERT INTO "users"(email, username, uuid, created_at, updated_at) VALUES($1, $2, $3, now(), now()) ON CONFLICT("email")  DO UPDATE
 SET email=EXCLUDED.email, username=EXCLUDED.username RETURNING email, uuid)
 			SELECT * from user_rec;`
 
-const UpdatePlatformUsernames = `UPDATE users SET usernames = usernames::JSONB || $2 WHERE email = $1;`
+const UpdatePlatformUsernames = `UPDATE users SET usernames = COALESCE(usernames::JSONB, '{}') || $2 WHERE email = $1;`
 const FindUserByEmail = `SELECT * FROM users where email = $1`
 
 const FetchUserApiKey = `SELECT api.*
@@ -12,7 +12,7 @@ FROM apikeys api
 JOIN users u ON u.uuid = api.user
 WHERE api.user = $1;`
 
-const CreateNewKey = `INSERT INTO apiKeys(key, "user", revoked, created_at, updated_at) values ($1, $2, true, now(), now());`
+const CreateNewKey = `INSERT INTO apiKeys(key, "user", revoked, created_at, updated_at) values ($1, $2, false, now(), now());`
 
 const RevokeApiKey = `UPDATE apiKeys SET revoked = TRUE, updated_at = now() FROM users AS u WHERE u.uuid = $2 AND KEY = $1;`
 const UnRevokeApiKey = `UPDATE apiKeys SET revoked = FALSE, updated_at = now() FROM users AS u WHERE u.uuid = $2 AND KEY = $1;`
@@ -35,15 +35,14 @@ const UpdateTask = `UPDATE tasks SET result = $2, updated_at = now() WHERE uuid 
 const FetchTask = `SELECT id, uuid, entity_id, created_at, updated_at, "user", status, coalesce(result, '{}') result FROM tasks WHERE uuid = $1;`
 const DeleteTask = `DELETE FROM tasks WHERE uuid = $1;`
 
-const CreateOrAddSubscriberFollow = `INSERT INTO follows(uuid, developer, entity_id, subscribers, created_at, updated_at) values ($1, $2, $3, $4 , now(), now())
+const CreateOrAddSubscriberFollow = `INSERT INTO follows(uuid, developer, entity_id, subscribers, entity_url, created_at, updated_at) values ($1, $2, $3, $4, $5, now(), now())
 ON CONFLICT("entity_id") DO UPDATE SET updated_at = NOW() RETURNING uuid;`
 const UpdateFollowSubscriber = `UPDATE follows SET subscribers = ARRAY [$1], updated_at = now() WHERE entity_id = $2 AND $1::text <> ANY (subscribers::text[]) RETURNING uuid;`
 const FetchFollowedTask = `SELECT * FROM  follows where entity_id = $1;`
 
 const FetchTaskByEntityIdAndType = `SELECT * FROM tasks WHERE entity_id = $1 and type = $2;`
 
-const FetchPlaylistFollowsToProcess = `SELECT DISTINCT on(follow.id) follow.id, follow.created_at, follow.updated_at, follow.developer, follow.entity_id, follow.entity_url, json_agg("user".*) subscribers FROM follows follow JOIN users "user" ON "user"::text <> ANY (subscribers::text[]) WHERE entity_id IS NOT NULL AND entity_url IS NOT NULL AND follow.updated_at > CURRENT_DATE - interval '10 minutes'
-GROUP BY follow.id;
+const FetchPlaylistFollowsToProcess = `SELECT DISTINCT on(follow.id) follow.id, follow.created_at, follow.updated_at, follow.developer, follow.entity_id, follow.entity_url, json_agg("user".*) subscribers FROM follows follow JOIN users "user" ON "user"::text <> ANY (subscribers::text[]) WHERE entity_id IS NOT NULL AND entity_url IS NOT NULL AND (status <> 'ERROR' OR follow.updated_at > CURRENT_DATE - interval '10 minutes') AND entity_url IS NOT NULL GROUP BY follow.id;
 `
 
 // FetchFollowByEntityId query is used to fetch a follow and the subscribers to it.
@@ -51,6 +50,8 @@ const FetchFollowByEntityId = `SELECT DISTINCT on(follow.id) follow.id, follow.c
 const CreateFollowNotification = `INSERT INTO notifications(created_at, updated_at, "user", UUID, status, "data") VALUES (now(), now(), :subscriber, :notification_id, 'unread', :data)`
 
 const UpdateFollowLatUpdated = `UPDATE follows SET updated_at = now() where entity_id = $1;`
+
+const UpdateFollowStatus = `UPDATE follows SET updated_at = now(), status = $1 where entity_id = $2;`
 
 //const FetchPlaylistFollowsToProcess = `SELECT task.*, COALESCE(follow.entity_url, '') entity_url FROM follows follow JOIN tasks task ON task.uuid = follow.task WHERE task IS NOT NULL
 //--  	AND task.updated_at > CURRENT_DATE - interval '10 minutes'

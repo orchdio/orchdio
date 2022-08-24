@@ -1,5 +1,6 @@
 //go:generate swagger generate spec
 
+// TODO: UPDATE DOCS to reflect that revoke (and similar endpoints that dont return a data) will not have the data field in the response
 package main
 
 import (
@@ -9,7 +10,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	jwtware "github.com/gofiber/jwt/v3"
-	"github.com/gofiber/websocket/v2"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/hibiken/asynq"
@@ -209,15 +209,25 @@ func main() {
 	baseRouter.Get("/track/convert", authMiddleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
 	baseRouter.Get("/playlist/convert", authMiddleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
 
-	baseRouter.Get("/generate-key", userController.GenerateAPIKey)
-	baseRouter.Post("/key/revoke", authMiddleware.ValidateKey, userController.RevokeKey)
-	baseRouter.Post("/key/allow", authMiddleware.ValidateKey, userController.UnRevokeKey)
-	baseRouter.Delete("/key/delete", authMiddleware.ValidateKey, userController.DeleteKey)
 	baseRouter.Post("/webhook/add", authMiddleware.ValidateKey, webhookController.CreateWebhookUrl)
 	baseRouter.Post("/webhook/update", authMiddleware.ValidateKey, webhookController.UpdateUserWebhookUrl)
 	baseRouter.Get("/webhook", authMiddleware.ValidateKey, webhookController.FetchWebhookUrl)
 	baseRouter.Delete("/webhook", authMiddleware.ValidateKey, webhookController.DeleteUserWebhookUrl)
 	baseRouter.Post("/white-tiger", whController.Handle)
+
+	userRouter := app.Group("/api/v1/user")
+
+	userRouter.Use(jwtware.New(jwtware.Config{
+		SigningKey: []byte(os.Getenv("JWT_SECRET")),
+		Claims:     &blueprint.OrchdioUserToken{},
+		ContextKey: "authToken",
+	}), middleware.VerifyToken)
+
+	userRouter.Post("/generate-key", userController.GenerateAPIKey)
+	userRouter.Patch("/key/revoke", authMiddleware.ValidateKey, userController.RevokeKey)
+	userRouter.Patch("/key/allow", userController.UnRevokeKey)
+	userRouter.Delete("/key/delete", authMiddleware.ValidateKey, userController.DeleteKey)
+	userRouter.Get("/key", userController.RetrieveKey)
 
 	// ==========================================
 	// NEXT ROUTES
@@ -250,13 +260,17 @@ func main() {
 		log.Printf("\nClient with ID %v connected\n", kws.UUID)
 	}))
 
-	app.Use(func(c *fiber.Ctx) error {
-		if websocket.IsWebSocketUpgrade(c) {
-			c.Locals("allowed", true)
-			return c.Next()
-		}
-		return fiber.ErrUpgradeRequired
-	})
+	//app.Use(func(c *fiber.Ctx) error {
+	//	if websocket.IsWebSocketUpgrade(c) {
+	//		c.Locals("allowed", true)
+	//		return c.Next()
+	//	}
+	//	return fiber.ErrUpgradeRequired
+	//})
+
+	/**
+	this is a test to see hpw the keyboard light patterns    are.
+	*/
 
 	// WEBSOCKET EVENT HANDLERS
 	ikisocket.On(ikisocket.EventConnect, func(payload *ikisocket.EventPayload) {
@@ -326,7 +340,7 @@ func main() {
 		panic(cErr)
 	}
 
-	//c.Start()
+	c.Start()
 
 	log.Printf("\n[main] [info] - CRONJOB Entry ID is: %v", entryId)
 	log.Printf("Server is up and running on port: %s", port)

@@ -11,6 +11,7 @@ import (
 	"orchdio/blueprint"
 	"orchdio/db"
 	"orchdio/util"
+	"os"
 )
 
 type Controller struct {
@@ -40,8 +41,7 @@ func (c *Controller) Handle(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid JSON")
 	}
 
-	// FIXME: put this in an environment variable or config file
-	user, uErr := database.FindUserByEmail("onigbindeayomide@gmail.com")
+	user, uErr := database.FindUserByEmail(os.Getenv("ZOOVE_ADMIN_EMAIL"))
 	if uErr != nil {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
 	}
