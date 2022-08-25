@@ -148,8 +148,13 @@ func main() {
 		Redis: redisClient,
 	})
 
-	asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisOpts.Addr})
-	asynqServer := asynq.NewServer(asynq.RedisClientOpt{Addr: redisOpts.Addr}, asynq.Config{Concurrency: 10})
+	if os.Getenv("ENV") == "production" {
+		log.Printf("\n[main] [info] - Running in production mode. Connecting to authenticated redis")
+
+	}
+
+	asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
+	asynqServer := asynq.NewServer(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password}, asynq.Config{Concurrency: 10})
 
 	asynqMux := asynq.NewServeMux()
 	err = asynqServer.Start(asynqMux)
