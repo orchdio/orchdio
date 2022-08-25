@@ -22,7 +22,7 @@ const FetchUserWebhook = `SELECT wh.url FROM webhooks wh join users u ON u.uuid 
 const CreateWebhook = `INSERT INTO webhooks(url, "user", verify_token, created_at, updated_at, uuid) values ($1, $2, $3, now(), now(), $4);`
 
 const FetchUserWithWebhook = `SELECT u.* FROM webhooks wh join users u ON u.uuid = wh.user where wh.url = $1;`
-const FetchUserWithApiKey = `SELECT u.* FROM apiKeys api join users u ON u.uuid = api.user where api.key = $1 and revoked = false;`
+const FetchUserWithApiKey = `SELECT u.id, u.email, coalesce(u.username, '') username, u.uuid, u.created_at, u.updated_at, u.usernames FROM apiKeys api join users u ON u.uuid = api.user where api.key = $1 and revoked = false;`
 const UpdateUserWebhook = `UPDATE webhooks SET url = $1, verify_token = $3, updated_at = now() FROM users AS u WHERE u.uuid = $2;`
 const DeleteUserWebhook = `DELETE FROM webhooks wh WHERE wh.user = $1;`
 
