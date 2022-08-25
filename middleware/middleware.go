@@ -141,6 +141,6 @@ func (a *AuthMiddleware) ValidateKey(ctx *fiber.Ctx) error {
 }
 
 func (a *AuthMiddleware) LogIncomingRequest(ctx *fiber.Ctx) error {
-	log.Printf("[middleware][LogIncomingRequest] incoming request: %s: %s\n\n", ctx.Method(), ctx.Path())
+	log.Printf("[middleware][LogIncomingRequest] incoming request: %s: %s\n", ctx.Method(), ctx.Path())
 	return ctx.Next()
 }

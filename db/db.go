@@ -25,6 +25,14 @@ func (d *NewDB) FindUserByEmail(email string) (*blueprint.User, error) {
 		log.Printf("[controller][db] error scanning row result. %v\n", err)
 		return nil, err
 	}
+	var userNames map[string]string
+	err = json.Unmarshal(user.Usernames.([]byte), &userNames)
+
+	if err != nil {
+		log.Printf("[controller][db] error unmarshalling usernames. %v\n", err)
+		return nil, err
+	}
+	user.Usernames = userNames
 	return user, nil
 }
 
@@ -158,7 +166,9 @@ func (d *NewDB) FetchUserWithApiKey(key string) (*blueprint.User, error) {
 		log.Printf("[db][FetchUserWithApiKey] error scanning row result. %v\n", scanErr)
 		return nil, scanErr
 	}
-	log.Printf("[db][FetchUserWithApiKey] fetched user %s\n", usr.Username)
+	var userNames map[string]string
+	usernames := json.Unmarshal(usr.Usernames.([]byte), &userNames)
+	log.Printf("[db][FetchUserWithApiKey] fetched user %s\n", usernames)
 	return &usr, nil
 }
 
@@ -304,9 +314,9 @@ func (d *NewDB) FetchTaskByEntityIDAndType(entityId, taskType string) (*blueprin
 }
 
 // CreateFollowTask creates a follow task if it does not exist and updates a task if it exists and the subscriber has been subscribed
-func (d *NewDB) CreateFollowTask(developer, taskId, uid, entityId string, subscribers interface{}) ([]byte, error) {
+func (d *NewDB) CreateFollowTask(developer, taskId, uid, entityId, entityURL string, subscribers interface{}) ([]byte, error) {
 	log.Printf("[db][CreateFollowTask] Running query %s with '%s', '%s', '%s', '%s'\n", queries.CreateOrAddSubscriberFollow, uid, entityId, taskId, developer)
-	r := d.DB.QueryRowx(queries.CreateOrAddSubscriberFollow, uid, developer, entityId, subscribers)
+	r := d.DB.QueryRowx(queries.CreateOrAddSubscriberFollow, uid, developer, entityId, subscribers, entityURL)
 	var res string
 	err := r.Scan(&res)
 	if err != nil {
@@ -403,4 +413,15 @@ func (d *NewDB) FetchFollowsToProcess() (*[]blueprint.FollowsToProcess, error) {
 	}
 	log.Printf("[db][FetchFollowsToProcess] fetched %d follow tasks\n", len(res))
 	return &res, nil
+}
+
+func (d *NewDB) UpdateFollowStatus(followId, status string) error {
+	log.Printf("[db][UpdateFollowStatus] Running query %s\n", queries.UpdateFollowStatus)
+	_, err := d.DB.Exec(queries.UpdateFollowStatus, status, followId)
+	if err != nil {
+		log.Printf("[db][UpdateFollowStatus] error updating follow status. %v\n", err)
+		return err
+	}
+	log.Printf("[db][UpdateFollowStatus] updated follow: '%s' status to '%s'\n", queries.UpdateFollowStatus, "error")
+	return nil
 }

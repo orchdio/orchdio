@@ -66,12 +66,12 @@ func (c *Controller) FollowPlaylist(ctx *fiber.Ctx) error {
 
 	follow := NewFollow(c.DB, c.Red)
 
-	followId, err := follow.FollowPlaylist(user.UUID.String(), linkInfo.EntityID, subscriberBody.Users)
+	followId, err := follow.FollowPlaylist(user.UUID.String(), linkInfo, subscriberBody.Users)
 	if err != nil && err != sql.ErrNoRows {
 		log.Printf("[controller][follow][FollowPlaylist] - error following playlist: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "error following playlist")
 	}
 
-	res := map[string]interface{}{"follow_id": followId}
+	res := map[string]interface{}{"follow_id": string(followId)}
 	return util.SuccessResponse(ctx, http.StatusOK, res)
 }

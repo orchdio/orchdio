@@ -231,6 +231,8 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 		UUID     uuid.UUID
 	}{}
 
+	// TODO: here, check if the user is already in the DB, in that case, we just update platform username
+
 	log.Printf("[user][controller][AuthDeezerUser] Running create user query: '%s' with '%s', '%s', '%s' \n", queries.CreateUserQuery, user.Email, user.Name, uniqueID)
 
 	userProfile := c.DB.QueryRowx(queries.CreateUserQuery,
@@ -285,6 +287,7 @@ func (c *UserController) FetchProfile(ctx *fiber.Ctx) error {
 	if err != nil {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, err)
 	}
+
 	return util.SuccessResponse(ctx, http.StatusOK, user)
 }
 
