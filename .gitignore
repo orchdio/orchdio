@@ -7,7 +7,6 @@ go
 .idea
 TODO.md
 cmd
-go.sum
 spec-1.json
 api-spec-2.json
 api-spec.json
