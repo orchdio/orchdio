@@ -132,6 +132,7 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	query := queries.CreateUserQuery
 	_, dbErr := c.DB.Exec(query,
 		user.Email,
+		user.DisplayName,
 		uniqueID,
 	)
 
@@ -237,6 +238,7 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 
 	userProfile := c.DB.QueryRowx(queries.CreateUserQuery,
 		user.Email,
+		user.Name,
 		uniqueID,
 	)
 
