@@ -224,6 +224,7 @@ func SyncFollowsHandler(DB *sqlx.DB, red *redis.Client, asynqClient *asynq.Clien
 	// enqueue each of these tasks. these would be unique using the entity_id. this is to make sure that we do not have multiple
 	// type of same task
 	for _, follow := range *follows {
+		log.Printf("[follow][SyncFollowsHandler] - Entity URL with link to be extracted: %v", follow.EntityID)
 		extractLinkInfo, err := services.ExtractLinkInfo(follow.EntityURL)
 		if err != nil {
 			log.Printf("[follow][SyncFollowsHandler] - error extracting link info: %v", err)

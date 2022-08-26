@@ -297,6 +297,7 @@ type FollowTaskData struct {
 	Url      string    `json:"url"`
 	EntityID string    `json:"entity_id"`
 	Platform string    `json:"platform"`
+	Status   string    `json:"status"`
 	//Subscribers interface{} `json:"subscribers"`
 }
 

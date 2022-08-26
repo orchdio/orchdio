@@ -153,6 +153,8 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 			EntityID:   entityID,
 		}
 
+		log.Printf("[services][ExtractLinkInfo][info] LinkInfo: %v", linkInfo)
+
 		return &linkInfo, nil
 		// to handle pagination.
 		// TODO: create magic string for these
