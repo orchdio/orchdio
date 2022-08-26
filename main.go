@@ -345,7 +345,7 @@ func main() {
 		panic(cErr)
 	}
 
-	//c.Start()
+	c.Start()
 
 	log.Printf("\n[main] [info] - CRONJOB Entry ID is: %v", entryId)
 	log.Printf("Server is up and running on port: %s", port)
