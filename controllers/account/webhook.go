@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"github.com/gofiber/fiber/v2"
 	"github.com/jmoiron/sqlx"
-	"github.com/samber/lo"
 	"github.com/vicanso/go-axios"
 	"log"
 	"net/http"
@@ -86,12 +85,6 @@ func (w *WebhookController) CreateWebhookUrl(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Webhook url is too long")
 	}
 
-	urlSchemes := []string{"http://", "https://"}
-	if !lo.Contains(urlSchemes, webhookUrl) {
-		log.Printf("[controller][user][CreateWebhookUrl] - error - webhook url is not valid. Does not look like a valid url")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Webhook url is not valid. Does not look like a valid url")
-	}
-
 	if len(webhoookBody.VerifyToken) > 500 {
 		log.Printf("[controller][user][CreateWebhookUrl] - error - verify token is too long")
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Verify token is too long")
@@ -106,9 +99,9 @@ func (w *WebhookController) CreateWebhookUrl(ctx *fiber.Ctx) error {
 
 	log.Printf("\n[controller][user][CreateWebhookUrl] - webhook err: '%s' \n", whErr)
 
-	if whErr == nil && whErr != sql.ErrNoRows {
+	if whErr != nil && whErr != sql.ErrNoRows {
 		// TODO: handle other possible fetch webhook errors. for now just say "error fetching webhook"
-		log.Printf("[controller][user][CreateWebhookUrl] - error fetching webhook url \n")
+		log.Printf("[controller][user][CreateWebhookUrl] - error fetching webhook url: %v \n", whErr)
 		return util.ErrorResponse(ctx, http.StatusConflict, "An unexpected error")
 	}
 
