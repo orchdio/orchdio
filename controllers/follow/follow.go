@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
@@ -34,7 +35,7 @@ func NewFollow(db *sqlx.DB, red *redis.Client) *Follow {
 // FollowPlaylist follows a playlist. It will check if the follow already exists. If it exists, then
 // we want to add the subscriber to the follow. If the subscriber has already followed the playlist,
 // then we do nothing. If it doesn't exist, then we create a new follow and add the subscriber.
-func (f *Follow) FollowPlaylist(developer string, info *blueprint.LinkInfo, subscribers []string) ([]byte, error) {
+func (f *Follow) FollowPlaylist(developer, originalURL string, info *blueprint.LinkInfo, subscribers []string) ([]byte, error) {
 	log.Printf("[follow][FollowPlaylist] - Running follow playlist")
 	if len(subscribers) > 20 {
 		log.Printf("[follow][FollowPlaylist] - too many subscribers. Max is 20")
@@ -59,7 +60,7 @@ func (f *Follow) FollowPlaylist(developer string, info *blueprint.LinkInfo, subs
 	if rows == nil {
 		subs := pq.Array(subscribers)
 		// TODO: pass taskID
-		followId, err := database.CreateFollowTask(developer, "", uniqueId.String(), info.EntityID, info.TargetLink, subs)
+		followId, err := database.CreateFollowTask(developer, "", uniqueId.String(), info.EntityID, originalURL, subs)
 		if err != nil {
 			log.Printf("[follow][FollowPlaylist] - error creating follow task: %v", err)
 			return nil, err
@@ -116,7 +117,8 @@ func (s *TaskCronHandler) ProcessFollowTaskHandler(ctx context.Context, task *as
 	}
 
 	followService := services.NewFollowTask(s.DB, s.Red)
-	_, ok, err := followService.HasPlaylistBeenUpdated(linkInfo.Platform, linkInfo.Entity, linkInfo.EntityID)
+	// NOTE: for tidal, the update hash is a timestamp (in string format) for tidal
+	updatedHash, ok, _, err := followService.HasPlaylistBeenUpdated(linkInfo.Platform, linkInfo.Entity, linkInfo.EntityID)
 
 	if err != nil {
 		// if the user wants follow a playlist we havent cached before, we're not (necessarily) going to
@@ -126,6 +128,14 @@ func (s *TaskCronHandler) ProcessFollowTaskHandler(ctx context.Context, task *as
 			convertedPlaylist, err := universal.ConvertPlaylist(linkInfo, s.Red)
 			if err != nil {
 				log.Printf("[queue][ProcessFollowTaskHandler][conversion] - error converting playlist: %v", err)
+				return err
+			}
+
+			// then save the snapshot to redis
+			snapshotID := fmt.Sprintf("%s:snapshot:%s", linkInfo.Platform, linkInfo.EntityID)
+			err = s.Red.Set(context.Background(), snapshotID, updatedHash, 0).Err()
+			if err != nil {
+				log.Printf("[queue][ProcessFollowTaskHandler][redis] - error saving snapshot to redis: %v", err)
 				return err
 			}
 			log.Printf("[queue][ProcessFollowTaskHandler] - playlist has been cached and converted: %v", convertedPlaylist)
@@ -144,6 +154,7 @@ func (s *TaskCronHandler) ProcessFollowTaskHandler(ctx context.Context, task *as
 
 	// if the playlist has been updated, then update the redis snapshot with the new hash
 	if ok {
+		log.Println("[queue][ProcessFollowTaskHandler] - playlist has been updated. Converting again to fetch new tracks")
 		updatedPlaylist, err := universal.ConvertPlaylist(linkInfo, s.Red)
 		if err != nil {
 			log.Printf("[queue][ProcessFollowTaskHandler][conversion] - error converting playlist: %v", err)
@@ -193,6 +204,15 @@ func (s *TaskCronHandler) ProcessFollowTaskHandler(ctx context.Context, task *as
 			log.Printf("[queue][ProcessFollowTaskHandler] - error updating follow last updated: %v", err)
 			return err
 		}
+
+		snapshotID := fmt.Sprintf("%s:snapshot:%s", linkInfo.Platform, updatedHash)
+		err = s.Red.Set(context.Background(), snapshotID, updatedHash, 0).Err()
+
+		if err != nil {
+			log.Printf("[queue][ProcessFollowTaskHandler] - error updating snapshot: %v", err)
+			return err
+		}
+		log.Printf("[queue][ProcessFollowTaskHandler] - playlist has been cached %s", updatedPlaylist.URL)
 
 		log.Printf("[queue][ProcessFollowTaskHandler] - Playlist has been updated and subscribers notified")
 		return nil

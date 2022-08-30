@@ -259,7 +259,7 @@ type FollowTask struct {
 	EntityID    string      `json:"entity_id,omitempty" db:"entity_id"`
 	Developer   string      `json:"developer,omitempty" db:"developer"`
 	EntityURL   string      `json:"entity_url,omitempty" db:"entity_url"`
-	//Status      string      `json:"status,omitempty" db:"status"`
+	Status      string      `json:"status,omitempty" db:"status"`
 }
 
 type FollowData struct {
@@ -297,7 +297,6 @@ type FollowTaskData struct {
 	Url      string    `json:"url"`
 	EntityID string    `json:"entity_id"`
 	Platform string    `json:"platform"`
-	Status   string    `json:"status"`
 	//Subscribers interface{} `json:"subscribers"`
 }
 

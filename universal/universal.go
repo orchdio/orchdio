@@ -209,7 +209,7 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 
 	case tidal.IDENTIFIER:
 		log.Printf("\n[controllers][platforms][ConvertPlaylist][tidal] - converting playlist %v\n", info.EntityID)
-		tidalPlaylist, err := tidal.FetchPlaylist(info.EntityID, red)
+		_, tidalPlaylist, _, err := tidal.FetchPlaylist(info.EntityID, red)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][tidal][ConvertPlaylist] error - could not fetch playlist with ID from tidal: %v\n", err)
 			return nil, err
@@ -236,7 +236,7 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 		conversion.Tracks.Tidal = &tidalPlaylist.Tracks
 
 		log.Printf("\n[controllers][platforms][ConvertPlaylist][tidal] - caching tracks in playlist %v\n", tidalPlaylist.URL)
-		err = CachePlaylistTracksWithID(deezerTracks, red)
+		err = CachePlaylistTracksWithID(conversion.Tracks.Tidal, red)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][tidal][ConvertPlaylist] warning - could not cache tracks: %v %v\n\n", err, deezerTracks)
 		} else {

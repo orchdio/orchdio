@@ -63,6 +63,8 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 		log.Printf("\n[services][ExtractLinkInfo][error] Error parsing escaped URL: %v\n", parseErr)
 		return nil, parseErr
 	}
+
+	log.Printf("[services][ExtractLinkInfo][info] Parsed URL: %v\n", parsedURL)
 	// index of the beginning of useless params/query (aka tracking links) in our link
 	// if there are, then we want to remove them.
 	trailingCharIndex := strings.Index(song, "?")
@@ -204,10 +206,20 @@ func NewFollowTask(db *sqlx.DB, red *redis.Client) *SyncFollowTask {
 	}
 }
 
-func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId string) ([]byte, bool, error) {
+// HasPlaylistBeenUpdated checks if the playlist has been updated. However, there is more that it does and it returns quite
+// the number of information.
+//  - is the playlist updated? For tidal, this is done by checking the last time it was updated. For other platforms, we check the checksum.
+// It returns the following:
+//  - the latest hash of the playlist. It makes calls to the endpoints so we know we always get the latest hash.
+//  - a boolean indicating if the playlist has been updated.
+//  - a slice of byte representing the platform which we checked for the update.
+//  - an error, if any
+func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId string) ([]byte, bool, []byte, error) {
 	// first check the hash in redis
-	cachedSnapshot, cacheErr := s.Red.Get(context.Background(), fmt.Sprintf("%s:snapshot:%s", platform, entityId)).Result()
+	snapshotID := fmt.Sprintf("%s:snapshot:%s", platform, entityId)
+	log.Printf("\n[services][SyncFollowTask][info] Checking if playlist has been updated with snapshot id: %s\n", snapshotID)
 
+	cachedSnapshot, cacheErr := s.Red.Get(context.Background(), snapshotID).Result()
 	// entity comes from the link info. so we need to check if the entity is a playlist or a track and for some
 	// platforms, the entity can be returned in plural, i.e playlists or tracks.
 	supportedEntities := []string{"playlists", "tracks"}
@@ -217,16 +229,16 @@ func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId strin
 		// TODO: handle possible redis.Nil error
 		if cacheErr == redis.Nil {
 			log.Printf("[follow][FetchPlaylistHash] - Entity hasnt been cached: %v", cacheErr)
-			return nil, false, cacheErr
+			return nil, false, nil, cacheErr
 		}
 		log.Printf("[follow][FetchPlaylistHash] - error getting playlist hash from redis: %v", cacheErr)
-		return nil, false, cacheErr
+		return nil, false, nil, cacheErr
 	}
 
 	// if we got a cached snapshot, we want to get the latest snapshot for a playlist by making a request
 	// to the platform's api
 	var entitySnapshot string
-	// FIXME: use magic strings instead of hardcoded values
+	var platformBytes []byte
 	if lo.Contains(supportedEntities, entity) {
 		switch platform {
 		// TODO: implement other platforms
@@ -236,19 +248,36 @@ func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId strin
 			log.Printf("[follow][FetchPlaylistHash] - playlist hash is: %v", ent)
 			entitySnapshot = ent
 			log.Printf("[follow][FetchPlaylistHash] - fetched playlist hash from spotify: %v", entitySnapshot)
+		case "tidal":
+			log.Printf("[follow][FetchPlaylistHash] - checking if playlist has been updated")
+			platform = "tidal"
+			info, _, ok, err := tidal.FetchPlaylist(entityId, s.Red)
+			if err != nil {
+				log.Printf("[follow][FetchPlaylistHash] - error fetching playlist from tidal: %v", err)
+				return nil, false, nil, err
+			}
+			if !ok {
+				log.Printf("[follow][FetchPlaylistHash] - playlist has not been updated")
+				return nil, false, nil, nil
+			}
+			platformBytes, _ = json.Marshal(platform)
+			log.Printf("[follow][FetchPlaylistHash] - playlist has been updated")
+			// TODO: return the timestamp instead of the hash, for tidal
+			return []byte(info.LastUpdated), true, platformBytes, nil
 		}
 	}
+	platformBytes, _ = json.Marshal(platform)
 
 	serializesHash, err := json.Marshal(entitySnapshot)
 	if err != nil {
 		log.Printf("[follow][FetchPlaylistHash] - error marshalling playlist hash: %v", err)
-		return nil, false, err
+		return nil, false, nil, err
 	}
 
 	sanitizedCachedSnapshot := strings.Replace(string(cachedSnapshot), "\"", "", -1)
 
 	if sanitizedCachedSnapshot == entitySnapshot {
-		return serializesHash, false, nil
+		return serializesHash, false, nil, nil
 	}
-	return serializesHash, true, nil
+	return serializesHash, true, platformBytes, nil
 }

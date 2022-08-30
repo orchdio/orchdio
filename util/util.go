@@ -181,6 +181,8 @@ func ExtractDeezerID(link string) string {
 	return link[firstIndex:lastIndex]
 }
 
+// TODO: remove hashing and hashing references and use norm package to normalize the strings instead
+
 // HashIdentifier returns a hash of the identifier
 func HashIdentifier(id string) string {
 	hasher := md5.New()

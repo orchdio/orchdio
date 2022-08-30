@@ -123,6 +123,38 @@ func FetchSingleTrack(id string) (*Track, error) {
 	return singleTrack, nil
 }
 
+//func CheckPlaylistHasBeenUpdated(playlistId string) bool {
+//	token, err := FetchNewAuthToken()
+//	if err != nil {
+//		log.Printf("\n[controllers][platforms][tidal][CheckPlaylistHasBeenUpdated] - Error fetching new token from TIDAL.  - %v\n", err)
+//		log.Printf("\n[controllers][platforms][tidal][CheckPlaylistHasBeenUpdated] - FATAL ERROR. PLEASE AUDIT- %v\n", err)
+//		return false
+//	}
+//
+//	instance := axios.NewInstance(&axios.InstanceConfig{
+//		BaseURL:     ApiUrl,
+//		EnableTrace: true,
+//		Headers: map[string][]string{
+//			"Accept":        {"application/json"},
+//			"Authorization": {"Bearer " + token},
+//		},
+//	})
+//	// https://listen.tidal.com/v1/playlists/1b46cea3-e06a-49d9-b21e-b1a1603a44bf?countryCode=US&locale=en_US&deviceType=BROWSER
+//	response, err := instance.Get(fmt.Sprintf("/playlists/%s?countryCode=US&locale=en_US&deviceType=BROWSER", playlistId))
+//	if err != nil {
+//		log.Printf("\n[controllers][platforms][tidal][CheckPlaylistHasBeenUpdated] - Error fetching playlist from TIDAL.  - %v\n", err)
+//		return false
+//	}
+//	var playlist PlaylistInfo
+//	err = json.Unmarshal(response.Data, &playlist)
+//	if err != nil {
+//		log.Printf("\n[controllers][platforms][tidal][CheckPlaylistHasBeenUpdated] - Error unmarshalling playlist from TIDAL.  - %v\n", err)
+//		return false
+//	}
+//
+//	if
+//}
+
 // SearchTrackWithTitle will perform a search on tidal for the track we want
 func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
 	identifierHash := util.HashIdentifier(fmt.Sprintf("tidal-%s-%s", title, artiste))
@@ -257,15 +289,21 @@ func FetchPlaylistInfo(id string) (*PlaylistInfo, error) {
 	return playlistInfo, nil
 }
 
-// FetchPlaylist fetches a specific playlist based on the id
-func FetchPlaylist(id string, red *redis.Client) (*blueprint.PlaylistSearchResult, error) {
-	identifierHash := util.HashIdentifier(fmt.Sprintf("tidal-%s", id))
-	infoHash := fmt.Sprintf("tidal-%s-info", identifierHash)
+// FetchPlaylist fetches a specific playlist based on the id. It returns the playlist search result,
+// a bool to indicate if the playlist has been updated since the last time a call was made
+// and an error if there is one
+func FetchPlaylist(id string, red *redis.Client) (*PlaylistInfo, *blueprint.PlaylistSearchResult, bool, error) {
+	// identifierHash represents the hash for the playlist info
+	identifierHash := fmt.Sprintf("tidal:playlist:%s", id)
+
+	// infoHash represents the key for the snapshot of the playlist info, in this case
+	// just a lasUpdated timestamp in string format.
+	infoHash := fmt.Sprintf("tidal:snapshot:%s", id)
 
 	info, err := FetchPlaylistInfo(id)
 	if err != nil {
 		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not fetch playlist info - %v\n", err)
-		return nil, err
+		return nil, nil, false, err
 	}
 
 	// if we have already cached the playlist info.
@@ -275,20 +313,20 @@ func FetchPlaylist(id string, red *redis.Client) (*blueprint.PlaylistSearchResul
 		cachedInfo, err := red.Get(context.Background(), infoHash).Result()
 		if err != nil && err != redis.Nil {
 			log.Printf("\n[controllers][platforms][tidal][FetchPlaylist] - could not fetch cached playlist info - %v\n", err)
-			return nil, err
+			return nil, nil, false, err
 		}
 
 		// deserialize the playlist info
-		var Info PlaylistInfo
-		_ = json.Unmarshal([]byte(cachedInfo), &Info)
+		var cachedLastPlayedAt string
+		_ = json.Unmarshal([]byte(cachedInfo), &cachedLastPlayedAt)
 
 		// format the timestamps on both of the playlist info
-		lastUpdated, err := goment.New(Info.LastUpdated)
+		lastUpdated, err := goment.New(cachedLastPlayedAt)
 		infoLastUpdated, err := goment.New(info.LastUpdated)
 
 		if err != nil {
 			log.Printf("\n[controllers][platforms][tidal][FetchPlaylist] - could not parse last updated time - %v\n", err)
-			return nil, err
+			return nil, nil, false, err
 		}
 
 		var result *blueprint.PlaylistSearchResult
@@ -297,31 +335,31 @@ func FetchPlaylist(id string, red *redis.Client) (*blueprint.PlaylistSearchResul
 		cachedResult, err := red.Get(context.Background(), identifierHash).Result()
 		if err != nil {
 			log.Printf("\n[services][tidal][FetchPlaylistTracksInfo] - ⚠️ error fetching key from redis. - %v\n", err)
-			return nil, err
+			return nil, nil, false, err
 		}
 		// deserialize the tracks we fetched from redis
 		err = json.Unmarshal([]byte(cachedResult), &result)
 		if err != nil {
 			log.Printf("\n[services][tidal][FetchPlaylistTracksInfo] - ⚠️ error deserializimng cache result - %v\n", err)
-			return nil, err
+			return nil, nil, false, err
 		}
 		// if the timestamps are the same, that means that our playlist has not
 		// changed, so we can return the cached result. in the other case, we
 		// are doing nothing so we go on to fetch the tracks from the tidal api.
 		if lastUpdated.IsSame(infoLastUpdated) {
-			return result, nil
+			return info, result, false, nil
 		}
 	}
 
 	accessToken, err := FetchNewAuthToken()
 	if err != nil {
 		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - error - %v\n", err)
-		return nil, err
+		return nil, nil, false, err
 	}
 
 	if err != nil {
 		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not deserialize playlist result from tidal - %v\n", err)
-		return nil, err
+		return nil, nil, false, err
 	}
 
 	playlistResult := &PlaylistTracks{}
@@ -346,13 +384,13 @@ func FetchPlaylist(id string, red *redis.Client) (*blueprint.PlaylistSearchResul
 		response, err := instance.Get(fmt.Sprintf("/playlists/%s/items?offset=%d&limit=100&countryCode=US", id, page*100))
 		if err != nil {
 			log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - error - %v\n", err)
-			return nil, err
+			return nil, nil, false, err
 		}
 		res := &PlaylistTracks{}
 		err = json.Unmarshal(response.Data, res)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not deserialize playlist result from tidal - %v\n", err)
-			return nil, err
+			return nil, nil, false, err
 		}
 		if len(res.Items) == 0 {
 			break
@@ -401,14 +439,14 @@ func FetchPlaylist(id string, red *redis.Client) (*blueprint.PlaylistSearchResul
 		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - cached playlist into redis - %v\n", info.Title)
 	}
 
-	infoSer, _ := json.Marshal(info)
+	infoSer, _ := json.Marshal(info.LastUpdated)
 	err = red.Set(context.Background(), infoHash, infoSer, 0).Err()
 	if err != nil {
 		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not cache playlist info for %s info into redis - %v\n", err, info.Title)
 	} else {
 		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - cached playlist info into redis - %v\n", info.Title)
 	}
-	return result, nil
+	return info, result, true, nil
 }
 
 // FetchTrackWithTitleChan fetches a track with the title from tidal but using a channel
