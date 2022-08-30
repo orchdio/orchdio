@@ -168,7 +168,7 @@ func (d *NewDB) FetchUserWithApiKey(key string) (*blueprint.User, error) {
 	}
 	var userNames map[string]string
 	usernames := json.Unmarshal(usr.Usernames.([]byte), &userNames)
-	log.Printf("[db][FetchUserWithApiKey] fetched user %s\n", usernames)
+	log.Printf("[db][FetchUserWithApiKey] fetched user '%v'\n", usernames)
 	return &usr, nil
 }
 

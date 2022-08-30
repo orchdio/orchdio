@@ -335,7 +335,7 @@ func main() {
 	// hERE WE WANT TO SETUP A CRONJOB THAT RUNS EVERY 2 MINS TO PROCESS THE FOLLOWS
 	c := cron.New()
 
-	entryId, cErr := c.AddFunc("@every 45s", func() {
+	entryId, cErr := c.AddFunc("@every 1m", func() {
 		log.Printf("\n[main] [info] - Process background tasks")
 		follow.SyncFollowsHandler(db, redisClient, asyncClient, asynqMux)
 	})

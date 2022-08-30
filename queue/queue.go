@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"github.com/go-redis/redis/v8"
 	"github.com/hibiken/asynq"
@@ -155,7 +156,8 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, use
 
 	// post to the developer webhook
 	webhook, wErr := database.FetchWebhook(user.UUID.String())
-	if wErr != nil {
+	// TODO: implement making sure developer has a webhook set
+	if wErr != nil && wErr != sql.ErrNoRows {
 		log.Printf("[queue][PlaylistHandler] - error fetching developer webhook: %v", wErr)
 		return wErr
 	}
