@@ -28,6 +28,12 @@ func NewWebhookController(db *sqlx.DB, red *redis.Client) *Controller {
 }
 
 func (c *Controller) Handle(ctx *fiber.Ctx) error {
+
+	if ctx.Method() != "POST" {
+		log.Printf("[controller][webhook][Handle] - GET request. Might be webhook verification")
+		return ctx.SendStatus(http.StatusOK)
+	}
+
 	log.Printf("==========================================================")
 	log.Printf("[controller][webhook][Handle] - webhook event")
 	orchdioHmac := ctx.Get("x-orchdio-hmac")

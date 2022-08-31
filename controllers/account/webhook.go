@@ -112,7 +112,7 @@ func (w *WebhookController) CreateWebhookUrl(ctx *fiber.Ctx) error {
 	}
 
 	if webhook.Status != http.StatusOK {
-		log.Printf("[controller][user][Create WebhookUrl] - error - webhook url is invalid")
+		log.Printf("[controller][user][Create WebhookUrl] - error - response not ok: %v\n", webhook.Status)
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Webhook url is invalid")
 	}
 

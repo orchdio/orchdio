@@ -219,6 +219,7 @@ func main() {
 	baseRouter.Get("/webhook", authMiddleware.ValidateKey, webhookController.FetchWebhookUrl)
 	baseRouter.Delete("/webhook", authMiddleware.ValidateKey, webhookController.DeleteUserWebhookUrl)
 	baseRouter.Post("/white-tiger", whController.Handle)
+	baseRouter.Get("/white-tiger", whController.Handle)
 
 	userRouter := app.Group("/api/v1/user")
 
