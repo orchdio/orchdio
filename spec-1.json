@@ -282,11 +282,16 @@
     "/api/v1/webhook/add": {
       "post": {
         "description": "Adds a webhook",
+        "security": [
+          {
+            "x-orchdio-key": []
+          }
+        ],
         "parameters": [
           {
-            "name": "x-orchdio-key",
+            "name": "Bearer access_token",
             "in": "header",
-            "description": "The orchdio key",
+            "description": "The access token of the user. ⚠️ This endpoint is available only to Orchdio as developers cannot generate access tokens yet.",
             "required": true,
             "schema": {
                 "type": "string"
@@ -338,6 +343,91 @@
                 "application/json": {
                     "schema": {
                     "$ref": "#/components/schemas/GetWebhooksResponse"
+                    }
+                }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/task/{taskId}": {
+      "parameters": [
+        {
+          "name": "taskId",
+          "in": "path",
+          "description": "The task ID",
+          "required": true,
+          "schema": {
+              "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "description": "Gets a task, for example, a playlist conversion request",
+        "parameters": [
+          {
+            "name": "x-orchdio-key",
+            "in": "header",
+            "description": "The orchdio key",
+            "required": true,
+            "schema": {
+                "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/schemas/GetTaskResponse"
+                    }
+                }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                    }
+                }
+            }
+          }
+        }
+      },
+      "delete": {
+        "description": "Deletes a task",
+        "parameters": [
+          {
+            "name": "x-orchdio-key",
+            "in": "header",
+            "description": "The orchdio key",
+            "required": true,
+            "schema": {
+                "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/schemas/DeleteKeyResponse"
                     }
                 }
             }
@@ -846,6 +936,25 @@
           "status": 200
         }
       },
+      "DeleteTaskResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "The message of the response",
+            "example": "The task was successfully deleted"
+          },
+          "status": {
+            "type": "string",
+            "description": "The status of the response",
+            "example": "success"
+          }
+        },
+        "example": {
+          "message": "The task was successfully deleted",
+          "status": 200
+        }
+      },
       "AddWebhookResponse": {
         "type": "object",
         "properties": {
@@ -910,7 +1019,27 @@
             "example": "success"
           }
         }
+      },
+      "GetTaskResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "The data from the processing of the task. For example, this will be a playlist conversion result."
+          },
+          "message": {
+            "type": "string",
+            "description": "The message of the response",
+            "example": "The task successfully retrieved"
+          },
+          "status": {
+            "type": "string",
+            "description": "The status of the response",
+            "example": "success"
+          }
+        }
+       }
       }
-    }
-  }
+    },
+  "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base"
 }

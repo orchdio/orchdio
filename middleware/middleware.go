@@ -129,7 +129,7 @@ func (a *AuthMiddleware) ValidateKey(ctx *fiber.Ctx) error {
 
 		if err == sql.ErrNoRows {
 			log.Printf("[middleware][ValidateKey] key not found. %s\n", apiKey)
-			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid apikey")
+			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid apikey'\n'")
 		}
 
 		log.Printf("[middleware][ValidateKey] error - Could not fetch user with api key: %v\n", err)
@@ -141,6 +141,6 @@ func (a *AuthMiddleware) ValidateKey(ctx *fiber.Ctx) error {
 }
 
 func (a *AuthMiddleware) LogIncomingRequest(ctx *fiber.Ctx) error {
-	log.Printf("[middleware][LogIncomingRequest] incoming request: %s -> %s: %s\n", ctx.IP(), ctx.Method(), ctx.Path())
+	log.Printf("[middleware][LogIncomingRequest] incoming request: %s  %s: %s\n", ctx.IP(), ctx.Method(), ctx.Path())
 	return ctx.Next()
 }

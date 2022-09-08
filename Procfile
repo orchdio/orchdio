@@ -1,1 +1,1 @@
-web: bin/orchdio --port %PORT%
+web: ./out

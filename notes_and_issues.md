@@ -18,3 +18,7 @@ that is, multiple trips even though we already got it first when we fetched the 
 Probably this would've made sense to return a tuple... or struct but.. 1, go doesn't have tuples and 2... mvp and "it aint broke, worry about it later" baybee.
 It should also be noted that the  format for the redis cache is:
 "tidal"
+
+#!/bin/bash
+
+0-alias creates a new alias for a command 'rm *' which removes all files in current directory
