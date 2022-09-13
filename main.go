@@ -215,7 +215,7 @@ func main() {
 	baseRouter.Get("/playlist/convert", authMiddleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
 
 	baseRouter.Post("/webhook/add", authMiddleware.ValidateKey, webhookController.CreateWebhookUrl)
-	baseRouter.Post("/webhook/update", authMiddleware.ValidateKey, webhookController.UpdateUserWebhookUrl)
+	baseRouter.Patch("/webhook/update", authMiddleware.ValidateKey, webhookController.UpdateUserWebhookUrl)
 	baseRouter.Get("/webhook", authMiddleware.ValidateKey, webhookController.FetchWebhookUrl)
 	baseRouter.Delete("/webhook", authMiddleware.ValidateKey, webhookController.DeleteUserWebhookUrl)
 	baseRouter.Post("/white-tiger", whController.Handle)
@@ -230,9 +230,9 @@ func main() {
 	}), middleware.VerifyToken)
 
 	userRouter.Post("/generate-key", userController.GenerateAPIKey)
-	userRouter.Patch("/key/revoke", authMiddleware.ValidateKey, userController.RevokeKey)
-	userRouter.Patch("/key/allow", userController.UnRevokeKey)
-	userRouter.Delete("/key/delete", authMiddleware.ValidateKey, userController.DeleteKey)
+	baseRouter.Patch("/key/revoke", authMiddleware.ValidateKey, userController.RevokeKey)
+	baseRouter.Patch("/key/allow", userController.UnRevokeKey)
+	baseRouter.Delete("/key/delete", authMiddleware.ValidateKey, userController.DeleteKey)
 	userRouter.Get("/key", userController.RetrieveKey)
 
 	// ==========================================
