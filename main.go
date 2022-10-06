@@ -9,6 +9,7 @@ import (
 	"github.com/antoniodipinto/ikisocket"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	jwtware "github.com/gofiber/jwt/v3"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -191,7 +192,7 @@ func main() {
 	//	panic(err)
 	//}
 
-	platformsControllers := platforms.NewPlatform(redisClient)
+	platformsControllers := platforms.NewPlatform(redisClient, db)
 	whController := webhook.NewWebhookController(db, redisClient)
 
 	/**
@@ -204,6 +205,7 @@ func main() {
 	 ==================================================================
 	*/
 
+	app.Use(cors.New())
 	baseRouter := app.Group("/api/v1")
 	baseRouter.Use(authMiddleware.LogIncomingRequest)
 
@@ -211,7 +213,8 @@ func main() {
 	baseRouter.Get("/:platform/connect", userController.RedirectAuth)
 	baseRouter.Get("/spotify/auth", userController.AuthSpotifyUser)
 	baseRouter.Get("/deezer/auth", userController.AuthDeezerUser)
-	baseRouter.Get("/track/convert", authMiddleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
+	baseRouter.Get("/track/convert", authMiddleware.ValidateKey, authMiddleware.AddAPIDeveloperToContext, middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
+	//baseRouter.Get("/track/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
 	baseRouter.Get("/playlist/convert", authMiddleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
 
 	baseRouter.Post("/webhook/add", authMiddleware.ValidateKey, webhookController.CreateWebhookUrl)
@@ -242,6 +245,10 @@ func main() {
 	nextRouter.Post("/playlist/convert", middleware.ExtractLinkInfoFromBody, conversionController.ConvertPlaylist)
 	nextRouter.Get("/task/:taskId", conversionController.GetPlaylistTask)
 	nextRouter.Delete("/task/:taskId", conversionController.DeletePlaylistTask)
+
+	// user account action routes
+	userActionAddRouter := nextRouter.Group("/add")
+	userActionAddRouter.Post("/playlist/:platform/:playlistId", platformsControllers.AddPlaylistToAccount)
 
 	// FIXME: remove later. this is just for compatibility with the ping api for dev.
 	nextRouter.Post("/job/ping", conversionController.ConvertPlaylist)

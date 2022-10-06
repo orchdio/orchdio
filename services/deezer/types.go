@@ -276,3 +276,7 @@ type PlaylistTracksSearch struct {
 		Checksum string `json:"checksum"`
 	} `json:"tracks"`
 }
+
+type PlaylistCreationResponse struct {
+	ID int64 `json:"id"`
+}

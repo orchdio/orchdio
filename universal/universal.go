@@ -10,12 +10,17 @@ import (
 	"orchdio/services/deezer"
 	"orchdio/services/spotify"
 	"orchdio/services/tidal"
+	"orchdio/services/ytmusic"
 )
 
 // ConvertTrack fetches all the tracks converted from all the supported platforms
 func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conversion, error) {
 	var conversion blueprint.Conversion
 	conversion.Entity = "track"
+	spotifyCacheKey := ""
+	deezerCacheKey := ""
+	tidalCacheKey := ""
+	ytmusicCacheKey := ""
 
 	switch info.Platform {
 	case deezer.IDENTIFIER:
@@ -38,26 +43,33 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 			}
 		}
 
-		conversion.Platforms.Spotify = spSingleTrack
-		conversion.Platforms.Deezer = deezerTrack
-		conversion.Platforms.Tidal = tidalTrack
-
-		spotifyCacheKey := "spotify:" + spSingleTrack.ID
-		deezerCacheKey := "deezer:" + deezerTrack.ID
-		tidalCacheKey := "tidal:" + tidalTrack.ID
-		// create a map from spotifyCacheKey and deezerCacheKey
-		cacheMap := map[string]*blueprint.TrackSearchResult{
-			spotifyCacheKey: spSingleTrack,
-			deezerCacheKey:  deezerTrack,
-			tidalCacheKey:   tidalTrack,
-		}
-
-		err = CacheTracksWithID(cacheMap, red)
+		ytmusicTrack, err := ytmusic.SearchTrackWithTitle(trackTitle, deezerTrack.Artistes[0], red)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][spotify][ConvertTrack] warning - could not cache tracks: %v\n", err)
+			if err == blueprint.ENORESULT {
+				conversion.Platforms.YTMusic = nil
+			}
 		}
 
-		return &conversion, nil
+		conversion.Platforms.Deezer = deezerTrack
+		conversion.Platforms.Spotify = spSingleTrack
+		conversion.Platforms.Tidal = tidalTrack
+		conversion.Platforms.YTMusic = ytmusicTrack
+
+		if deezerTrack != nil {
+			deezerCacheKey = "deezer:" + deezerTrack.ID
+		}
+
+		if tidalTrack != nil {
+			tidalCacheKey = "tidal:" + tidalTrack.ID
+		}
+
+		if ytmusicTrack != nil {
+			ytmusicCacheKey = "ytmusic:" + ytmusicTrack.ID
+		}
+
+		if spSingleTrack != nil {
+			spotifyCacheKey = "spotify:" + spSingleTrack.ID
+		}
 
 	case spotify.IDENTIFIER:
 		spSingleTrack, err := spotify.SearchTrackWithID(info.EntityID, red)
@@ -85,8 +97,32 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 				conversion.Platforms.Tidal = nil
 			}
 		}
+
+		ytmusicTrack, err := ytmusic.SearchTrackWithTitle(spSingleTrack.Title, spSingleTrack.Artistes[0], red)
+		if err != nil {
+			if err == blueprint.ENORESULT {
+				conversion.Platforms.YTMusic = nil
+			}
+		}
+
 		conversion.Platforms.Tidal = tidalTrack
-		return &conversion, nil
+		conversion.Platforms.YTMusic = ytmusicTrack
+
+		if dzSingleTrack != nil {
+			deezerCacheKey = "deezer:" + dzSingleTrack.ID
+		}
+
+		if tidalTrack != nil {
+			tidalCacheKey = "tidal:" + tidalTrack.ID
+		}
+
+		if ytmusicTrack != nil {
+			ytmusicCacheKey = "ytmusic:" + ytmusicTrack.ID
+		}
+
+		if spSingleTrack != nil {
+			spotifyCacheKey = "spotify:" + spSingleTrack.ID
+		}
 
 	case tidal.IDENTIFIER:
 		tidalTrack, err := tidal.SearchWithID(info.EntityID, red)
@@ -100,18 +136,97 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 		spotifyTrack, err := spotify.SearchTrackWithTitle(tidalTrack.Title, tidalArtist, red)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][tidal][ConvertTrack] error - could not search track with ID from spotify: %v\n", err)
-			return nil, err
+			conversion.Platforms.Spotify = nil
 		}
 		deezerSingleTrack, err := deezer.SearchTrackWithTitle(tidalTrack.Title, tidalArtist, tidalAlbum, red)
+		if err != nil {
+			log.Printf("\n[controllers][platforms][tidal][ConvertTrack] error - could not search track with ID from deezer: %v\n", err)
+			conversion.Platforms.Deezer = nil
+		}
+
+		ytmusicTrack, err := ytmusic.SearchTrackWithTitle(tidalTrack.Title, tidalArtist, red)
+		if err != nil {
+			if err == blueprint.ENORESULT {
+				conversion.Platforms.YTMusic = nil
+			}
+		}
+
 		conversion.Platforms.Spotify = spotifyTrack
 		conversion.Platforms.Deezer = deezerSingleTrack
 		conversion.Platforms.Tidal = tidalTrack
-		return &conversion, nil
+		conversion.Platforms.YTMusic = ytmusicTrack
+
+		if spotifyTrack != nil {
+			//cacheKeys = append(cacheKeys, "spotify:"+spotifyTrack.ID)
+			spotifyCacheKey = "spotify:" + spotifyTrack.ID
+		}
+
+		if deezerSingleTrack != nil {
+			//cacheKeys = append(cacheKeys, "deezer:"+deezerSingleTrack.ID)
+			deezerCacheKey = "deezer:" + deezerSingleTrack.ID
+		}
+
+		if tidalTrack != nil {
+			//cacheKeys = append(cacheKeys, "tidal:"+tidalTrack.ID)
+			tidalCacheKey = "tidal:" + tidalTrack.ID
+		}
+
+		if ytmusicTrack != nil {
+			//cacheKeys = append(cacheKeys, "ytmusic:"+ytmusicTrack.ID)
+			ytmusicCacheKey = "ytmusic:" + ytmusicTrack.ID
+		}
+
+	case ytmusic.IDENTIFIER:
+		ytmusicTrack, err := ytmusic.SearchTrackWithLink(info, red)
+		if err != nil {
+			log.Printf("\n[controllers][platforms][ytmusic][ConvertTrack] error - could not fetch track with ID from ytmusic: %v\n", err)
+			return nil, err
+		}
+		ytmusicArtiste := ytmusicTrack.Artistes[0]
+		ytmusicAlbum := ytmusicTrack.Album
+		spotifyTrack, err := spotify.SearchTrackWithTitle(ytmusicTrack.Title, ytmusicArtiste, red)
+		if err != nil {
+			log.Printf("\n[controllers][platforms][ytmusic][ConvertTrack] error - could not search track with ID from spotify: %v\n", err)
+			conversion.Platforms.Spotify = nil
+		}
+		deezerSingleTrack, err := deezer.SearchTrackWithTitle(ytmusicTrack.Title, ytmusicArtiste, ytmusicAlbum, red)
+		if err != nil {
+			log.Printf("\n[controllers][platforms][ytmusic][ConvertTrack] error - could not search track with ID from deezer: %v\n", err)
+			conversion.Platforms.Deezer = nil
+		}
+		tidalTrack, err := tidal.SearchTrackWithTitle(ytmusicTrack.Title, ytmusicArtiste, red)
+		if err != nil {
+			if err == blueprint.ENORESULT {
+				conversion.Platforms.Tidal = nil
+			}
+		}
+
+		conversion.Platforms.Spotify = spotifyTrack
+		conversion.Platforms.Deezer = deezerSingleTrack
+		conversion.Platforms.Tidal = tidalTrack
+		conversion.Platforms.YTMusic = ytmusicTrack
+
 	default:
 		return nil, blueprint.ENOTIMPLEMENTED
 	}
+
+	// create a map from spotifyCacheKey and deezerCacheKey
+	cacheMap := map[string]*blueprint.TrackSearchResult{
+		spotifyCacheKey: conversion.Platforms.Spotify,
+		deezerCacheKey:  conversion.Platforms.Deezer,
+		tidalCacheKey:   conversion.Platforms.Tidal,
+		ytmusicCacheKey: conversion.Platforms.YTMusic,
+	}
+
+	err := CacheTracksWithID(cacheMap, red)
+	if err != nil {
+		log.Printf("\n[controllers][platforms][spotify][ConvertTrack] warning - could not cache tracks: %v\n", err)
+	}
+
+	return &conversion, nil
 }
 
+// ConvertPlaylist converts a playlist from one platform to another
 func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.PlaylistConversion, error) {
 	var conversion blueprint.PlaylistConversion
 	omittedTracks := map[string][]blueprint.OmittedTracks{}
@@ -252,6 +367,10 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 // CacheTracksWithID caches the results of a track conversion, under a key with a scheme of "platform:trackID"
 func CacheTracksWithID(records map[string]*blueprint.TrackSearchResult, red *redis.Client) error {
 	for cacheKey, data := range records {
+		if data == nil {
+			log.Printf("\n[controllers][platforms][base] warning - no result to cache for this platform: %v\n\n", cacheKey)
+			continue
+		}
 		// stringify data
 		dataJSON, err := json.Marshal(data)
 		if err != nil {

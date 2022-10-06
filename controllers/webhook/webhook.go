@@ -52,7 +52,7 @@ func (c *Controller) Handle(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
 	}
 
-	apiKey, aErr := database.FetchUserApikey(user.UUID)
+	apiKey, aErr := database.FetchUserApikey(user.Email)
 	log.Printf("[controller][webhook][Handle] - user apikey: %+v", apiKey.Key.String())
 	if aErr != nil {
 		log.Printf("[controller][webhook][Handle] - error fetching user apikey %s\n", aErr.Error())

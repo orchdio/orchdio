@@ -1,21 +1,19 @@
 package queries
 
-const CreateUserQuery = `WITH user_rec as ( INSERT INTO "users"(email, username, uuid, created_at, updated_at) VALUES($1, $2, $3, now(), now()) ON CONFLICT("email")  DO UPDATE
-SET email=EXCLUDED.email, username=EXCLUDED.username RETURNING email, uuid)
+const CreateUserQuery = `WITH user_rec as ( INSERT INTO "users"(email, username, uuid, refresh_token, platform_id, created_at, updated_at) VALUES($1, $2, $3, $4, $5, now(), now()) ON CONFLICT("email")  DO UPDATE
+SET email=EXCLUDED.email, username=EXCLUDED.username, refresh_token=$4, platform_id=$5, updated_at=now() RETURNING email, uuid)
 			SELECT * from user_rec;`
 
 const UpdatePlatformUsernames = `UPDATE users SET usernames = COALESCE(usernames::JSONB, '{}') || $2 WHERE email = $1;`
 const FindUserByEmail = `SELECT * FROM users where email = $1`
+const FindUserByUUID = `SELECT * FROM users where uuid = $1 AND platform_id IS NOT NULL`
 
-const FetchUserApiKey = `SELECT api.*
-FROM apikeys api
-JOIN users u ON u.uuid = api.user
-WHERE api.user = $1;`
+const FetchUserApiKey = `SELECT api.* FROM apikeys api JOIN users u ON u.uuid = api.user WHERE u.email = $1;`
 
 const CreateNewKey = `INSERT INTO apiKeys(key, "user", revoked, created_at, updated_at) values ($1, $2, false, now(), now());`
 
-const RevokeApiKey = `UPDATE apiKeys SET revoked = TRUE, updated_at = now() FROM users AS u WHERE u.uuid = $2 AND KEY = $1;`
-const UnRevokeApiKey = `UPDATE apiKeys SET revoked = FALSE, updated_at = now() FROM users AS u WHERE u.uuid = $2 AND KEY = $1;`
+const RevokeApiKey = `UPDATE apiKeys SET revoked = TRUE, updated_at = now() FROM users AS u WHERE key = $1;`
+const UnRevokeApiKey = `UPDATE apiKeys SET revoked = FALSE, updated_at = now() FROM users AS u WHERE key = $1;`
 const DeleteApiKey = `DELETE FROM apiKeys api USING users u WHERE u.uuid = api.user AND api.key = $1 AND api.user = $2 RETURNING key;`
 
 const FetchUserWebhook = `SELECT wh.url FROM webhooks wh join users u ON u.uuid = wh.user where wh.user = $1;`
@@ -26,7 +24,7 @@ const FetchUserWithApiKey = `SELECT u.id, u.email, coalesce(u.username, '') user
 const UpdateUserWebhook = `UPDATE webhooks SET url = $1, verify_token = $3, updated_at = now() FROM users AS u WHERE u.uuid = $2;`
 const DeleteUserWebhook = `DELETE FROM webhooks wh WHERE wh.user = $1;`
 
-const CreateOrUpdateTask = `INSERT INTO tasks(uuid, "user", entity_id, created_at, updated_at, type) values ($1, $2, $3, now(), now(), 'conversion') ON CONFLICT("uuid") 
+const CreateOrUpdateTask = `INSERT INTO tasks(uuid, shortid, "user", entity_id, created_at, updated_at, type) values ($1, $2, $3, $4, now(), now(), 'conversion') ON CONFLICT("uuid") 
 DO UPDATE SET status = 'pending', updated_at = now() RETURNING uuid;`
 
 const UpdateTaskStatus = `UPDATE tasks SET status = $2, updated_at = now() WHERE uuid = $1 RETURNING uuid;`
@@ -37,6 +35,8 @@ const DeleteTask = `DELETE FROM tasks WHERE uuid = $1;`
 
 const CreateOrAddSubscriberFollow = `INSERT INTO follows(uuid, developer, entity_id, subscribers, entity_url, created_at, updated_at) values ($1, $2, $3, $4, $5, now(), now())
 ON CONFLICT("entity_id") DO UPDATE SET updated_at = NOW() RETURNING uuid;`
+
+const CreateNewTrackTaskRecord = `INSERT INTO tasks(uuid, shortid, entity_id, result, status, type, created_at, updated_at) values ($1, $2, $3, $4, 'completed', 'track', now(), now()) RETURNING uuid;`
 const UpdateFollowSubscriber = `UPDATE follows SET subscribers = ARRAY [$1], updated_at = now() WHERE entity_id = $2 AND $1::text <> ANY (subscribers::text[]) RETURNING uuid;`
 const FetchFollowedTask = `SELECT * FROM  follows where entity_id = $1;`
 

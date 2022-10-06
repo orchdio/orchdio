@@ -16,9 +16,11 @@ import (
 
 // VerifyToken verifies a token and set the context local called "claim" to a type of *blueprint.OrchdioUserToken
 func VerifyToken(ctx *fiber.Ctx) error {
+	log.Printf("[middleware][VerifyToken] method - Verifying token...\n")
 	jwtToken := ctx.Locals("authToken").(*jwt.Token)
 	claims := jwtToken.Claims.(*blueprint.OrchdioUserToken)
 	ctx.Locals("claims", claims)
+	log.Printf("[middleware][VerifyToken] method - Token verified. Claims set: %v\n", claims)
 	return ctx.Next()
 }
 
@@ -111,14 +113,14 @@ func (a *AuthMiddleware) ValidateKey(ctx *fiber.Ctx) error {
 
 	if len([]byte(apiKey)) > 36 {
 		log.Printf("[middleware][ValidateKey] key is too long. %s\n", apiKey)
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Key too long")
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "Key too long")
 	}
 
 	isValid := util.IsValidUUID(apiKey)
 
 	if !isValid {
 		log.Printf("[controller][user][Revoke] invalid key. Bad request %s\n", apiKey)
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid apikey")
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid apikey")
 	}
 
 	// fetch the user from the database
@@ -129,7 +131,7 @@ func (a *AuthMiddleware) ValidateKey(ctx *fiber.Ctx) error {
 
 		if err == sql.ErrNoRows {
 			log.Printf("[middleware][ValidateKey] key not found. %s\n", apiKey)
-			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid apikey'\n'")
+			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid apikey")
 		}
 
 		log.Printf("[middleware][ValidateKey] error - Could not fetch user with api key: %v\n", err)
@@ -143,4 +145,37 @@ func (a *AuthMiddleware) ValidateKey(ctx *fiber.Ctx) error {
 func (a *AuthMiddleware) LogIncomingRequest(ctx *fiber.Ctx) error {
 	log.Printf("[middleware][LogIncomingRequest] incoming request: %s  %s: %s\n", ctx.IP(), ctx.Method(), ctx.Path())
 	return ctx.Next()
+}
+
+func (a *AuthMiddleware) AddAPIDeveloperToContext(ctx *fiber.Ctx) error {
+	// get the api key from the header
+	apiKey := ctx.Get("x-orchdio-key")
+
+	if len([]byte(apiKey)) > 36 {
+		log.Printf("[middleware][ValidateKey] key is too long. %s\n", apiKey)
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "Key too long")
+	}
+
+	if apiKey == "" {
+		log.Printf("[middleware][ValidateKey] key is empty. %s\n", apiKey)
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "Key is empty")
+	}
+
+	isValid := util.IsValidUUID(apiKey)
+	if isValid {
+		log.Printf("[middleware][ValidateKey] key is valid. %s\n", apiKey)
+		database := db.NewDB{DB: a.DB}
+		user, err := database.FetchUserWithApiKey(apiKey)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				log.Printf("[middleware][ValidateKey] key not found. %s\n", apiKey)
+				return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid apikey")
+			}
+			log.Printf("[middleware][ValidateKey] error - Could not fetch user with api key: %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		}
+		ctx.Locals("developer", user)
+		return ctx.Next()
+	}
+	return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid apikey")
 }

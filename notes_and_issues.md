@@ -4,7 +4,7 @@
 
 This is because Tidal does not use hash for playlist. We're checking
 if the playlist has been updated by comparing the timestamp with the cached one. So that means that for the most part,
-splitting them out means repeating similar code and while this isnt a problem, we might call it different places around same time.
+splitting them out means repeating similar code and while this isn't a problem, we might call it different places around same time.
 that is, multiple trips even though we already got it first when we fetched the playlist.
 
 
@@ -22,3 +22,13 @@ It should also be noted that the  format for the redis cache is:
 #!/bin/bash
 
 0-alias creates a new alias for a command 'rm *' which removes all files in current directory
+
+
+
+## Suggested improvements / Future ideas to explore
+ - [ ] Adding the "entity_id" to the notification info. perhaps a new column called "entity_id" in the notifications table. This would allow us to link to the entity in the notification. This would be useful for when we want to link to a playlist conversion, etc. notification.
+ - [ ] Returning an array of users in the request body that already follow a playlist
+ - [ ] Add when a playlist was updated to the meta info about a playlist follow update.
+ - [ ] Support fetching from twitter circle/list* (this is a stretch goal??)
+ - [ ] Notification endpoints
+ - [ ] implement auth redirect URL for developers instead of manually setting in env var for Zoove

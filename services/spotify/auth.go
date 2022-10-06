@@ -16,6 +16,8 @@ func FetchAuthURL(state string) []byte {
 		// TODO: update the scopes as I need them
 		spotifyauth.WithScopes(spotifyauth.ScopeUserReadPrivate,
 			spotifyauth.ScopeUserLibraryRead,
+			spotifyauth.ScopePlaylistReadPrivate,
+			spotifyauth.ScopePlaylistReadCollaborative,
 			spotifyauth.ScopeUserReadEmail))
 	url := auth.AuthURL(state)
 	return []byte(url)
@@ -28,6 +30,8 @@ func CompleteUserAuth(ctx context.Context, request *http.Request) (*spotify.Clie
 	auth := spotifyauth.New(spotifyauth.WithRedirectURL(redirectURI),
 		spotifyauth.WithScopes(spotifyauth.ScopeUserReadPrivate,
 			spotifyauth.ScopeUserLibraryRead,
+			spotifyauth.ScopePlaylistReadPrivate,
+			spotifyauth.ScopePlaylistReadCollaborative,
 			spotifyauth.ScopeUserReadEmail))
 
 	token, err := auth.Token(ctx, state, request)

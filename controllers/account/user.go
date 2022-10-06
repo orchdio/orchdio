@@ -2,6 +2,7 @@ package account
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -15,6 +16,7 @@ import (
 	"orchdio/services/spotify"
 	"orchdio/util"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -116,7 +118,7 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	}
 
 	client, refreshToken := spotify.CompleteUserAuth(context.Background(), r)
-	_, encErr := util.Encrypt(refreshToken, []byte(encryptionSecretKey))
+	encryptedRefreshToken, encErr := util.Encrypt(refreshToken, []byte(encryptionSecretKey))
 	if encErr != nil {
 		log.Printf("\n[controllers][account][user] Error - could not encrypt refreshToken - %v\n", encErr)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, encErr)
@@ -130,15 +132,18 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	log.Printf("%v", user)
 
 	query := queries.CreateUserQuery
-	_, dbErr := c.DB.Exec(query,
+	_, dbErr := c.DB.Exec(
+		query,
 		user.Email,
 		user.DisplayName,
 		uniqueID,
+		encryptedRefreshToken,
+		user.ID,
 	)
 
 	if dbErr != nil {
-		log.Printf("\n[controller][account][user] : [AuthUser] Error executing query: %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		log.Printf("\n[controller][account][user][spotify]: [AuthUser] Error executing query: %v\n", dbErr)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, dbErr)
 	}
 
 	serialized, err := json.Marshal(map[string]string{
@@ -158,7 +163,10 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 		UUID:     uniqueID,
 	}
 	token, err := util.SignJwt(claim)
-	return util.SuccessResponse(ctx, http.StatusOK, string(token))
+	//redirectTo := os.Getenv("ZOOVE_AUTH_URL")
+
+	//return ctx.Redirect(redirectTo + "?token=" + string(token))
+	return util.SuccessResponse(ctx, http.StatusOK, token)
 }
 
 // AuthDeezerUser authorizes a user with deezer account. It generates a JWT token for
@@ -214,7 +222,7 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "Could not fetch deezer token")
 	}
 
-	_, err := util.Encrypt(token, []byte(encryptionSecretKey))
+	encryptedRefreshToken, err := util.Encrypt(token, []byte(encryptionSecretKey))
 	if err != nil {
 		log.Printf("\n[controllers][account][users][AuthDeezerUser] Method - Error encrypting deezer token: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
@@ -235,11 +243,13 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 	// TODO: here, check if the user is already in the DB, in that case, we just update platform username
 
 	log.Printf("[user][controller][AuthDeezerUser] Running create user query: '%s' with '%s', '%s', '%s' \n", queries.CreateUserQuery, user.Email, user.Name, uniqueID)
-
+	deezerID := strconv.Itoa(user.ID)
 	userProfile := c.DB.QueryRowx(queries.CreateUserQuery,
 		user.Email,
 		user.Name,
 		uniqueID,
+		encryptedRefreshToken,
+		deezerID,
 	)
 
 	scanErr := userProfile.StructScan(&profScan)
@@ -274,7 +284,9 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 
 	log.Printf("[user][controller][AuthDeezerUser] new user login/signup. Created new login.")
 
-	return util.SuccessResponse(ctx, http.StatusOK, string(jToken))
+	redirectTo := os.Getenv("ZOOVE_AUTH_URL")
+
+	return ctx.Redirect(redirectTo + "?token=" + string(jToken))
 }
 
 // FetchProfile fetches the playlist of the person, on the platform
@@ -333,7 +345,7 @@ func (c *UserController) GenerateAPIKey(ctx *fiber.Ctx) error {
 
 	// first fetch user
 	user, err := database.FindUserByEmail(claims.Email)
-	existingKey, err := database.FetchUserApikey(user.UUID)
+	existingKey, err := database.FetchUserApikey(user.Email)
 	if err != nil {
 		log.Printf("[controller][user][GenerateApiKey] could not fetch api key from db. %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
@@ -369,15 +381,12 @@ func (c *UserController) GenerateAPIKey(ctx *fiber.Ctx) error {
 
 // RevokeKey revokes an api key.
 func (c *UserController) RevokeKey(ctx *fiber.Ctx) error {
-	// get the current user
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
-
 	// get the api key from the header
 	apiKey := ctx.Get("x-orchdio-key")
 	// we want to set the value of revoked to true
 	database := db.NewDB{DB: c.DB}
 
-	err := database.RevokeApiKey(apiKey, claims.UUID.String())
+	err := database.RevokeApiKey(apiKey)
 	if err != nil {
 		log.Printf("[controller][user][RevokeKey] error revoking key. %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error occured")
@@ -388,16 +397,12 @@ func (c *UserController) RevokeKey(ctx *fiber.Ctx) error {
 
 // UnRevokeKey unrevokes an api key.
 func (c *UserController) UnRevokeKey(ctx *fiber.Ctx) error {
-
-	// get the current user
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
-
 	// get the api key from the header
 	apiKey := ctx.Get("x-orchdio-key")
 	// we want to set the value of revoked to true
 	database := db.NewDB{DB: c.DB}
 
-	err := database.UnRevokeApiKey(apiKey, claims.UUID.String())
+	err := database.UnRevokeApiKey(apiKey)
 	if err != nil {
 		log.Printf("[controller][user][RevokeKey] error revoking key. %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error occured")
@@ -456,12 +461,17 @@ func (c *UserController) RetrieveKey(ctx *fiber.Ctx) error {
 		DB: c.DB,
 	}
 
-	key, err := database.FetchUserApikey(claims.UUID)
+	key, err := database.FetchUserApikey(claims.Email)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("[controller][user][RetrieveKey] - User does not have a key")
+			return util.ErrorResponse(ctx, http.StatusNotFound, "You do not have a key")
+		}
+
 		log.Printf("[controller][user][RetrieveKey] - Could not retrieve user key. %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
 	}
-	log.Printf("[controller][user][RetrieveKey] - Retrieved apikey for user %s\n", claims)
+	log.Printf("[controller][user][RetrieveKey] - Retrieved apikey for user %+v\n", key)
 	return util.SuccessResponse(ctx, http.StatusOK, key.Key)
 }
 

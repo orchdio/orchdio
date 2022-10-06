@@ -72,6 +72,13 @@ func (c *Controller) FollowPlaylist(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "error following playlist")
 	}
 
+	// if the error returned is sql.ErrNoRows, it means that the playlist is already followed
+	//and the length of subscribers passed in the request body is 1
+	if err == blueprint.EALREADY_EXISTS {
+		log.Printf("[controller][follow][FollowPlaylist] - playlist already followed")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "playlist already followed")
+	}
+
 	res := map[string]interface{}{"follow_id": string(followId)}
 	return util.SuccessResponse(ctx, http.StatusOK, res)
 }

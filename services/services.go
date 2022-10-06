@@ -15,6 +15,7 @@ import (
 	"orchdio/services/deezer"
 	"orchdio/services/spotify"
 	"orchdio/services/tidal"
+	"orchdio/services/ytmusic"
 	"orchdio/util"
 	"os"
 	"strings"
@@ -67,8 +68,12 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 	log.Printf("[services][ExtractLinkInfo][info] Parsed URL: %v\n", parsedURL)
 	// index of the beginning of useless params/query (aka tracking links) in our link
 	// if there are, then we want to remove them.
+	// however for ytmusic music, the link is actually part of a query param, so we need to
+	// make an exception for that. the link is in the form of: https://music.youtube.com/watch?v=2I3dW2dCBZAJGj5X21E53k&feature=share
 	trailingCharIndex := strings.Index(song, "?")
-	if trailingCharIndex != -1 {
+	// HACK: check if the link is a ytmusic music link
+	isYT := strings.Contains(song, "music.ytmusic.com")
+	if trailingCharIndex != -1 && !isYT {
 		song = song[:trailingCharIndex]
 	}
 
@@ -79,6 +84,7 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 	)
 	playlistIndex := strings.Index(song, "playlist")
 	trackIndex := strings.Index(song, "track")
+
 	switch host {
 	case util.Find(blueprint.DeezerHost, host):
 		// first, check the type of URL it is. for now, only track.
@@ -158,6 +164,44 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 		log.Printf("[services][ExtractLinkInfo][info] LinkInfo: %v", linkInfo)
 
 		return &linkInfo, nil
+
+	case blueprint.YoutubeHost:
+		// handle tracks first.
+		// in the original link, the track ID is in the form of: https://www.youtube.com/watch?v=2I3dW2dCBZAJGj5X21E53k&list=RDAMVM2I3dW2dCBZAJGj5X21E53k
+		// but the preference will depend on whichever comes first —— v= or list=
+		trackParam := parsedURL.Query().Get("v")
+		playlistParam := parsedURL.Query().Get("list")
+
+		if trackParam == "" && playlistParam == "" {
+			log.Printf("[services][ExtractLinkInfo][error] Youtube link does not contain a track or playlist ID.")
+			return nil, blueprint.EINVALIDLINK
+		}
+
+		if playlistParam == "" && trackParam != "" {
+			log.Printf("[services][ExtractLinkInfo][info] Youtube link is a track.")
+			linkInfo := blueprint.LinkInfo{
+				Platform: ytmusic.IDENTIFIER,
+				// we're doing sprintf manually instead of the original url because the original url might have tracking links attached.cd ..
+				TargetLink: fmt.Sprintf("%s/watch?=%s", os.Getenv("YTMUSIC_API_BASE"), trackParam),
+				Entity:     "track",
+				EntityID:   trackParam,
+			}
+			log.Printf("[services][ExtractLinkInfo][info] LinkInfo: %v", linkInfo)
+			return &linkInfo, nil
+		}
+
+		if playlistParam != "" && trackParam == "" {
+			log.Printf("[services][ExtractLinkInfo][info] Youtube link is a playlist.")
+			linkInfo := blueprint.LinkInfo{
+				Platform:   ytmusic.IDENTIFIER,
+				TargetLink: fmt.Sprintf("%s/playlist?list=%s", os.Getenv("YTMUSIC_API_BASE"), playlistParam),
+				Entity:     "playlist",
+				EntityID:   playlistParam,
+			}
+			log.Printf("[services][ExtractLinkInfo][info] LinkInfo: %v", linkInfo)
+			return &linkInfo, nil
+		}
+
 		// to handle pagination.
 		// TODO: create magic string for these
 
@@ -192,6 +236,7 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 		log.Printf(host)
 		return nil, blueprint.EHOSTUNSUPPORTED
 	}
+	return nil, nil
 }
 
 type SyncFollowTask struct {

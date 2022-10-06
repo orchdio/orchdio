@@ -19,7 +19,7 @@ type Deezer struct {
 
 // FetchAuthURL fetches the auth url.
 func (d *Deezer) FetchAuthURL() string {
-	permissions := fmt.Sprintf("%s,%s,%s,%s", "basic_access", "email", "manage_library", "delete_library")
+	permissions := fmt.Sprintf("%s,%s,%s,%s,%s,%s", "basic_access", "email", "manage_library", "delete_library", "offline_access", "listening_history")
 	uniqueID, _ := uuid.NewUUID()
 	return fmt.Sprintf("%s/auth.php?app_id=%s&redirect_uri=%s&perms=%s&state=%s", AuthBase, d.ClientID, d.RedirectURI, permissions, uniqueID.String())
 }

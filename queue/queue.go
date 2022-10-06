@@ -7,6 +7,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
+	"github.com/teris-io/shortid"
 	"github.com/vicanso/go-axios"
 	"log"
 	"net/http"
@@ -49,48 +50,6 @@ func (o *OrchdioQueue) NewPlaylistQueue(entityID string, payload *blueprint.Link
 	return task, nil
 }
 
-//func (o *OrchdioQueue) ProcessFollowTaskHandler(ctx context.Context, task *asynq.Task) error {
-//	log.Printf("[queue][ProcessFollowTaskHandler] - processing follow task")
-//	var data blueprint.FollowTaskData
-//	err := json.Unmarshal(task.Payload(), &data)
-//	if err != nil {
-//		log.Printf("[queue][ProcessFollowTaskHandler][conversion] - error unmarshalling task payload: %v", err)
-//		return err
-//	}
-//
-//	// fetch the link info from the url passed in the task payload
-//	linkInfo, err := services.ExtractLinkInfo(data.Url)
-//	if err != nil {
-//		log.Printf("[queue][ProcessFollowTaskHandler][conversion] - error extracting link info: %v", err)
-//		return err
-//	}
-//
-//	followController := follow.NewFollow(o.DB, o.Red)
-//
-//	ok, err := followController.HasPlaylistBeenUpdated(linkInfo.Platform, linkInfo.Entity, linkInfo.EntityID)
-//	if err != nil {
-//		log.Printf("[queue][ProcessFollowTaskHandler][conversion] - error checking if playlist has been updated: %v", err)
-//		return err
-//	}
-//
-//	log.Printf("[queue][ProcessFollowTaskHandler][conversion] - playlist has been updated: %v", ok)
-//	return nil
-//	//  check the cache to see if we've cached the follow url in redis.
-//	// key format: "<platform>:snapshot:"+id
-//	//key := fmt.Sprintf("%s:snapshot:%s", linkInfo.Platform, linkInfo.EntityID)
-//	//cachedSnapshotID, snapErr := o.Red.Get(context.Background(), key).Result()
-//	//if snapErr != nil {
-//	//	if snapErr == redis.Nil {
-//	//		log.Printf("[queue][ProcessFollowTaskHandler][conversion] - no cached snapshot for %s", key)
-//	//	} else {
-//	//		log.Printf("[queue][ProcessFollowTaskHandler][conversion] - error getting snapshot id from redis: %v", snapErr)
-//	//	}
-//	//	return snapErr
-//	//}
-//
-//	// then get the latest snapshot from the database
-//}
-
 func (o *OrchdioQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task) error {
 	log.Printf("[queue][PlaylistTaskHandler] - processing task")
 	// deserialize the task payload and get the PlaylistTaskData struct
@@ -113,13 +72,25 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, use
 	log.Printf("[queue][PlaylistHandler] - processing task: %v", uid)
 	database := db.NewDB{DB: o.DB}
 	log.Printf("[queue][PlaylistHandler] - processing playlist: %v %v %v\n", database, info, user)
-	_taskId, dbErr := database.CreateOrUpdateTask(uid, user.UUID.String(), info.EntityID)
+	// create a url friendly id
+	const format = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-" // 0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-
+	sid, err := shortid.New(1, format, 2342)
+
+	if err != nil {
+		log.Printf("\n[controllers][platforms][ConvertTrack] - could not generate short id %v\n", err)
+		return err
+	}
+
+	shorturl, _ := sid.Generate()
+
+	_taskId, dbErr := database.CreateOrUpdateTask(uid, shorturl, user.UUID.String(), info.EntityID)
 	taskId := string(_taskId)
 
 	if dbErr != nil {
 		log.Printf("[queue][EnqueueTask] - error creating or updating task: %v", dbErr)
 		return dbErr
 	}
+
 	log.Printf("[queue][PlaylistHandler] - created or updated task: %v", taskId)
 
 	h, err := universal.ConvertPlaylist(info, o.Red)
@@ -134,6 +105,8 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, use
 		}
 		return err
 	}
+
+	h.ShortURL = "https://zoove.xyz/share/" + shorturl
 	// serialize h
 	ser, mErr := json.Marshal(h)
 	if mErr != nil {
@@ -169,7 +142,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, use
 	}
 
 	// get user api key
-	apiKey, aErr := database.FetchUserApikey(user.UUID)
+	apiKey, aErr := database.FetchUserApikey(user.Email)
 	if aErr != nil {
 		log.Printf("[queue][PlaylistHandler] - error fetching user api key: %v", aErr)
 		return aErr
@@ -183,14 +156,17 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, use
 	})
 
 	re, evErr := ax.Post(webhook.Url, r)
+
+	// TODO: implement proper retry logic for queue. After retrying for some time, it should stop (marked as failed)
+	//   current assumption is that asynq handles this but to-do is to verify this.
+	if evErr != nil {
+		log.Printf("[queue][PlaylistHandler] - error posting webhook to endpoint %s=%v", webhook.Url, evErr)
+		return evErr
+	}
+
 	if re.Status != http.StatusOK {
 		log.Printf("[queue][PlaylistHandler] - error posting webhook: %v", re)
 		return blueprint.EPHANTOMERR
-	}
-
-	if evErr != nil {
-		log.Printf("[queue][PlaylistHandler] - error posting webhook to endpoint %s=%v", string(webhook.Url), evErr)
-		return evErr
 	}
 
 	log.Printf("[queue][EnqueueTask] - successfully processed task: %v", taskId)
@@ -198,5 +174,3 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, use
 	// NOTE: In the case of a "follow", instead of just exiting here, we reschedule the task to  like 2 mins later.
 	return nil
 }
-
-//func (o *OrchdioQueue)

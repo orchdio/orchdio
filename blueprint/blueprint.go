@@ -13,6 +13,7 @@ var DeezerHost = []string{"deezer.page.link", "www.deezer.com"}
 const (
 	SpotifyHost = "open.spotify.com"
 	TidalHost   = "tidal.com"
+	YoutubeHost = "music.youtube.com"
 )
 
 // perhaps have a different Error type declarations somewhere. For now, be here
@@ -37,13 +38,15 @@ var (
 type MorbinTime string
 
 type User struct {
-	Email     string      `json:"email" db:"email"`
-	Usernames interface{} `json:"usernames" db:"usernames"`
-	Username  string      `json:"username" db:"username"`
-	ID        int         `json:"id" db:"id"`
-	UUID      uuid.UUID   `json:"uuid" db:"uuid"`
-	CreatedAt string      `json:"created_at" db:"created_at"`
-	UpdatedAt string      `json:"updated_at" db:"updated_at"`
+	Email        string      `json:"email" db:"email"`
+	Usernames    interface{} `json:"usernames" db:"usernames"`
+	Username     string      `json:"username" db:"username"`
+	ID           int         `json:"id" db:"id"`
+	UUID         uuid.UUID   `json:"uuid" db:"uuid"`
+	CreatedAt    string      `json:"created_at" db:"created_at"`
+	UpdatedAt    string      `json:"updated_at" db:"updated_at"`
+	RefreshToken []byte      `json:"refresh_token" db:"refresh_token,omitempty"`
+	PlatformID   string      `json:"platform_id" db:"platform_id"`
 }
 
 // swagger:response redirectAuthResponse
@@ -152,7 +155,9 @@ type Conversion struct {
 		Deezer  *TrackSearchResult `json:"deezer"`
 		Spotify *TrackSearchResult `json:"spotify"`
 		Tidal   *TrackSearchResult `json:"tidal"`
+		YTMusic *TrackSearchResult `json:"ytmusic"`
 	} `json:"platforms"`
+	ShortURL string `json:"short_url,omitempty"`
 }
 
 // PlaylistConversion represents the final response for a typical playlist conversion
@@ -169,6 +174,7 @@ type PlaylistConversion struct {
 	OmittedTracks map[string][]OmittedTracks `json:"omitted_tracks"`
 	Owner         string                     `json:"owner"`
 	Cover         string                     `json:"cover"`
+	ShortURL      string                     `json:"short_url,omitempty"`
 }
 
 // Message represents a message sent from the client to the server over websocket
@@ -303,4 +309,10 @@ type FollowTaskData struct {
 type WebhookVerificationResponse struct {
 	VerifyToken     string `json:"verify_token"`
 	VerifyChallenge string `json:"verify_challenge"`
+}
+
+type AddPlaylistToAccountData struct {
+	// TODO: in the future, perhaps look into the viability of allowing multiple users and also support email and id in api for user id
+	User uuid.UUID `json:"user"`
+	Url  string    `json:"url"`
 }

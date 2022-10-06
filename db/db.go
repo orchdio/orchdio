@@ -36,9 +36,31 @@ func (d *NewDB) FindUserByEmail(email string) (*blueprint.User, error) {
 	return user, nil
 }
 
+// FindUserByUUID finds a user by their UUID
+func (d *NewDB) FindUserByUUID(id string) (*blueprint.User, error) {
+	result := d.DB.QueryRowx(queries.FindUserByUUID, id)
+	user := &blueprint.User{}
+
+	err := result.StructScan(user)
+	if err != nil {
+		log.Printf("[controller][db] error scanning row result. %v\n", err)
+		return nil, err
+	}
+	var userNames map[string]string
+	err = json.Unmarshal(user.Usernames.([]byte), &userNames)
+
+	if err != nil {
+		log.Printf("[controller][db] error unmarshalling usernames. %v\n", err)
+		return nil, err
+	}
+	user.Usernames = userNames
+	return user, nil
+}
+
 // FetchUserApikey fetches the user api key
-func (d *NewDB) FetchUserApikey(uid uuid.UUID) (*blueprint.ApiKey, error) {
-	result := d.DB.QueryRowx(queries.FetchUserApiKey, uid)
+func (d *NewDB) FetchUserApikey(email string) (*blueprint.ApiKey, error) {
+	log.Printf("[db][FetchUserApikey] Running query %s with '%s'\n", queries.FetchUserApiKey, email)
+	result := d.DB.QueryRowx(queries.FetchUserApiKey, email)
 	apiKey := &blueprint.ApiKey{}
 
 	err := result.StructScan(apiKey)
@@ -48,17 +70,17 @@ func (d *NewDB) FetchUserApikey(uid uuid.UUID) (*blueprint.ApiKey, error) {
 			log.Printf("[controller][user][FetchUserApiKey] error - error scanning row. Something went wrong and this is not an expected error. %v\n", err)
 			return nil, err
 		}
-		return nil, nil
+		return nil, err
 	}
 	return apiKey, nil
 }
 
 // RevokeApiKey sets the revoked column to true
-func (d *NewDB) RevokeApiKey(key, user string) error {
-	log.Printf("[db][RevokeApiKey] Running query %s %s %s\n", queries.RevokeApiKey, key, user)
-	_, err := d.DB.Exec(queries.RevokeApiKey, key, user)
+func (d *NewDB) RevokeApiKey(key string) error {
+	log.Printf("[db][RevokeApiKey] Running query %s %s\n", queries.RevokeApiKey, key)
+	_, err := d.DB.Exec(queries.RevokeApiKey, key)
 	if err != nil {
-		log.Printf("[db][RevokeApiKey] error executing query %s.\n %v\n %s, %s \n", queries.RevokeApiKey, err, key, user)
+		log.Printf("[db][RevokeApiKey] error executing query %s.\n %v\n %s\n", queries.RevokeApiKey, err, key)
 		return err
 	}
 	log.Printf("[db][RevokeApiKey] Ran query %s\n", queries.RevokeApiKey)
@@ -66,11 +88,11 @@ func (d *NewDB) RevokeApiKey(key, user string) error {
 }
 
 // UnRevokeApiKey sets the revoked column to true
-func (d *NewDB) UnRevokeApiKey(key, user string) error {
-	log.Printf("[db][UnRevokeApiKey] Running query %s %s %s\n", queries.UnRevokeApiKey, key, user)
-	_, err := d.DB.Exec(queries.UnRevokeApiKey, key, user)
+func (d *NewDB) UnRevokeApiKey(key string) error {
+	log.Printf("[db][UnRevokeApiKey] Running query %s %s\n", queries.UnRevokeApiKey, key)
+	_, err := d.DB.Exec(queries.UnRevokeApiKey, key)
 	if err != nil {
-		log.Printf("[db][UnRevokeApiKey] error executing query %s.\n %v\n %s, %s\n", queries.RevokeApiKey, err, key, user)
+		log.Printf("[db][UnRevokeApiKey] error executing query %s.\n %v\n %s, %s\n", queries.RevokeApiKey, err, key)
 		return err
 	}
 	log.Printf("[db][UnRevokeApiKey] Ran query %s\n", queries.UnRevokeApiKey)
@@ -197,9 +219,9 @@ func (d *NewDB) DeleteUserWebhook(user string) error {
 }
 
 // CreateOrUpdateTask creates or updates a task and returns the id of the task or an error
-func (d *NewDB) CreateOrUpdateTask(uid, user, entity_id string) ([]byte, error) {
-	log.Printf("[db][CreateOrUpdateNewTask] Running query %s with '%s', '%s', '%s'\n", queries.CreateOrUpdateTask, uid, user, entity_id)
-	r := d.DB.QueryRowx(queries.CreateOrUpdateTask, uid, user, entity_id)
+func (d *NewDB) CreateOrUpdateTask(uid, shortid, user, entityId string) ([]byte, error) {
+	log.Printf("[db][CreateOrUpdateNewTask] Running query %s with '%s', '%s', '%s'\n", queries.CreateOrUpdateTask, uid, user, entityId)
+	r := d.DB.QueryRowx(queries.CreateOrUpdateTask, uid, shortid, user, entityId)
 	var res string
 	execErr := r.Scan(&res)
 	if execErr != nil {
@@ -314,8 +336,8 @@ func (d *NewDB) FetchTaskByEntityIDAndType(entityId, taskType string) (*blueprin
 }
 
 // CreateFollowTask creates a follow task if it does not exist and updates a task if it exists and the subscriber has been subscribed
-func (d *NewDB) CreateFollowTask(developer, taskId, uid, entityId, entityURL string, subscribers interface{}) ([]byte, error) {
-	log.Printf("[db][CreateFollowTask] Running query %s with '%s', '%s', '%s', '%s'\n", queries.CreateOrAddSubscriberFollow, uid, entityId, taskId, developer)
+func (d *NewDB) CreateFollowTask(developer, uid, entityId, entityURL string, subscribers interface{}) ([]byte, error) {
+	log.Printf("[db][CreateFollowTask] Running query %s with '%s', '%s', '%s' \n", queries.CreateOrAddSubscriberFollow, uid, entityId, developer)
 	r := d.DB.QueryRowx(queries.CreateOrAddSubscriberFollow, uid, developer, entityId, subscribers, entityURL)
 	var res string
 	err := r.Scan(&res)
@@ -323,6 +345,21 @@ func (d *NewDB) CreateFollowTask(developer, taskId, uid, entityId, entityURL str
 		log.Printf("[db][CreateFollowTask] error creating follow task. %v\n", err)
 		return nil, err
 	}
+	return []byte(res), nil
+}
+
+// CreateTrackTaskRecord creates a new task record for a track.
+func (d *NewDB) CreateTrackTaskRecord(uid, shortId, entityId string, result []byte) ([]byte, error) {
+	log.Printf("[db][CreateTrackTaskRecord] Running query %s with '%s', '%s', '%s' \n", queries.CreateNewTrackTaskRecord, uid, shortId, entityId)
+
+	r := d.DB.QueryRowx(queries.CreateNewTrackTaskRecord, uid, shortId, entityId, string(result))
+	var res string
+	err := r.Scan(&res)
+	if err != nil {
+		log.Printf("[db][CreateTrackTaskRecord] error creating track task record. %v\n", err)
+		return nil, err
+	}
+	log.Printf("[db][CreateTrackTaskRecord] created track task record.\n")
 	return []byte(res), nil
 }
 
@@ -369,6 +406,7 @@ func (d *NewDB) UpdateFollowSubscriber(subscriber, entityId string) ([]byte, err
 	err := r.Scan(&res)
 	if err != nil {
 		log.Printf("[db][UpdateTaskSubscriber] error updating follow task. %v\n", err)
+		// if the error is "no rows in result set" then the subscriber already exists
 		return nil, err
 	}
 	return []byte(res), nil

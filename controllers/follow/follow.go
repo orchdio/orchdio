@@ -60,7 +60,7 @@ func (f *Follow) FollowPlaylist(developer, originalURL string, info *blueprint.L
 	if rows == nil {
 		subs := pq.Array(subscribers)
 		// TODO: pass taskID
-		followId, err := database.CreateFollowTask(developer, "", uniqueId.String(), info.EntityID, originalURL, subs)
+		followId, err := database.CreateFollowTask(developer, uniqueId.String(), info.EntityID, originalURL, subs)
 		if err != nil {
 			log.Printf("[follow][FollowPlaylist] - error creating follow task: %v", err)
 			return nil, err
@@ -77,9 +77,23 @@ func (f *Follow) FollowPlaylist(developer, originalURL string, info *blueprint.L
 		updateFollowByte, err = database.UpdateFollowSubscriber(subscriber, info.EntityID)
 		if err != nil && err != sql.ErrNoRows {
 			log.Printf("[follow][FollowPlaylist] - error updating follow subscriber: %v", err)
-			return nil, err
+		}
+
+		// if the subscriber is already subscribed, the error will be sql.ErrNoRows
+		if err == sql.ErrNoRows {
+			log.Printf("[follow][FollowPlaylist] - subscriber already exists")
 		}
 	}
+
+	// if the follower passed is a single value, and the subscriber already follows the playlist,
+	// then the length of the updateFollowByte will be 0. Only in this case do we send a "already exists"
+	// error.
+	// TODO: emphasis in docs that if a user already follows a playlist and they follow it again, it will
+	// simply not do anything and return an ok.
+	if len(updateFollowByte) == 0 {
+		return nil, blueprint.EALREADY_EXISTS
+	}
+
 	log.Printf("[follow][FollowPlaylist] - updated follow subscriber: %v", updateFollowByte)
 	return updateFollowByte, nil
 }

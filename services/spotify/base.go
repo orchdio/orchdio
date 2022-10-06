@@ -130,6 +130,24 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 		return nil, blueprint.ENORESULT
 	}
 
+	// probably better to deserialize the ```spotifySearch.Tracks``` so we can check if its nil or not
+	// but it seems if its nil, then the spotiufySearch.Artists is also nil so check for that for now. but if
+	// a similar problem where a result is empty but not detected as omittedTrack comes up again for spotify,
+	// then we should check here and do the former.
+	if len(spotifySearch.Tracks.Tracks) == 0 {
+		log.Printf("\n[controllers][platforms][spotify][ConvertTrack] error - error fetching single track on spotify\n")
+		// panic for now.. at least until i figure out how to handle it if it can fail at all or not or can fail but be taken care of
+		return nil, blueprint.ENORESULT
+	}
+
+	//if spotifySearch.Artists == nil {
+	//	log.Printf("\n[controllers][platforms][spotify][ConvertTrack] error - error fetching single track on spotify\n")
+	//	// panic for now.. at least until i figure out how to handle it if it can fail at all or not or can fail but be taken care of
+	//	return nil, blueprint.ENORESULT
+	//}
+
+	log.Printf("\n[controllers][platforms][spotify][ConvertTrack] info - found %v tracks on spotify\n", spotifySearch)
+
 	var spSingleTrack spotify.FullTrack
 
 	// we're extracting just the first track.
@@ -168,7 +186,14 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	// serialize the track
 	serializedTrack, err := json.Marshal(fetchedSpotifyTrack)
 	trackCacheKey := "spotify:" + fetchedSpotifyTrack.ID
-	newIdentifier := util.HashIdentifier(fmt.Sprintf("spotify-%s-%s", fetchedSpotifyTrack.Artistes[0], fetchedSpotifyTrack.Title))
+
+	_artiste := ""
+
+	if len(fetchedSpotifyTrack.Artistes) > 0 {
+		artiste = fetchedSpotifyTrack.Artistes[0]
+	}
+	newIdentifier := util.HashIdentifier(fmt.Sprintf("spotify-%s-%s", _artiste, fetchedSpotifyTrack.Title))
+
 	if err != nil {
 		log.Printf("\n[services][spotify][base][SearchTrackWithTitle] error - could not marshal track: %v\n", err)
 		return nil, err

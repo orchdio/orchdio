@@ -3,10 +3,12 @@ package deezer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/vicanso/go-axios"
 	"log"
+	"net/http"
 	"net/url"
 	"orchdio/blueprint"
 	"orchdio/util"
@@ -177,7 +179,8 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 		}
 		newHashIdentifier := util.HashIdentifier("deezer-" + out.Artistes[0] + "-" + out.Title)
 
-		// cache tracks
+		// cache tracks. Here we are caching both with hash identifier and with the ID of the track itself
+		// this is because in some cases, we need to fetch by ID and not by title
 		err = red.Set(context.Background(), "deezer:"+out.ID, string(serializedTrack), 0).Err()
 		// cache track but with identifier. this is for when we're searching by title again and its the same
 		// track as this
@@ -385,4 +388,67 @@ func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Cli
 	}
 	deezerTracks, omittedTracks := FetchTracks(trackSearch, red)
 	return deezerTracks, omittedTracks
+}
+
+// CreateNewPlaylist creates a new playlist for a user on their deezer account
+func CreateNewPlaylist(title, userDeezerId, token string, tracks []string) error {
+	deezerAPIBase := os.Getenv("DEEZER_API_BASE")
+	reqURL := fmt.Sprintf("%s/user/%s/playlists?access_token=%s&request_method=post", deezerAPIBase, userDeezerId, token)
+	p := url.Values{}
+	p.Add("title", title)
+	out := &PlaylistCreationResponse{}
+	_ = axios.NewInstance(&axios.InstanceConfig{
+		Headers: map[string][]string{
+			"Content-Type": {"application/json"},
+		},
+	})
+
+	resp, err := axios.Get(reqURL, p)
+	if err != nil {
+		log.Printf("\n[services][deezer][CreateNewPlaylist] error - Could not create playlist: %v\n", err)
+		return err
+	}
+
+	if resp.Status == http.StatusBadRequest {
+		log.Printf("\n[services][deezer][CreateNewPlaylist] error - Could not create playlist. Bad request: %v\n", err)
+		return errors.New("bad request")
+	}
+
+	log.Printf("\n[services][deezer][CreateNewPlaylist] response: %v\n", string(resp.Data))
+
+	err = json.Unmarshal(resp.Data, out)
+
+	if err != nil {
+		log.Printf("\n[services][deezer][CreateNewPlaylist] error - Could not deserialize the body into the out response: %v\n", err)
+		return err
+	}
+
+	allTracks := strings.Join(tracks, ",")
+	updatePlaylistURL := fmt.Sprintf("%s/playlist/%d/tracks?access_token=%s&request_method=post", deezerAPIBase, out.ID, token)
+	p = url.Values{}
+	p.Add("songs", allTracks)
+	resp, err = axios.Get(updatePlaylistURL, p)
+	if err != nil {
+		log.Printf("\n[services][deezer][CreateNewPlaylist] error - Could not update playlist: %v\n", err)
+		return err
+	}
+
+	// HACK: for some reason, if our playlist contains invalid track ids, deezer will return a 200 error but the response body
+	// will contain an error message. We need to check for this and return an error if it happens.
+	if resp.Status == http.StatusOK {
+		// check for the error message
+		if strings.Contains(string(resp.Data), "error") {
+			log.Printf("\n[services][deezer][CreateNewPlaylist] error - Could not update playlist. Bad request: %v\n", err)
+			return errors.New("bad request")
+		}
+	}
+
+	if resp.Status == http.StatusInternalServerError {
+		log.Printf("\n[services][deezer][CreateNewPlaylist] error - Could not create playlist. Internal server error: %v\n", err)
+		return errors.New("internal server error")
+	}
+
+	log.Printf("\n[services][deezer][CreateNewPlaylist] created playlist: %v\n", string(resp.Data))
+
+	return nil
 }
