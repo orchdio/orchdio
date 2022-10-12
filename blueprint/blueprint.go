@@ -49,6 +49,22 @@ type User struct {
 	PlatformID   string      `json:"platform_id" db:"platform_id"`
 }
 
+//type AppleMusicAuthBody struct {
+//	Authorization struct {
+//		Code    string `json:"code"`
+//		IdToken string `json:"id_token"`
+//		State   string `json:"state"`
+//	} `json:"authorization"`
+//}
+
+type AppleMusicAuthBody struct {
+	Token     string `json:"token"`
+	Email     string `json:"email"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	State     string `json:"state"`
+}
+
 // swagger:response redirectAuthResponse
 type ErrorResponse struct {
 	// Description: The message attached to the response.

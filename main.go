@@ -11,6 +11,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	jwtware "github.com/gofiber/jwt/v3"
+	"github.com/gofiber/template/html"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/hibiken/asynq"
@@ -94,7 +95,10 @@ func getInfo(ctx *fiber.Ctx) error {
 }
 func main() {
 
-	app := fiber.New()
+	engine := html.New("layouts", ".html")
+	app := fiber.New(fiber.Config{
+		Views: engine,
+	})
 
 	// Database and cache setup things
 	envr := os.Getenv("ZOOVE_ENV")
@@ -205,14 +209,16 @@ func main() {
 	 ==================================================================
 	*/
 
-	app.Use(cors.New())
+	app.Use(cors.New(), authMiddleware.LogIncomingRequest)
 	baseRouter := app.Group("/api/v1")
-	baseRouter.Use(authMiddleware.LogIncomingRequest)
+	//baseRouter.Use(authMiddleware.LogIncomingRequest)
 
 	baseRouter.Get("/heartbeat", getInfo)
 	baseRouter.Get("/:platform/connect", userController.RedirectAuth)
 	baseRouter.Get("/spotify/auth", userController.AuthSpotifyUser)
 	baseRouter.Get("/deezer/auth", userController.AuthDeezerUser)
+	//baseRouter.Post("/applemusic/auth", userController.AuthAppleMusicUser)
+	baseRouter.Post("/applemusic/auth", userController.AuthAppleMusicUser)
 	baseRouter.Get("/track/convert", authMiddleware.ValidateKey, authMiddleware.AddAPIDeveloperToContext, middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
 	//baseRouter.Get("/track/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
 	baseRouter.Get("/playlist/convert", authMiddleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
@@ -353,7 +359,7 @@ func main() {
 		panic(cErr)
 	}
 
-	c.Start()
+	//c.Start()
 
 	log.Printf("\n[main] [info] - CRONJOB Entry ID is: %v", entryId)
 	log.Printf("Server is up and running on port: %s", port)

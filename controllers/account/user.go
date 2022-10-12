@@ -2,7 +2,9 @@ package account
 
 import (
 	"context"
+	"crypto/md5"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -81,6 +83,14 @@ func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 		url := dz.FetchAuthURL()
 		return util.SuccessResponse(ctx, http.StatusOK, url)
 	}
+
+	if platform == "applemusic" {
+		log.Printf("[account][auth] trying to connect to apple music")
+		return ctx.Render("auth", fiber.Map{
+			"Token": os.Getenv("APPLE_MUSIC_API_KEY"),
+		})
+	}
+
 	return util.ErrorResponse(ctx, http.StatusNotImplemented, "Other Platforms have not been implemented")
 }
 
@@ -166,7 +176,7 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	//redirectTo := os.Getenv("ZOOVE_AUTH_URL")
 
 	//return ctx.Redirect(redirectTo + "?token=" + string(token))
-	return util.SuccessResponse(ctx, http.StatusOK, token)
+	return util.SuccessResponse(ctx, http.StatusOK, string(token))
 }
 
 // AuthDeezerUser authorizes a user with deezer account. It generates a JWT token for
@@ -287,6 +297,150 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 	redirectTo := os.Getenv("ZOOVE_AUTH_URL")
 
 	return ctx.Redirect(redirectTo + "?token=" + string(jToken))
+}
+
+// AuthAppleMusicUser2 authorizes a user with apple music account.
+// NB: it doesnt really work for now so not active.
+//func (c *UserController) AuthAppleMusicUser2(ctx *fiber.Ctx) error {
+//	bod := &blueprint.AppleMusicAuthBody{}
+//	err := ctx.BodyParser(&bod)
+//	if err != nil {
+//		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error parsing body: %v", err)
+//		return util.ErrorResponse(ctx, http.StatusBadRequest, err)
+//	}
+//
+//	//authedUser := map[string]interface{}{}
+//	// serialize the user
+//	//err := json.Unmarshal([]byte(bod.Authorization.), &authedUser)
+//	//if err != nil {
+//	//	log.Printf("[user][controller][AuthAppleMusicUser] Method - Error serializing user: %v", err)
+//	//	return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+//	//}
+//
+//	//log.Printf("[user][controller][AuthAppleMusicUser] Method - Autheduser,  idToken and state: %v, %v, %v", authedUser, idToken, state)
+//
+//	// verify the token to get the user
+//	_ = "https://appleid.apple.com/auth/token"
+//
+//	client := apple.New()
+//	//vReq := apple.WebValidationTokenRequest{
+//	//	ClientID:     os.Getenv("APPLE_CLIENT_ID"),
+//	//	ClientSecret: os.Getenv("APPLE_MUSIC_API_KEY"),
+//	//	Code:         bod.Authorization.Code,
+//	//	RedirectURI:  "https://zoove.xyz",
+//	//}
+//
+//	cSecret := `-----BEGIN PRIVATE KEY-----`
+//	secret, err := apple.GenerateClientSecret(cSecret, os.Getenv("APPLE_TEAM_ID"), "com.orchdiodev.zoovestaging", os.Getenv("APPLE_KEY_ID"))
+//	if err != nil {
+//		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error generating client secret: %v", err)
+//		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+//	}
+//
+//	vReq := apple.WebValidationTokenRequest{
+//		ClientID:     "com.orchdiodev.zoovestaging",
+//		ClientSecret: secret,
+//		Code:         bod.Authorization.IdToken,
+//		//RedirectURI:  "https://constitution-replication-metadata-quick.trycloudflare.com/api/v1/applemusic/auth",
+//	}
+//
+//	var resp apple.ValidationResponse
+//	err = client.VerifyWebToken(context.Background(), vReq, &resp)
+//	if err != nil {
+//		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error verifying token: %v", err)
+//		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+//	}
+//
+//	if resp.Error != "" {
+//		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error verifying token: %v", resp.Error)
+//		return util.ErrorResponse(ctx, http.StatusInternalServerError, resp.Error)
+//	}
+//
+//	unique, err := apple.GetUniqueID(resp.IDToken)
+//	if err != nil {
+//		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error getting unique id: %v", err)
+//		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+//	}
+//
+//	claim, err := apple.GetClaims(resp.IDToken)
+//	if err != nil {
+//		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error getting claims: %v", err)
+//		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+//	}
+//
+//	log.Printf("[user][controller][AuthAppleMusicUser] Method - Claims: %v\n", claim)
+//	log.Printf("[user][controller][AuthAppleMusicUser] Method - Unique: %v\n", unique)
+//	return util.SuccessResponse(ctx, http.StatusOK, "Apple Music Auth")
+//}
+
+// AuthAppleMusicUser authenticates a user with apple music account and saves the user to the db. It also creates a token for the user.
+func (c *UserController) AuthAppleMusicUser(ctx *fiber.Ctx) error {
+	bod := &blueprint.AppleMusicAuthBody{}
+	err := ctx.BodyParser(&bod)
+	if err != nil {
+		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error parsing body: %v", err)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, err)
+	}
+
+	uniqueID, _ := uuid.NewUUID()
+	state := bod.State
+	if state == "" {
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "state is required")
+	}
+	var displayname = "-"
+	// if firstnasme isnt null, then we last name is not null either.
+	if bod.FirstName != "" {
+		displayname = bod.FirstName + " " + bod.LastName
+	}
+
+	encryptedRefreshToken, err := util.Encrypt([]byte(bod.Token), []byte(os.Getenv("ENCRYPTION_SECRET")))
+	if err != nil {
+		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error encrypting refresh token: %v", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+	}
+
+	// apple doesnt (seem to) have a context of user ID here, in the API, we're using the music user token and
+	// developer tokens to auth and make user auth requests. Therefore, we'll simply generate an md5 hash of the
+	// email address and use that as the user ID.
+	hash := md5.New()
+	// write the email address to the hash
+	_, err = hash.Write([]byte(bod.Email))
+	if err != nil {
+		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error hashing email: %v", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+	}
+	// get the hash as a string
+	hashedEmail := hex.EncodeToString(hash.Sum(nil))
+
+	_, err = c.DB.Exec(queries.CreateUserQuery, bod.Email, displayname, uniqueID, encryptedRefreshToken, hashedEmail)
+	if err != nil {
+		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error creating user: %v", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+	}
+
+	serialized, err := json.Marshal(map[string]string{
+		"applemusic": displayname,
+	})
+
+	// update the usernames the user has on various playlist.
+	// NB: I wasn't sure how to really handle this, if its better to do it in the createUserQuery above or split here
+	// decided to split here because its just easier for me to bother with right now.
+	_, err = c.DB.Exec(queries.UpdatePlatformUsernames, bod.Email, string(serialized))
+
+	claim := &blueprint.OrchdioUserToken{
+		Email:    bod.Email,
+		Username: displayname,
+		UUID:     uniqueID,
+	}
+
+	token, err := util.SignJwt(claim)
+	if err != nil {
+		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error signing JWT: %v", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+	}
+
+	// redirect to the frontend with the token
+	return util.SuccessResponse(ctx, http.StatusOK, string(token))
 }
 
 // FetchProfile fetches the playlist of the person, on the platform
