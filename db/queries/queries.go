@@ -30,7 +30,8 @@ DO UPDATE SET status = 'pending', updated_at = now() RETURNING uuid;`
 const UpdateTaskStatus = `UPDATE tasks SET status = $2, updated_at = now() WHERE uuid = $1 RETURNING uuid;`
 const UpdateTask = `UPDATE tasks SET result = $2, updated_at = now() WHERE uuid = $1 RETURNING result;`
 
-const FetchTask = `SELECT id, uuid, entity_id, created_at, updated_at, "user", status, coalesce(result, '{}') result FROM tasks WHERE uuid = $1;`
+const FetchTask = `SELECT id, uuid, entity_id, created_at, updated_at, "user", status, coalesce(result, '{}') result FROM tasks WHERE uuid= $1;`
+const FetchTaskByShorID = `SELECT id, uuid, entity_id, created_at, updated_at, "user", status, coalesce(result, '{}') result FROM tasks WHERE shortid = $1;`
 const DeleteTask = `DELETE FROM tasks WHERE uuid = $1;`
 
 const CreateOrAddSubscriberFollow = `INSERT INTO follows(uuid, developer, entity_id, subscribers, entity_url, created_at, updated_at) values ($1, $2, $3, $4, $5, now(), now())
@@ -52,6 +53,12 @@ const CreateFollowNotification = `INSERT INTO notifications(created_at, updated_
 const UpdateFollowLatUpdated = `UPDATE follows SET updated_at = now() where entity_id = $1;`
 
 const UpdateFollowStatus = `UPDATE follows SET updated_at = now(), status = $1 where entity_id = $2;`
+
+// create a new waitlist entry and update updated_at if email already exists
+const CreateWaitlistEntry = `INSERT INTO waitlists(uuid, email, created_at, updated_at) VALUES ($1, $2, now(), now()) ON CONFLICT(email) DO UPDATE SET updated_at = now() RETURNING email;`
+
+// update user platform token based on the streaming platform user provides
+const UpdateUserPlatformToken = `UPDATE users SET spotify_token = (CASE WHEN $2 ILIKE '%spotify%' THEN $1 ELSE spotify_token END), applemusic_token = (CASE WHEN $2 ILIKE '%applemusic%' THEN $1 ELSE applemusic_token END), deezer_token = (CASE WHEN $2 ILIKE '%deezer%' THEN $1 ELSE deezer_token END) WHERE email = $3;`
 
 //const FetchPlaylistFollowsToProcess = `SELECT task.*, COALESCE(follow.entity_url, '') entity_url FROM follows follow JOIN tasks task ON task.uuid = follow.task WHERE task IS NOT NULL
 //--  	AND task.updated_at > CURRENT_DATE - interval '10 minutes'

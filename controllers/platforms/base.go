@@ -76,7 +76,7 @@ func (p *Platforms) ConvertTrack(ctx *fiber.Ctx) error {
 	serialized, err := json.Marshal(conversion)
 
 	// add the task ID to the conversion response
-	conversion.ShortURL = "https://zoove.xyz/share/" + uID
+	conversion.ShortURL = uID
 
 	log.Printf("\n[controllers][platforms][ConvertTrack] - serialized conversion %v\n", string(serialized))
 
@@ -127,12 +127,12 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Platform not found")
 	}
 
-	// get the playlist ID
-	playlistID := ctx.Params("playlistId")
-	if playlistID == "" {
-		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "No playlist ID in context")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Playlist ID not found")
-	}
+	//// get the playlist ID
+	//playlistID := ctx.Params("playlistId")
+	//if playlistID == "" {
+	//	log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "No playlist ID in context")
+	//	return util.ErrorResponse(ctx, http.StatusBadRequest, "Playlist ID not found")
+	//}
 
 	// get the playlist creation body
 	var createBodyData = struct {
@@ -152,13 +152,18 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "No tracks to insert into playlist. please add tracks to the playlist")
 	}
 
+	if createBodyData.Title == "" {
+		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "No title in playlist")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "No title to insert into playlist. please add title to the playlist")
+	}
+
 	log.Printf("\n[controllers][platforms][AddPlaylistToAccount] incoming body - %v\n", createBodyData)
 
 	log.Printf("\n[controllers][platforms][AddPlaylistToAccount] - got user %v\n", createBodyData.User)
 
 	// find the user in the database
 	database := db.NewDB{DB: p.DB}
-	user, err := database.FindUserByUUID(createBodyData.User)
+	user, err := database.FindUserByEmail(createBodyData.User)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "User not found")
@@ -176,8 +181,9 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 	}
 
 	log.Printf("\n[controllers][platforms][AddPlaylistToAccount] - user refresh token %v\n", string(t))
-	title := fmt.Sprintf("Zoove playlist: %s", createBodyData.Title)
-	description := "Created with Zoove, powered by Orchdio"
+	//title := fmt.Sprintf("Zoove playlist: %s", createBodyData.Title)
+	description := "powered by Orchdio. https://orchdio.com"
+	playlistlink := ""
 	switch platform {
 	case "spotify":
 		httpClient := spotifyauth.New().Client(context.Background(), &oauth2.Token{
@@ -185,7 +191,7 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		})
 
 		client := spotify.New(httpClient)
-		createdPlaylist, err := client.CreatePlaylistForUser(context.Background(), user.PlatformID, title, description, true, false)
+		createdPlaylist, err := client.CreatePlaylistForUser(context.Background(), user.PlatformID, createBodyData.Title, description, true, false)
 
 		if err != nil {
 			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error getting profile - %v\n", err)
@@ -210,19 +216,27 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, err.Error())
 		}
 
+		playlistlink = createdPlaylist.ExternalURLs["spotify"]
+
 		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] - created playlist %v\n", updated)
 
 	case "deezer":
-		err := deezer.CreateNewPlaylist(title, user.PlatformID, string(t), createBodyData.Tracks)
+		id, err := deezer.CreateNewPlaylist(createBodyData.Title, user.PlatformID, string(t), createBodyData.Tracks)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error creating new playlist - %v\n", err)
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 		}
 
-		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] - created playlist %v\n", title)
+		playlistlink = fmt.Sprintf("https://www.deezer.com/en/playlist/%s", id)
+
+		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] - created playlist %v\n", createBodyData.Title)
 		// get the user, to see if our token is valid
 	}
 
-	return util.SuccessResponse(ctx, http.StatusCreated, "Playlist created")
+	//c := map[string]interface{}{
+	//	"url": playlistlink,
+	//}
+
+	return util.SuccessResponse(ctx, http.StatusCreated, playlistlink)
 
 }

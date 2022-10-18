@@ -11,6 +11,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"log"
 	"net/http"
+	"net/mail"
 	"orchdio/blueprint"
 	"orchdio/db"
 	"orchdio/db/queries"
@@ -81,7 +82,9 @@ func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 
 	if platform == "deezer" {
 		url := dz.FetchAuthURL()
-		return util.SuccessResponse(ctx, http.StatusOK, url)
+		return util.SuccessResponse(ctx, http.StatusOK, fiber.Map{
+			"url": url,
+		})
 	}
 
 	if platform == "applemusic" {
@@ -114,6 +117,12 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	//  200: redirectAuthResponse
 	var uniqueID, _ = uuid.NewUUID()
 	state := ctx.Query("state")
+	errorCode := ctx.Query("error")
+
+	if errorCode == "access_denied" {
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "User denied access")
+	}
+
 	encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
 	if state == "" {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "State is not present")
@@ -122,21 +131,33 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	// create a new net/http instance since *fasthttp.Request() cannot be passed
 	r, err := http.NewRequest("GET", string(ctx.Request().RequestURI()), nil)
 
+	log.Printf("[account][auth] state: %v\n", state)
+	log.Printf("[account][auth] uri: %v\n", string(ctx.Request().RequestURI()))
+
 	if err != nil {
 		log.Printf("[controllers][account][user] Error - error creating a new http request - %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 	}
 
 	client, refreshToken := spotify.CompleteUserAuth(context.Background(), r)
+	log.Printf("Refresh Token: %v\n", string(refreshToken))
 	encryptedRefreshToken, encErr := util.Encrypt(refreshToken, []byte(encryptionSecretKey))
 	if encErr != nil {
 		log.Printf("\n[controllers][account][user] Error - could not encrypt refreshToken - %v\n", encErr)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, encErr)
 	}
 
+	log.Printf("[account][auth] encrypted refresh token: %v\n", encryptedRefreshToken)
+
 	user, err := client.CurrentUser(context.Background())
 	if err != nil {
-		log.Printf("\n[controllers][account][user] Error - could not fetch current spotify user- %v\n", encErr)
+		log.Printf("\n[controllers][account][user] Error - could not fetch current spotify user- %v\n", err)
+
+		// THIS IS THE BEGINING OF A SUPPOSEDLY CURSED IMPLEMENTATION
+		// since we might need to request token quota extension for users
+		// AQB7csFtf_58P-Rq-jqrfFMhBXDJnC2xwFjLMwXr439vxbXCZdFxKpwTrnDLzJvFrY3nc2B4YeCRLOs5zgrMA4zwWZROc4P7qPt_ySlTi-qHM5w5y_eQ27PUJzLKQae5SJs
+		// when the user just auths for the first time, it seems that the refresh token is gotten (for some reason, during dev)
+
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 	}
 	log.Printf("%v", user)
@@ -165,18 +186,26 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	// decided to split here because its just easier for me to bother with right now.
 	_, err = c.DB.Exec(queries.UpdatePlatformUsernames, user.Email, string(serialized))
 
+	// update user platform token
+	_, err = c.DB.Exec(queries.UpdateUserPlatformToken, encryptedRefreshToken, "spotify", user.Email)
+	if err != nil {
+		log.Printf("[db][UpdateUserPlatformToken] error updating user platform token. %v\n", err)
+		return err
+	}
+
 	log.Printf("\n[user][controller][AuthUser] Method - User with the email %s just signed up or logged in with their Spotify account.\n", user.Email)
 	// create a jwt
 	claim := &blueprint.OrchdioUserToken{
 		Email:    user.Email,
 		Username: user.DisplayName,
 		UUID:     uniqueID,
+		Platform: "spotify",
 	}
 	token, err := util.SignJwt(claim)
-	//redirectTo := os.Getenv("ZOOVE_AUTH_URL")
+	redirectTo := os.Getenv("ZOOVE_AUTH_URL")
 
-	//return ctx.Redirect(redirectTo + "?token=" + string(token))
-	return util.SuccessResponse(ctx, http.StatusOK, string(token))
+	return ctx.Redirect(redirectTo + "?token=" + string(token))
+	//return util.SuccessResponse(ctx, http.StatusOK, string(token))
 }
 
 // AuthDeezerUser authorizes a user with deezer account. It generates a JWT token for
@@ -279,11 +308,19 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error occurred")
 	}
 
+	// update user platform token
+	_, err = c.DB.Exec(queries.UpdateUserPlatformToken, encryptedRefreshToken, "deezer", user.Email)
+	if err != nil {
+		log.Printf("[db][UpdateUserPlatformToken] error updating user platform token. %v\n", err)
+		return err
+	}
+
 	// now create a token
 	claims := &blueprint.OrchdioUserToken{
 		Email:    user.Email,
 		Username: user.Name,
 		UUID:     profScan.UUID,
+		Platform: "deezer",
 	}
 
 	jToken, err := util.SignJwt(claims)
@@ -426,11 +463,23 @@ func (c *UserController) AuthAppleMusicUser(ctx *fiber.Ctx) error {
 	// NB: I wasn't sure how to really handle this, if its better to do it in the createUserQuery above or split here
 	// decided to split here because its just easier for me to bother with right now.
 	_, err = c.DB.Exec(queries.UpdatePlatformUsernames, bod.Email, string(serialized))
+	if err != nil {
+		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error updating platform usernames: %v", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+	}
+
+	// update user platform token
+	_, err = c.DB.Exec(queries.UpdateUserPlatformToken, encryptedRefreshToken, "applemusic", bod.Email)
+	if err != nil {
+		log.Printf("[db][UpdateUserPlatformToken] error updating user platform token. %v\n", err)
+		return err
+	}
 
 	claim := &blueprint.OrchdioUserToken{
 		Email:    bod.Email,
 		Username: displayname,
 		UUID:     uniqueID,
+		Platform: "applemusic",
 	}
 
 	token, err := util.SignJwt(claim)
@@ -649,4 +698,38 @@ func (c *UserController) DeleteKey(ctx *fiber.Ctx) error {
 
 	log.Printf("[controller][user][DeleteKey] - deleted key for user %v\n", claims)
 	return util.SuccessResponse(ctx, http.StatusOK, string(deletedKey))
+}
+
+func (c *UserController) AddToWaitlist(ctx *fiber.Ctx) error {
+	// we want to be able to add users to the waitlist. This means that we add the email to a "waitlist" table in the db
+	// we check if the user already has been added to waitlist, if so we tell them we'll onboard them soon, if not, we add them to waitlist
+
+	// get the email from the request body
+	body := struct {
+		Email string `json:"email"`
+	}{}
+	err := json.Unmarshal(ctx.Body(), &body)
+	if err != nil {
+		log.Printf("[controller][user][AddToWaitlist] - error unmarshalling body %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid request body")
+	}
+
+	_, err = mail.ParseAddress(body.Email)
+	if err != nil {
+		log.Printf("[controller][user][AddToWaitlist] - invalid email %v\n", body)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid email")
+	}
+
+	// generate a uuid
+	uniqueID, _ := uuid.NewRandom()
+
+	// then insert the email into the waitlist table. it returns an email and updates the updated_at field if email is already in the table
+	result := c.DB.QueryRowx(queries.CreateWaitlistEntry, uniqueID, body.Email)
+	var emailFromDB string
+	err = result.Scan(&emailFromDB)
+	if err != nil {
+		log.Printf("[controller][user][AddToWaitlist] - error inserting email into waitlist table %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error occured")
+	}
+	return util.SuccessResponse(ctx, http.StatusOK, emailFromDB)
 }

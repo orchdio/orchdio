@@ -181,16 +181,12 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 
 		// cache tracks. Here we are caching both with hash identifier and with the ID of the track itself
 		// this is because in some cases, we need to fetch by ID and not by title
-		err = red.Set(context.Background(), "deezer:"+out.ID, string(serializedTrack), 0).Err()
 		// cache track but with identifier. this is for when we're searching by title again and its the same
 		// track as this
-		err = red.Set(context.Background(), newHashIdentifier, string(serializedTrack), 0).Err()
+		err = red.MSet(context.Background(), newHashIdentifier, string(serializedTrack), fmt.Sprintf("deezer:%s", out.ID), string(serializedTrack)).Err()
 		if err != nil {
 			log.Printf("\n[platforms][base][SearchTrackWithTitle][error] could not cache track %v\n", title)
-		} else {
-			log.Printf("\n[platforms][base][SearchTrackWithTitle] Track %s has been cached\n", title)
 		}
-
 		return &out, nil
 	}
 	return nil, nil
@@ -375,7 +371,7 @@ func FetchPlaylistTracklist(id string, red *redis.Client) (*blueprint.PlaylistSe
 }
 
 // FetchPlaylistSearchResult fetches the tracks for a playlist based on the search result
-// from another platform (deezer for now).
+// from another platform
 func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Client) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
 	var trackSearch []blueprint.PlatformSearchTrack
 	for _, track := range p.Tracks {
@@ -391,7 +387,7 @@ func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Cli
 }
 
 // CreateNewPlaylist creates a new playlist for a user on their deezer account
-func CreateNewPlaylist(title, userDeezerId, token string, tracks []string) error {
+func CreateNewPlaylist(title, userDeezerId, token string, tracks []string) ([]byte, error) {
 	deezerAPIBase := os.Getenv("DEEZER_API_BASE")
 	reqURL := fmt.Sprintf("%s/user/%s/playlists?access_token=%s&request_method=post", deezerAPIBase, userDeezerId, token)
 	p := url.Values{}
@@ -406,12 +402,12 @@ func CreateNewPlaylist(title, userDeezerId, token string, tracks []string) error
 	resp, err := axios.Get(reqURL, p)
 	if err != nil {
 		log.Printf("\n[services][deezer][CreateNewPlaylist] error - Could not create playlist: %v\n", err)
-		return err
+		return nil, err
 	}
 
 	if resp.Status == http.StatusBadRequest {
 		log.Printf("\n[services][deezer][CreateNewPlaylist] error - Could not create playlist. Bad request: %v\n", err)
-		return errors.New("bad request")
+		return nil, errors.New("bad request")
 	}
 
 	log.Printf("\n[services][deezer][CreateNewPlaylist] response: %v\n", string(resp.Data))
@@ -420,8 +416,22 @@ func CreateNewPlaylist(title, userDeezerId, token string, tracks []string) error
 
 	if err != nil {
 		log.Printf("\n[services][deezer][CreateNewPlaylist] error - Could not deserialize the body into the out response: %v\n", err)
-		return err
+		return nil, err
 	}
+
+	createResponse := struct {
+		ID int `json:"id"`
+	}{}
+	err = json.Unmarshal(resp.Data, &createResponse)
+	if err != nil {
+		log.Printf("\n[services][deezer][CreateNewPlaylist] error - Could not deserialize the body into the out response: %v\n", err)
+		return nil, err
+	}
+
+	// convert createResponse ID to string
+	playlistID := strconv.Itoa(createResponse.ID)
+	// convert playlistID to []byte
+	playlistIDBytes := []byte(playlistID)
 
 	allTracks := strings.Join(tracks, ",")
 	updatePlaylistURL := fmt.Sprintf("%s/playlist/%d/tracks?access_token=%s&request_method=post", deezerAPIBase, out.ID, token)
@@ -430,7 +440,7 @@ func CreateNewPlaylist(title, userDeezerId, token string, tracks []string) error
 	resp, err = axios.Get(updatePlaylistURL, p)
 	if err != nil {
 		log.Printf("\n[services][deezer][CreateNewPlaylist] error - Could not update playlist: %v\n", err)
-		return err
+		return nil, err
 	}
 
 	// HACK: for some reason, if our playlist contains invalid track ids, deezer will return a 200 error but the response body
@@ -439,16 +449,16 @@ func CreateNewPlaylist(title, userDeezerId, token string, tracks []string) error
 		// check for the error message
 		if strings.Contains(string(resp.Data), "error") {
 			log.Printf("\n[services][deezer][CreateNewPlaylist] error - Could not update playlist. Bad request: %v\n", err)
-			return errors.New("bad request")
+			return nil, errors.New("bad request")
 		}
 	}
 
 	if resp.Status == http.StatusInternalServerError {
 		log.Printf("\n[services][deezer][CreateNewPlaylist] error - Could not create playlist. Internal server error: %v\n", err)
-		return errors.New("internal server error")
+		return nil, errors.New("internal server error")
 	}
 
 	log.Printf("\n[services][deezer][CreateNewPlaylist] created playlist: %v\n", string(resp.Data))
 
-	return nil
+	return playlistIDBytes, nil
 }

@@ -270,10 +270,34 @@ func (d *NewDB) UpdateTask(uid, data string) (*blueprint.PlaylistConversion, err
 // FetchTask fetches a task and returns the task or an error
 func (d *NewDB) FetchTask(uid string) (*blueprint.TaskRecord, error) {
 	log.Printf("[db][FetchTask] Running query %s with '%s'\n", queries.FetchTask, uid)
+
+	// currently, in the db we were fetching by taskid, but we also want to fetch by the shortid
+	// so we check if the taskId is a valid uuid, if it is, we fetch by taskid, if not, we fetch by shortid
+	_, err := uuid.Parse(uid)
+	if err != nil {
+		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - not a valid uuid, fetching by shortid")
+		log.Printf("[db][FetchTask] Running query %s with '%s'\n", queries.FetchTaskByShorID, uid)
+		//var res blueprint.PlaylistConversion
+		r := d.DB.QueryRowx(queries.FetchTaskByShorID, uid)
+
+		var res blueprint.TaskRecord
+		err := r.StructScan(&res)
+		// deserialize into a playlist conversion
+		if err != nil {
+			if err == sql.ErrNoRows {
+				log.Printf("[db][FetchTask] no task found with uid %s\n", uid)
+				return nil, sql.ErrNoRows
+			}
+			log.Printf("[db][FetchTask] error deserializing task. %v\n", err)
+			return nil, err
+		}
+		return &res, nil
+	}
+
 	r := d.DB.QueryRowx(queries.FetchTask, uid)
 	//var res blueprint.PlaylistConversion
 	var res blueprint.TaskRecord
-	err := r.StructScan(&res)
+	err = r.StructScan(&res)
 
 	// deserialize into a playlist conversion
 	if err != nil {
@@ -284,6 +308,7 @@ func (d *NewDB) FetchTask(uid string) (*blueprint.TaskRecord, error) {
 		log.Printf("[db][FetchTask] error deserializing task. %v\n", err)
 		return nil, err
 	}
+
 	return &res, nil
 }
 
@@ -463,3 +488,15 @@ func (d *NewDB) UpdateFollowStatus(followId, status string) error {
 	log.Printf("[db][UpdateFollowStatus] updated follow: '%s' status to '%s'\n", queries.UpdateFollowStatus, "error")
 	return nil
 }
+
+/// MIGHT BE USEFUL, keeping around for historical reasons, remove later
+//func (d *NewDB) UpdateUserPlatformToken(token byte, email, platform string) error {
+//	log.Printf("[db][UpdateUserPlatformToken] Running query %s\n", queries.UpdateUserPlatformToken)
+//	_, err := d.DB.Exec(queries.UpdateUserPlatformToken, token, email, platform)
+//	if err != nil {
+//		log.Printf("[db][UpdateUserPlatformToken] error updating user platform token. %v\n", err)
+//		return err
+//	}
+//	log.Printf("[db][UpdateUserPlatformToken] updated user: '%s' token to '%s'\n", email, token)
+//	return nil
+//}

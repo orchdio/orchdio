@@ -259,6 +259,8 @@ func main() {
 	// FIXME: remove later. this is just for compatibility with the ping api for dev.
 	nextRouter.Post("/job/ping", conversionController.ConvertPlaylist)
 	nextRouter.Post("/follow", followController.FollowPlaylist)
+	nextRouter.Post("/playlist/:platform/add", platformsControllers.AddPlaylistToAccount)
+	nextRouter.Post("/waitlist/add", userController.AddToWaitlist)
 
 	// MIDDLEWARE DEFINITION
 	app.Use(jwtware.New(jwtware.Config{

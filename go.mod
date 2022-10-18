@@ -4,7 +4,6 @@ module orchdio
 go 1.18
 
 require (
-	github.com/Timothylock/go-signin-with-apple v0.0.0-20220114155622-499fb6086c70
 	github.com/antoniodipinto/ikisocket v0.0.0-20220426120810-e8049cc9e56b
 	github.com/badoux/goscraper v0.0.0-20190827161153-36995ce6b19f
 	github.com/davecgh/go-spew v1.1.1
@@ -19,6 +18,7 @@ require (
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/joho/godotenv v1.4.0
 	github.com/lib/pq v1.10.6
+	github.com/minchao/go-apple-music v0.0.0-20210727003702-cefe2063f418
 	github.com/nleeper/goment v1.4.4
 	github.com/raitonoberu/ytmusic v0.0.0-20220927155833-3d1de71caa11
 	github.com/robfig/cron/v3 v3.0.1
@@ -42,16 +42,14 @@ require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-redis/redis_rate/v9 v9.1.2 // indirect
 	github.com/gofiber/websocket/v2 v2.0.22 // indirect
-	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/klauspost/compress v1.15.6 // indirect
 	github.com/savsgio/gotils v0.0.0-20220530130905-52f3993e8d6d // indirect
 	github.com/spf13/cast v1.5.0 // indirect
-	github.com/tideland/golib v4.24.2+incompatible // indirect
-	github.com/tideland/gorest v2.15.5+incompatible // indirect
 	github.com/tklauser/go-sysconf v0.3.10 // indirect
 	github.com/tklauser/numcpus v0.5.0 // indirect
 	github.com/tkuchiki/go-timezone v0.2.2 // indirect

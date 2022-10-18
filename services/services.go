@@ -202,6 +202,37 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 			return &linkInfo, nil
 		}
 
+	case blueprint.AppleMusicHost:
+		// https://music.apple.com/ng/album/one-of-them-feat-big-sean/1544326461?i=1544326471 - track
+		// https://music.apple.com/ng/playlist/eazy/pl.u-AkAmPlyUxJ6xEl7 -- playlist
+		trackID := parsedURL.Query().Get("i")
+		p := strings.LastIndex(song, "/")
+		playlistID := song[p:]
+		log.Printf("[services][ExtractLinkInfo][info] AppleMusic trackID, playistID: %s %s", trackID, playlistID)
+		// strip away query params
+		if trackID == "" && playlistID == "" {
+			return nil, blueprint.EINVALIDLINK
+		}
+
+		if trackID != "" {
+			entityID = trackID
+			entity = "track"
+		}
+
+		if trackID == "" && playlistID != "" {
+			entityID = trackID
+			entity = "playlist"
+		}
+
+		linkInfo := &blueprint.LinkInfo{
+			Platform:   "applemusic",
+			TargetLink: song,
+			Entity:     entity,
+			EntityID:   entityID,
+		}
+
+		return linkInfo, nil
+
 		// to handle pagination.
 		// TODO: create magic string for these
 

@@ -96,8 +96,9 @@ func ErrorResponse(ctx *fiber.Ctx, statusCode int, err interface{}) error {
 // SignJwt create a new jwt token
 func SignJwt(claims *blueprint.OrchdioUserToken) ([]byte, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &blueprint.OrchdioUserToken{
-		UUID:  claims.UUID,
-		Email: claims.Email,
+		UUID:     claims.UUID,
+		Email:    claims.Email,
+		Platform: claims.Platform,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 12)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

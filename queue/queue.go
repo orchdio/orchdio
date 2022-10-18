@@ -106,7 +106,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, use
 		return err
 	}
 
-	h.ShortURL = "https://zoove.xyz/share/" + shorturl
+	h.ShortURL = shorturl
 	// serialize h
 	ser, mErr := json.Marshal(h)
 	if mErr != nil {

@@ -114,6 +114,25 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "error fetching task")
 	}
 
+	_, err = uuid.Parse(taskId)
+	if err != nil {
+		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - not a playlist task")
+		var res interface{}
+		// HACK: to check if the task is a playlist task result as to be able to format the right type
+		err = json.Unmarshal([]byte(taskRecord.Result), &res)
+
+		var data interface{}
+
+		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - data: %v", data)
+		result := map[string]interface{}{
+			"taskId": taskId,
+			"status": taskRecord.Status,
+			"data":   res,
+		}
+
+		return util.SuccessResponse(ctx, http.StatusOK, result)
+	}
+
 	// deserialize the task data
 	var res blueprint.PlaylistConversion
 	err = json.Unmarshal([]byte(taskRecord.Result), &res)
@@ -121,6 +140,8 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - error unmarshalling task data: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "error unmarshalling task data")
 	}
+
+	log.Printf("[controller][conversion][GetPlaylistTaskStatus] - result: %v", res.URL)
 
 	var data interface{}
 

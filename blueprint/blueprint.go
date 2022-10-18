@@ -11,9 +11,10 @@ import (
 var DeezerHost = []string{"deezer.page.link", "www.deezer.com"}
 
 const (
-	SpotifyHost = "open.spotify.com"
-	TidalHost   = "tidal.com"
-	YoutubeHost = "music.youtube.com"
+	SpotifyHost    = "open.spotify.com"
+	TidalHost      = "tidal.com"
+	YoutubeHost    = "music.youtube.com"
+	AppleMusicHost = "music.apple.com"
 )
 
 // perhaps have a different Error type declarations somewhere. For now, be here
@@ -111,6 +112,7 @@ type OrchdioUserToken struct {
 	Email    string    `json:"email"`
 	Username string    `json:"username"`
 	UUID     uuid.UUID `json:"uuid"`
+	Platform string    `json:"platform"`
 }
 
 // LinkInfo represents the metadata about a link user wants to convert
@@ -168,10 +170,11 @@ type PlatformSearchTrack struct {
 type Conversion struct {
 	Entity    string `json:"entity"`
 	Platforms struct {
-		Deezer  *TrackSearchResult `json:"deezer"`
-		Spotify *TrackSearchResult `json:"spotify"`
-		Tidal   *TrackSearchResult `json:"tidal"`
-		YTMusic *TrackSearchResult `json:"ytmusic"`
+		Deezer     *TrackSearchResult `json:"deezer"`
+		Spotify    *TrackSearchResult `json:"spotify"`
+		Tidal      *TrackSearchResult `json:"tidal"`
+		YTMusic    *TrackSearchResult `json:"ytmusic"`
+		AppleMusic *TrackSearchResult `json:"applemusic"`
 	} `json:"platforms"`
 	ShortURL string `json:"short_url,omitempty"`
 }
@@ -180,9 +183,10 @@ type Conversion struct {
 type PlaylistConversion struct {
 	URL    string `json:"url"`
 	Tracks struct {
-		Deezer  *[]TrackSearchResult `json:"deezer"`
-		Spotify *[]TrackSearchResult `json:"spotify"`
-		Tidal   *[]TrackSearchResult `json:"tidal"`
+		Deezer     *[]TrackSearchResult `json:"deezer"`
+		Spotify    *[]TrackSearchResult `json:"spotify"`
+		Tidal      *[]TrackSearchResult `json:"tidal"`
+		AppleMusic *[]TrackSearchResult `json:"applemusic"`
 	} `json:"tracks"`
 	Length        string                     `json:"length"`
 	Title         string                     `json:"title"`
@@ -191,6 +195,72 @@ type PlaylistConversion struct {
 	Owner         string                     `json:"owner"`
 	Cover         string                     `json:"cover"`
 	ShortURL      string                     `json:"short_url,omitempty"`
+}
+
+type TrackConversion struct {
+	Entity    string `json:"entity"`
+	Platforms struct {
+		Deezer struct {
+			Url      string   `json:"url"`
+			Artistes []string `json:"artistes"`
+			Released string   `json:"released"`
+			Duration string   `json:"duration"`
+			Explicit bool     `json:"explicit"`
+			Title    string   `json:"title"`
+			Preview  string   `json:"preview"`
+			Album    string   `json:"album"`
+			Id       string   `json:"id"`
+			Cover    string   `json:"cover"`
+		} `json:"deezer"`
+		Spotify struct {
+			Url      string   `json:"url"`
+			Artistes []string `json:"artistes"`
+			Released string   `json:"released"`
+			Duration string   `json:"duration"`
+			Explicit bool     `json:"explicit"`
+			Title    string   `json:"title"`
+			Preview  string   `json:"preview"`
+			Album    string   `json:"album"`
+			Id       string   `json:"id"`
+			Cover    string   `json:"cover"`
+		} `json:"spotify"`
+		Tidal struct {
+			Url      string   `json:"url"`
+			Artistes []string `json:"artistes"`
+			Released string   `json:"released"`
+			Duration string   `json:"duration"`
+			Explicit bool     `json:"explicit"`
+			Title    string   `json:"title"`
+			Preview  string   `json:"preview"`
+			Album    string   `json:"album"`
+			Id       string   `json:"id"`
+			Cover    string   `json:"cover"`
+		} `json:"tidal"`
+		Ytmusic struct {
+			Url      string   `json:"url"`
+			Artistes []string `json:"artistes"`
+			Released string   `json:"released"`
+			Duration string   `json:"duration"`
+			Explicit bool     `json:"explicit"`
+			Title    string   `json:"title"`
+			Preview  string   `json:"preview"`
+			Album    string   `json:"album"`
+			Id       string   `json:"id"`
+			Cover    string   `json:"cover"`
+		} `json:"ytmusic"`
+		Applemusic struct {
+			Url      string   `json:"url"`
+			Artistes []string `json:"artistes"`
+			Released string   `json:"released"`
+			Duration string   `json:"duration"`
+			Explicit bool     `json:"explicit"`
+			Title    string   `json:"title"`
+			Preview  string   `json:"preview"`
+			Album    string   `json:"album"`
+			Id       string   `json:"id"`
+			Cover    string   `json:"cover"`
+		} `json:"applemusic"`
+	} `json:"platforms"`
 }
 
 // Message represents a message sent from the client to the server over websocket

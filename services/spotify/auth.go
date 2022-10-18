@@ -18,6 +18,9 @@ func FetchAuthURL(state string) []byte {
 			spotifyauth.ScopeUserLibraryRead,
 			spotifyauth.ScopePlaylistReadPrivate,
 			spotifyauth.ScopePlaylistReadCollaborative,
+			spotifyauth.ScopeUserFollowRead,
+			spotifyauth.ScopePlaylistModifyPrivate,
+			spotifyauth.ScopePlaylistModifyPublic,
 			spotifyauth.ScopeUserReadEmail))
 	url := auth.AuthURL(state)
 	return []byte(url)
@@ -27,16 +30,11 @@ func FetchAuthURL(state string) []byte {
 func CompleteUserAuth(ctx context.Context, request *http.Request) (*spotify.Client, []byte) {
 	redirectURI := os.Getenv("SPOTIFY_REDIRECT_URI")
 	state := request.FormValue("state")
-	auth := spotifyauth.New(spotifyauth.WithRedirectURL(redirectURI),
-		spotifyauth.WithScopes(spotifyauth.ScopeUserReadPrivate,
-			spotifyauth.ScopeUserLibraryRead,
-			spotifyauth.ScopePlaylistReadPrivate,
-			spotifyauth.ScopePlaylistReadCollaborative,
-			spotifyauth.ScopeUserReadEmail))
+	auth := spotifyauth.New(spotifyauth.WithRedirectURL(redirectURI))
 
 	token, err := auth.Token(ctx, state, request)
 	if err != nil {
-		log.Printf("[account][auth][spotify] error - Error getting authorized token %v", err)
+		log.Printf("[account][auth][spotify] error - Error getting authorized token %v", err.Error())
 		return nil, nil
 	}
 

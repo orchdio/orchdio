@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/go-redis/redis/v8"
 	"github.com/raitonoberu/ytmusic"
 	"log"
@@ -116,20 +115,20 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 
 	for _, t := range tracks {
 		log.Printf("[services][ytmusic][SearchTrackWithTitle] Found track:\n")
-		spew.Dump(t)
 		if strings.Contains(t.Title, title) {
 			log.Printf("[services][ytmusic][SearchTrackWithTitle] Found track with title: %v\n", title)
 			track = t
-			break
 		}
 	}
 
-	//if track == nil {
-	//	track = tracks[0]
-	//}
-
 	// get artistes
 	artistes := make([]string, 0)
+
+	if track == nil {
+		log.Printf("[services][ytmusic][SearchTrackWithTitle] Track is nil, returning nil\n")
+		return nil, nil
+	}
+
 	for _, artist := range track.Artists {
 		artistes = append(artistes, artist.Name)
 	}
