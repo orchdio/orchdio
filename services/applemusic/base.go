@@ -6,10 +6,14 @@ import (
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/minchao/go-apple-music"
+	"github.com/samber/lo"
+	"github.com/vicanso/go-axios"
 	"log"
+	"net/url"
 	"orchdio/blueprint"
 	"orchdio/util"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -50,6 +54,10 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 	//
 	//}
 
+	// replace the cover url with the 150x150 version using regex. the original url is in the format of https://is5-ssl.mzstatic.com/image/thumb/Music124/v4/f8/0d/17/f80d17a1-c1c8-1f3d-6797-8d7e9a98539b/8720205201379.png/{w}x{h}bb.jpg
+	// where {w} and {h} are the width and height of the image. we replace it with 150x150
+	coverURL := strings.ReplaceAll(t.Attributes.Artwork.URL, "{w}x{h}bb.jpg", "150x150bb.jpg")
+
 	track := &blueprint.TrackSearchResult{
 		URL:      info.TargetLink,
 		Artistes: []string{t.Attributes.ArtistName},
@@ -60,7 +68,7 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 		Preview:  previewURL,
 		Album:    t.Attributes.AlbumName,
 		ID:       t.Id,
-		Cover:    t.Attributes.Artwork.URL,
+		Cover:    coverURL,
 	}
 
 	serializeTrack, err := json.Marshal(track)
@@ -81,6 +89,7 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
 	identifierHash := util.HashIdentifier(fmt.Sprintf("applemusic-%s-%s", artiste, title))
 	if red.Exists(context.Background(), identifierHash).Val() == 1 {
+		log.Printf("[services][applemusic][SearchTrackWithTitle] Track found in cache: %v\n", identifierHash)
 		track, err := red.Get(context.Background(), identifierHash).Result()
 		if err != nil {
 			log.Printf("[services][applemusic][SearchTrackWithTitle] Error fetching track from cache: %v\n", err)
@@ -128,6 +137,8 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 		previewURL = previews[0].Url
 	}
 
+	coverURL := strings.ReplaceAll(t.Attributes.Artwork.URL, "{w}x{h}bb.jpg", "150x150bb.jpg")
+
 	track := &blueprint.TrackSearchResult{
 		Artistes: []string{t.Attributes.ArtistName},
 		Released: t.Attributes.ReleaseDate,
@@ -137,7 +148,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 		Preview:  previewURL,
 		Album:    t.Attributes.AlbumName,
 		ID:       t.Id,
-		Cover:    t.Attributes.Artwork.URL,
+		Cover:    coverURL,
 		URL:      t.Attributes.URL,
 	}
 	serializedTrack, err := json.Marshal(track)
@@ -145,13 +156,25 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 		log.Printf("[services][applemusic][SearchTrackWithTitle] Error serializing track: %v\n", err)
 		return nil, err
 	}
-	newHashIdentifier := util.HashIdentifier(fmt.Sprintf("applemusic-%s-%s", t.Attributes.ArtistName, t.Attributes.Name))
-	trackIdentifierHash := util.HashIdentifier(fmt.Sprintf("applemusic:%s", t.Id))
-	err = red.MSet(context.Background(), newHashIdentifier, string(serializedTrack), trackIdentifierHash, string(serializedTrack)).Err()
-	if err != nil {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] Error caching track: %v\n", err)
-		return nil, err
+
+	if lo.Contains(track.Artistes, artiste) {
+		err = red.MSet(context.Background(), map[string]interface{}{
+			identifierHash: string(serializedTrack),
+		}).Err()
+		if err != nil {
+			log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error caching track - %v\n", err)
+		} else {
+			log.Printf("\n[controllers][platforms][applemusic][SearchTrackWithTitle] Track %s has been cached\n", track.Title)
+		}
 	}
+
+	//newHashIdentifier := util.HashIdentifier(fmt.Sprintf("applemusic-%s-%s", t.Attributes.ArtistName, t.Attributes.Name))
+	//trackIdentifierHash := util.HashIdentifier(fmt.Sprintf("applemusic:%s", t.Id))
+	//err = red.MSet(context.Background(), newHashIdentifier, string(serializedTrack), trackIdentifierHash, string(serializedTrack)).Err()
+	//if err != nil {
+	//	log.Printf("[services][applemusic][SearchTrackWithTitle] Error caching track: %v\n", err)
+	//	return nil, err
+	//}
 	return track, nil
 }
 
@@ -160,14 +183,14 @@ func SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSear
 	track, err := SearchTrackWithTitle(title, artiste, red)
 	if err != nil {
 		log.Printf("[services][applemusic][SearchTrackWithTitleChan] Error fetching track: %v\n", err)
+		defer wg.Done()
 		c <- nil
 		wg.Add(1)
-		defer wg.Done()
 		return
 	}
+	defer wg.Done()
 	c <- track
 	wg.Add(1)
-	defer wg.Done()
 	return
 }
 
@@ -211,10 +234,19 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]
 
 // FetchPlaylistTrackList fetches a list of tracks for a playlist and saves the last modified date to redis
 func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSearchResult, error) {
-	log.Printf("[services][applemusic][FetchPlaylistTrackList] Fetching playlist tracks: %v\n", id)
 	tp := applemusic.Transport{Token: os.Getenv("APPLE_MUSIC_API_KEY")}
 	client := applemusic.NewClient(tp.Client())
-	results, response, err := client.Catalog.GetPlaylist(context.Background(), "us", id, nil)
+	playlist := &blueprint.PlaylistSearchResult{}
+	duration := 0
+
+	var tracks []blueprint.TrackSearchResult
+
+	//for page = 1; ; page++ {
+	log.Printf("[services][applemusic][FetchPlaylistTrackList] Fetching playlist tracks: %v\n", id)
+	results, response, err := client.Catalog.GetPlaylist(context.Background(), "us", id, &applemusic.Options{
+		Language: "",
+		Include:  "library",
+	})
 	if err != nil {
 		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error fetching playlist tracks: %v\n", err)
 		return nil, err
@@ -224,63 +256,152 @@ func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSe
 		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error fetching playlist tracks: %v\n", err)
 		return nil, err
 	}
-
-	var tracks []blueprint.TrackSearchResult
 	if len(results.Data) == 0 {
 		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error fetching playlist tracks: %v\n", err)
-		return nil, blueprint.ENORESULT
+		return nil, err
 	}
 
-	t := results.Data[0]
-	duration := 0
-	for _, d := range t.Relationships.Tracks.Data {
-		tr, err := d.Parse()
-		tt := tr.(*applemusic.Song)
+	playlistData := results.Data[0]
+
+	for _, t := range playlistData.Relationships.Tracks.Data {
+		tr, err := t.Parse()
+		track := tr.(*applemusic.Song)
 		if err != nil {
 			log.Printf("[services][applemusic][FetchPlaylistTrackList] Error parsing track: %v\n", err)
 			return nil, err
 		}
 
 		previewURL := ""
-		tribute := *tt.Attributes.Previews
+		var previewStruct []struct {
+			Url string `json:"url"`
+		}
+
+		trackAttr := track.Attributes
+		duration += int(track.Attributes.DurationInMillis)
+		tribute := trackAttr.Previews
+
+		if tribute != nil {
+			r, err := json.Marshal(tribute)
+			if err != nil {
+				log.Printf("[services][applemusic][FetchPlaylistTrackList] Error serializing preview url: %v\n", err)
+				return nil, err
+			}
+			err = json.Unmarshal(r, &previewStruct)
+			if err != nil {
+				log.Printf("[services][applemusic][FetchPlaylistTrackList] Error deserializing preview url: %v\n", err)
+				return nil, err
+			}
+			previewURL = previewStruct[0].Url
+		}
+
+		cover := ""
+		if playlistData.Attributes.Artwork != nil {
+			cover = strings.ReplaceAll(playlistData.Attributes.Artwork.URL, "{w}x{h}bb.jpg", "300x300bb.jpg")
+		}
+
+		tracks = append(tracks, blueprint.TrackSearchResult{
+			URL:      trackAttr.URL,
+			Artistes: []string{trackAttr.ArtistName},
+			Released: trackAttr.ReleaseDate,
+			Duration: util.GetFormattedDuration(int(trackAttr.DurationInMillis / 1000)),
+			Explicit: false,
+			Title:    trackAttr.Name,
+			Preview:  previewURL,
+			Album:    trackAttr.AlbumName,
+			ID:       track.Id,
+			Cover:    cover,
+		})
+	}
+
+	// in order to add support for paginated playlists, we need to somehow get the total number of tracks in the playlist and or get the next page of tracks
+	// if there is next page, we keep fetching (in a loop) until we get all the tracks and break out of the loop. This is similar to how we fetch paginated playlists
+	// for spotify. However, the difference is that the library we use for Apple Music does not support pagination. So in order to get paginated tracks, for now, we first make
+	// a GetPlaylist call to get playlist tracks (and data) and first 100 tracks (if playlist is more than 100 tracks). Then we make another call that fetches the tracks for the playlists, offset by 100 or length of the first call.
+	// but this time we specify the limit of 700. Downside is that we may not have playlists that have less than 300 tracks. THIS IS AN EDGE/UNLIKELY CASE. GARDEN THIS FOR NOW.
+	// TODO: refactor this when patch to library is implemented and merged (or switch to implementation in our fork) until the PR from the fork is merged.
+	p := url.Values{}
+	p.Add("limit", "300")
+	p.Add("offset", fmt.Sprintf("%d", len(playlistData.Relationships.Tracks.Data)))
+	ax := axios.NewInstance(&axios.InstanceConfig{
+		BaseURL: "https://api.music.apple.com",
+		Headers: map[string][]string{
+			"Authorization":    {fmt.Sprintf("Bearer %s", os.Getenv("APPLE_MUSIC_API_KEY"))},
+			"Music-User-Token": {os.Getenv("APPLE_MUSIC_USER_TOKEN")},
+		},
+	})
+
+	_allTracksRes, err := ax.Get(fmt.Sprintf("/v1/catalog/us/playlists/%s/tracks", id), p)
+	if err != nil {
+		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error fetching playlist tracks: %v\n", err)
+		return nil, err
+	}
+
+	if _allTracksRes.Status != 200 {
+		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error fetching playlist tracks: %v\n", err)
+		return nil, err
+	}
+
+	var allTracksRes UnlimitedPlaylist
+	err = json.Unmarshal(_allTracksRes.Data, &allTracksRes)
+
+	if err != nil {
+		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error fetching playlist tracks: %v\n", err)
+		return nil, err
+	}
+
+	for _, d := range allTracksRes.Data {
+		singleTrack := d
+		previewURL := ""
+		tribute := d.Attributes.Previews
 		if len(tribute) > 0 {
 			previewURL = tribute[0].Url
 		}
+		duration += d.Attributes.DurationInMillis
+		coverURL := ""
+		if singleTrack.Attributes.Artwork.Height > 0 {
+			coverURL = singleTrack.Attributes.Artwork.Url
+		}
 
-		duration += int(tt.Attributes.DurationInMillis)
-
+		coverURL = strings.ReplaceAll(singleTrack.Attributes.Artwork.Url, "{w}x{h}bb.jpg", "300x300bb.jpg")
 		track := &blueprint.TrackSearchResult{
-			URL:      tt.Attributes.URL,
-			Artistes: []string{tt.Attributes.ArtistName},
-			Released: tt.Attributes.ReleaseDate,
-			Duration: util.GetFormattedDuration(int(tt.Attributes.DurationInMillis / 1000)),
+			URL:      singleTrack.Attributes.Url,
+			Artistes: []string{singleTrack.Attributes.ArtistName},
+			Released: singleTrack.Attributes.ReleaseDate,
+			Duration: util.GetFormattedDuration(singleTrack.Attributes.DurationInMillis / 1000),
 			Explicit: false,
-			Title:    tt.Attributes.Name,
+			Title:    singleTrack.Attributes.Name,
 			Preview:  previewURL,
-			Album:    tt.Attributes.AlbumName,
-			ID:       tt.Id,
-			Cover:    tt.Attributes.Artwork.URL,
+			Album:    singleTrack.Attributes.AlbumName,
+			ID:       singleTrack.Id,
+			Cover:    coverURL,
 		}
 
 		tracks = append(tracks, *track)
 	}
 
-	playlist := &blueprint.PlaylistSearchResult{
-		Title:   t.Attributes.Name,
-		Tracks:  tracks,
-		URL:     t.Attributes.URL,
-		Length:  util.GetFormattedDuration(duration / 1000),
-		Preview: "",
-		Owner:   t.Attributes.CuratorName,
-		Cover:   t.Attributes.Artwork.URL,
-	}
-
 	// save the last updated at to redis under the key "applemusic:playlist:<id>"
-	err = red.Set(context.Background(), fmt.Sprintf("applemusic:playlist:%s", id), t.Attributes.LastModifiedDate, 0).Err()
+	err = red.Set(context.Background(), fmt.Sprintf("applemusic:playlist:%s", id), playlistData.Attributes.LastModifiedDate, 0).Err()
 	if err != nil {
 		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error setting last updated at: %v\n", err)
 		return nil, err
 	}
+
+	playlistCover := ""
+	if playlistData.Attributes.Artwork != nil {
+		playlistCover = strings.ReplaceAll(playlistData.Attributes.Artwork.URL, "{w}x{h}cc.jpg", "300x300cc.jpg")
+	}
+
+	playlist = &blueprint.PlaylistSearchResult{
+		Title:   playlistData.Attributes.Name,
+		Tracks:  tracks,
+		URL:     playlistData.Attributes.URL,
+		Length:  util.GetFormattedDuration(duration / 1000),
+		Preview: "",
+		Owner:   playlistData.Attributes.CuratorName,
+		Cover:   playlistCover,
+	}
+
+	log.Printf("[services][applemusic][FetchPlaylistTrackList] Done fetching playlist tracks: %v\n", playlist)
 	return playlist, nil
 }
 
@@ -300,4 +421,65 @@ func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Cli
 		return nil, nil
 	}
 	return tracks, omittedTracks
+}
+
+func CreateNewPlaylist(title, description, musicToken string, tracks []string) ([]byte, error) {
+	log.Printf("[services][applemusic][CreateNewPlaylist] Creating new playlist: %v\n", title)
+	tp := applemusic.Transport{Token: os.Getenv("APPLE_MUSIC_API_KEY"), MusicUserToken: musicToken}
+	client := applemusic.NewClient(tp.Client())
+	playlist, response, err := client.Me.CreateLibraryPlaylist(context.Background(), applemusic.CreateLibraryPlaylist{
+		Attributes: applemusic.CreateLibraryPlaylistAttributes{
+			Name:        title,
+			Description: description,
+		},
+		Relationships: nil,
+	}, nil)
+
+	if err != nil {
+		log.Printf("[services][applemusic][CreateNewPlaylist] Error creating new playlist: %v\n", err)
+		return nil, err
+	}
+
+	if response.StatusCode != 201 {
+		log.Printf("[services][applemusic][CreateNewPlaylist] Error creating new playlist: %v\n", err)
+		return nil, err
+	}
+
+	// add the tracks to the playlist
+	var playlistTracks []applemusic.CreateLibraryPlaylistTrack
+	for _, track := range tracks {
+		playlistTracks = append(playlistTracks, applemusic.CreateLibraryPlaylistTrack{
+			Id:   track,
+			Type: "songs",
+		})
+	}
+
+	playlistData := applemusic.CreateLibraryPlaylistTrackData{
+		Data: playlistTracks,
+	}
+
+	response, err = client.Me.AddLibraryTracksToPlaylist(context.Background(), playlist.Data[0].Id, playlistData)
+	if err != nil {
+		log.Printf("[services][applemusic][CreateNewPlaylist] Error adding tracks to playlist: %v\n", err)
+		return nil, err
+	}
+
+	if response.StatusCode >= 400 {
+		log.Printf("[services][applemusic][CreateNewPlaylist] Error adding tracks to playlist: %v\n", err)
+		return nil, err
+	}
+
+	log.Printf("[services][applemusic][CreateNewPlaylist] Successfully created playlist: %v\n", playlist.Data[0].Href)
+
+	return []byte(fmt.Sprintf("https://music.apple.com/us/playlist/%s", playlist.Data[0].Id)), nil
+
+	//return &blueprint.PlaylistSearchResult{
+	//	Title:   title,
+	//	Tracks:  nil,
+	//	URL:     fmt.Sprintf("https://music.apple.com/us/playlist/%s", playlist.Data[0].Id),
+	//	Length:  "0:00",
+	//	Preview: "",
+	//	Owner:   "Spotify",
+	//	Cover:   tracks[0].Cover,
+	//}, nil
 }

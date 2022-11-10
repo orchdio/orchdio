@@ -5,8 +5,10 @@ SET email=EXCLUDED.email, username=EXCLUDED.username, refresh_token=$4, platform
 			SELECT * from user_rec;`
 
 const UpdatePlatformUsernames = `UPDATE users SET usernames = COALESCE(usernames::JSONB, '{}') || $2 WHERE email = $1;`
-const FindUserByEmail = `SELECT * FROM users where email = $1`
-const FindUserByUUID = `SELECT * FROM users where uuid = $1 AND platform_id IS NOT NULL`
+
+// FindUserByEmail returns a  user the email. it fetches the refresh token for the user based on platform passed. if no platform passed, it'll return refresh_token
+const FindUserByEmail = `SELECT id, email, coalesce(username, '') AS username, uuid, created_at, updated_at, usernames, platform_id, (case when $2 ILIKE '%spotify%' then spotify_token when $2 ILIKE '%deezer%' then deezer_token when $2 ILIKE '%applemusic%' then applemusic_token else refresh_token end) AS refresh_token  FROM users where email = $1`
+const FindUserByUUID = `SELECT id, email, coalesce(username, '') AS username, uuid, created_at, updated_at, usernames FROM users where uuid = $1 AND platform_id IS NOT NULL`
 
 const FetchUserApiKey = `SELECT api.* FROM apikeys api JOIN users u ON u.uuid = api.user WHERE u.email = $1;`
 

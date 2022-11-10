@@ -171,14 +171,14 @@ func SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSear
 	track, err := SearchTrackWithTitle(title, artiste, red)
 	if err != nil {
 		log.Printf("[services][ytmusic][SearchTrackWithTitleChan] Error searching track: %v\n", err)
+		defer wg.Done()
 		c <- nil
 		wg.Add(1)
-		defer wg.Done()
 		return
 	}
+	defer wg.Done()
 	c <- track
 	wg.Add(1)
-	defer wg.Done()
 	return
 }
 

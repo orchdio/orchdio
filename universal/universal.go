@@ -559,7 +559,7 @@ func CacheTracksWithID(records map[string]*blueprint.TrackSearchResult, red *red
 			log.Printf("\n[controllers][platforms][spotify][ConvertTrack] error - could not cache track on %s: %v\n", cacheKey, err)
 			return err
 		}
-		log.Printf("\n[controllers][platforms][spotify][ConvertTrack] cache - track %s cached on %s\n", data.Title, cacheKey)
+		log.Printf("\n[controllers][platforms][universal][playlist][CacheTracksWithID] cache - track %s cached on %s\n", data.Title, cacheKey)
 	}
 	return nil
 }
@@ -577,7 +577,7 @@ func CachePlaylistTracksWithID(tracks *[]blueprint.TrackSearchResult, red *redis
 			log.Printf("\n[controllers][platforms][spotify][ConvertTrack] error - could not cache track on %s: %v\n", "spotify:"+data.ID, err)
 			return err
 		}
-		log.Printf("\n[controllers][platforms][spotify][ConvertTrack] cache - track %s cached on %s\n", data.Title, "spotify:"+data.ID)
 	}
+	log.Printf("\n[controllers][platforms][spotify][ConvertTrack] cache - track ")
 	return nil
 }

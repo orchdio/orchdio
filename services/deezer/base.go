@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/go-redis/redis/v8"
+	"github.com/samber/lo"
 	"github.com/vicanso/go-axios"
 	"log"
 	"net/http"
@@ -115,7 +116,7 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) *blueprint
 // want to search on. That is, the other platforms that the user is trying to convert to.
 func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
 	identifierHash := util.HashIdentifier(fmt.Sprintf("deezer-%s-%s", artiste, title))
-
+	log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] first artiste and title %s %s\n", artiste, title)
 	// get the cached track
 	if red.Exists(context.Background(), identifierHash).Val() == 1 {
 		log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] Track has been cached\n")
@@ -177,16 +178,30 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 		if err != nil {
 			log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error serializing track - %v\n", err)
 		}
-		newHashIdentifier := util.HashIdentifier("deezer-" + out.Artistes[0] + "-" + out.Title)
+		//newHashIdentifier := util.HashIdentifier("deezer-" + out.Artistes[0] + "-" + out.Title)
+		// if the artistes are the same, the track result is most likely the same (except remixes, an artiste doesnt have two tracks with the same name)
+		if lo.Contains(out.Artistes, artiste) {
+			err = red.MSet(context.Background(), map[string]interface{}{
+				identifierHash: string(serializedTrack),
+			}).Err()
+			if err != nil {
+				log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error caching track - %v\n", err)
+			} else {
+				log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] Track %s has been cached\n", out.Title)
+			}
+		}
+
+		//log.Printf("Old identifier: %s and new identifier: %s", identifierHash, newHashIdentifier)
+		//log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] second artiste and title %s %s\n", out.Artistes[0], out.Title)
 
 		// cache tracks. Here we are caching both with hash identifier and with the ID of the track itself
 		// this is because in some cases, we need to fetch by ID and not by title
 		// cache track but with identifier. this is for when we're searching by title again and its the same
 		// track as this
-		err = red.MSet(context.Background(), newHashIdentifier, string(serializedTrack), fmt.Sprintf("deezer:%s", out.ID), string(serializedTrack)).Err()
-		if err != nil {
-			log.Printf("\n[platforms][base][SearchTrackWithTitle][error] could not cache track %v\n", title)
-		}
+		//err = red.MSet(context.Background(), newHashIdentifier, string(serializedTrack), fmt.Sprintf("deezer:%s", out.ID), string(serializedTrack)).Err()
+		//if err != nil {
+		//	log.Printf("\n[platforms][base][SearchTrackWithTitle][error] could not cache track %v\n", title)
+		//}
 		return &out, nil
 	}
 	return nil, nil
@@ -196,15 +211,15 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 func SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup, red *redis.Client) {
 	result, err := SearchTrackWithTitle(title, artiste, "", red)
 	if err != nil {
+		defer wg.Done()
 		c <- nil
 		wg.Add(1)
-		defer wg.Done()
 		return
 	}
+	defer wg.Done()
 	c <- result
 	wg.Add(1)
 
-	defer wg.Done()
 	return
 }
 

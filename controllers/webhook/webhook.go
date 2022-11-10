@@ -28,7 +28,7 @@ func NewWebhookController(db *sqlx.DB, red *redis.Client) *Controller {
 }
 
 func (c *Controller) Handle(ctx *fiber.Ctx) error {
-
+	claims := ctx.Locals("developer").(*blueprint.OrchdioUserToken)
 	if ctx.Method() != "POST" {
 		log.Printf("[controller][webhook][Handle] - GET request. Might be webhook verification")
 		return ctx.SendStatus(http.StatusOK)
@@ -47,7 +47,7 @@ func (c *Controller) Handle(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid JSON")
 	}
 
-	user, uErr := database.FindUserByEmail(os.Getenv("ZOOVE_ADMIN_EMAIL"))
+	user, uErr := database.FindUserByEmail(os.Getenv("ZOOVE_ADMIN_EMAIL"), claims.Platform)
 	if uErr != nil {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
 	}

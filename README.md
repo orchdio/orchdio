@@ -3,8 +3,8 @@
 Orchdio is an API first platform for cross-platform streaming services apps. The goal is to provide a simple and easy to use API for streaming services.
 
 The current streaming platforms all do the same thing which is to stream music — and many people use different accounts on each of these platforms. This poses
-a problem for both users and developers; they have to write the same code to stream music on each platform, and they have to maintain separate accounts on each platform, Orchdio solves this by providing cross
-plat-form APIs that enable developers build on various streaming services at once and allow users take charge of their accounts from several services
+a problem for both users and developers; developers have to write the same code to use streaming music api on each platform, and users have to maintain separate accounts on each platform, Orchdio solves this by providing cross
+platform APIs that enable developers build on various streaming services at once and allow users take charge of their accounts from several services
 in one place.
 
 

@@ -131,16 +131,12 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	// create a new net/http instance since *fasthttp.Request() cannot be passed
 	r, err := http.NewRequest("GET", string(ctx.Request().RequestURI()), nil)
 
-	log.Printf("[account][auth] state: %v\n", state)
-	log.Printf("[account][auth] uri: %v\n", string(ctx.Request().RequestURI()))
-
 	if err != nil {
 		log.Printf("[controllers][account][user] Error - error creating a new http request - %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 	}
 
 	client, refreshToken := spotify.CompleteUserAuth(context.Background(), r)
-	log.Printf("Refresh Token: %v\n", string(refreshToken))
 	encryptedRefreshToken, encErr := util.Encrypt(refreshToken, []byte(encryptionSecretKey))
 	if encErr != nil {
 		log.Printf("\n[controllers][account][user] Error - could not encrypt refreshToken - %v\n", encErr)
@@ -500,7 +496,7 @@ func (c *UserController) FetchProfile(ctx *fiber.Ctx) error {
 		DB: c.DB,
 	}
 
-	user, err := database.FindUserByEmail(claims.Email)
+	user, err := database.FindUserByEmail(claims.Email, claims.Platform)
 	if err != nil {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, err)
 	}
@@ -547,7 +543,7 @@ func (c *UserController) GenerateAPIKey(ctx *fiber.Ctx) error {
 	}
 
 	// first fetch user
-	user, err := database.FindUserByEmail(claims.Email)
+	user, err := database.FindUserByEmail(claims.Email, claims.Platform)
 	existingKey, err := database.FetchUserApikey(user.Email)
 	if err != nil {
 		log.Printf("[controller][user][GenerateApiKey] could not fetch api key from db. %v\n", err)

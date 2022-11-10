@@ -133,6 +133,11 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		return util.SuccessResponse(ctx, http.StatusOK, result)
 	}
 
+	if taskRecord.Status == "failed" {
+		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - task ")
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "task failed. Playlist couldnt be converted.")
+	}
+
 	// deserialize the task data
 	var res blueprint.PlaylistConversion
 	err = json.Unmarshal([]byte(taskRecord.Result), &res)
@@ -141,7 +146,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "error unmarshalling task data")
 	}
 
-	log.Printf("[controller][conversion][GetPlaylistTaskStatus] - result: %v", res.URL)
+	log.Printf("[controller][conversion][GetPlaylistTaskStatus] - result: %v", res)
 
 	var data interface{}
 

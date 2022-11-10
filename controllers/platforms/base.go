@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"orchdio/blueprint"
 	"orchdio/db"
+	"orchdio/services/applemusic"
 	"orchdio/services/deezer"
 	"orchdio/universal"
 	"orchdio/util"
@@ -163,7 +164,7 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 
 	// find the user in the database
 	database := db.NewDB{DB: p.DB}
-	user, err := database.FindUserByEmail(createBodyData.User)
+	user, err := database.FindUserByEmail(createBodyData.User, platform)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "User not found")
@@ -180,7 +181,6 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 	}
 
-	log.Printf("\n[controllers][platforms][AddPlaylistToAccount] - user refresh token %v\n", string(t))
 	//title := fmt.Sprintf("Zoove playlist: %s", createBodyData.Title)
 	description := "powered by Orchdio. https://orchdio.com"
 	playlistlink := ""
@@ -230,13 +230,16 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		playlistlink = fmt.Sprintf("https://www.deezer.com/en/playlist/%s", id)
 
 		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] - created playlist %v\n", createBodyData.Title)
-		// get the user, to see if our token is valid
+	// get the user, to see if our token is valid
+
+	case "applemusic":
+		pl, err := applemusic.CreateNewPlaylist(createBodyData.Title, description, string(t), createBodyData.Tracks)
+		playlistlink = string(pl)
+		if err != nil {
+			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error creating new playlist - %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		}
 	}
-
-	//c := map[string]interface{}{
-	//	"url": playlistlink,
-	//}
-
 	return util.SuccessResponse(ctx, http.StatusCreated, playlistlink)
 
 }

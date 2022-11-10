@@ -220,7 +220,7 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 		}
 
 		if trackID == "" && playlistID != "" {
-			entityID = trackID
+			entityID = playlistID
 			entity = "playlist"
 		}
 
@@ -321,6 +321,9 @@ func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId strin
 		case "spotify":
 			log.Printf("[follow][FetchPlaylistHash] - checking if playlist has been updated")
 			ent := string(spotify.FetchPlaylistHash(entityId))
+			if ent == "" {
+				return nil, false, nil, fmt.Errorf("could not get playlist hash")
+			}
 			log.Printf("[follow][FetchPlaylistHash] - playlist hash is: %v", ent)
 			entitySnapshot = ent
 			log.Printf("[follow][FetchPlaylistHash] - fetched playlist hash from spotify: %v", entitySnapshot)

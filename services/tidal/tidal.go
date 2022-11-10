@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/nleeper/goment"
+	"github.com/samber/lo"
 	"github.com/vicanso/go-axios"
 	"log"
 	"net/url"
@@ -160,6 +161,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	identifierHash := util.HashIdentifier(fmt.Sprintf("tidal-%s-%s", title, artiste))
 
 	if red.Exists(context.Background(), identifierHash).Val() == 1 {
+		log.Printf("\n[services][tidal][SearchTrackWithTitle] - track found in cache\n")
 		var result *blueprint.TrackSearchResult
 		cachedResult, err := red.Get(context.Background(), identifierHash).Result()
 		if err != nil {
@@ -209,15 +211,27 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 			log.Printf("\n[services][tidal][SearchTrackWithTitle] - could not serialize track result - %v\n", err)
 			return nil, err
 		}
-		newHashIdentifier := util.HashIdentifier(fmt.Sprintf("tidal-%s-%s", tidalTrack.Artistes[0], tidalTrack.Title))
-		// FIXME: perhaps look into how to batch insert into redis
-		err = red.Set(context.Background(), newHashIdentifier, serialized, 0).Err()
-		err = red.Set(context.Background(), identifierHash, serialized, 0).Err()
-		if err != nil {
-			log.Printf("\n[services][tidal][SearchTrackWithTitle] - could not cache track - %v\n", err)
-		} else {
-			log.Printf("\n[services][tidal][SearchTrackWithTitle] - track %s cached successfully\n", tidalTrack.Title)
+
+		if lo.Contains(tidalTrack.Artistes, artiste) {
+			err = red.MSet(context.Background(), map[string]interface{}{
+				identifierHash: string(serialized),
+			}).Err()
+			if err != nil {
+				log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error caching track - %v\n", err)
+			} else {
+				log.Printf("\n[controllers][platforms][tidal][SearchTrackWithTitle] Track %s has been cached\n", tidalTrack.Title)
+			}
 		}
+
+		//newHashIdentifier := util.HashIdentifier(fmt.Sprintf("tidal-%s-%s", tidalTrack.Artistes[0], tidalTrack.Title))
+		//// FIXME: perhaps look into how to batch insert into redis
+		//err = red.Set(context.Background(), newHashIdentifier, serialized, 0).Err()
+		//err = red.Set(context.Background(), identifierHash, serialized, 0).Err()
+		//if err != nil {
+		//	log.Printf("\n[services][tidal][SearchTrackWithTitle] - could not cache track - %v\n", err)
+		//} else {
+		//	log.Printf("\n[services][tidal][SearchTrackWithTitle] - track %s cached successfully\n", tidalTrack.Title)
+		//}
 		return tidalTrack, nil
 	}
 	return nil, nil
@@ -454,14 +468,14 @@ func FetchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearc
 	track, err := SearchTrackWithTitle(title, artiste, red)
 	if err != nil {
 		log.Printf("\n[controllers][platforms][tidal][FetchTrackWithTitleChan] - error fetching title - %v\n", err)
+		defer wg.Done()
 		c <- nil
 		wg.Add(1)
-		defer wg.Done()
 		return
 	}
+	defer wg.Done()
 	c <- track
 	wg.Add(1)
-	defer wg.Done()
 	return
 }
 

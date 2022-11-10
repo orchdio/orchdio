@@ -227,7 +227,7 @@ func main() {
 	baseRouter.Patch("/webhook/update", authMiddleware.ValidateKey, webhookController.UpdateUserWebhookUrl)
 	baseRouter.Get("/webhook", authMiddleware.ValidateKey, webhookController.FetchWebhookUrl)
 	baseRouter.Delete("/webhook", authMiddleware.ValidateKey, webhookController.DeleteUserWebhookUrl)
-	baseRouter.Post("/white-tiger", whController.Handle)
+	baseRouter.Post("/white-tiger", authMiddleware.AddAPIDeveloperToContext, whController.Handle)
 	baseRouter.Get("/white-tiger", whController.Handle)
 
 	userRouter := app.Group("/api/v1/user")

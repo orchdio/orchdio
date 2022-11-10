@@ -32,7 +32,10 @@ require (
 )
 
 require (
+	github.com/Junzki/link-preview v0.0.0-20190616153136-4d94cb3f9ebf // indirect
+	github.com/PuerkitoBio/goquery v1.5.0 // indirect
 	github.com/andybalholm/brotli v1.0.4 // indirect
+	github.com/andybalholm/cascadia v1.0.0 // indirect
 	github.com/bsm/redislock v0.7.1 // indirect
 	github.com/capnm/sysinfo v0.0.0-20130621111458-5909a53897f3 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect

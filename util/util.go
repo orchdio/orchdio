@@ -131,23 +131,27 @@ func DeezerIsExplicit(v int) bool {
 	return out
 }
 
-// GetFormattedDuration returns the duration of a track in format ``dd:hh:mm`` if it reaches days
-// or ``hh:mm:ss`` if it's less than a day
+// GetFormattedDuration returns the duration of a track in format ``hh:mm:ss``
 func GetFormattedDuration(v int) string {
-	day := 0
-	hour := v / 60
+	hour := 0
+	min := v / 60
 	sec := v % 60
 	seconds := strconv.Itoa(sec)
 	if len(seconds) == 1 {
 		seconds = "0" + seconds
 	}
 
-	if hour >= 24 {
-		day = hour / 60
-		hour = hour % 60
-		return fmt.Sprintf("%d:%d:%s", day, hour, seconds)
+	if min >= 24 {
+		hour = min / 60
+		min = min % 60
+		hr := strconv.Itoa(hour)
+		if len(hr) == 1 {
+			hr = "0" + hr
+		}
+		return fmt.Sprintf("%s:%d:%s", hr, min, seconds)
 	}
-	return fmt.Sprintf("%d:%s", hour, seconds)
+
+	return fmt.Sprintf("%d:%s", min, seconds)
 }
 
 // ExtractSpotifyID returns the spotify ID from a playlist pagination link
@@ -219,7 +223,7 @@ func SerializeWebsocketMessage(message interface{}) []byte {
 	return payload
 }
 
-//BuildTidalAssetURL returns a string of the tidal asset id
+// BuildTidalAssetURL returns a string of the tidal asset id
 func BuildTidalAssetURL(id string) string {
 	// for now, we get the asset type of image, at 320/320 by default
 	id = strings.Replace(id, "-", "/", -1)

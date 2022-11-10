@@ -16,8 +16,8 @@ type NewDB struct {
 }
 
 // FindUserByEmail finds a user by their email
-func (d *NewDB) FindUserByEmail(email string) (*blueprint.User, error) {
-	result := d.DB.QueryRowx(queries.FindUserByEmail, email)
+func (d *NewDB) FindUserByEmail(email, platform string) (*blueprint.User, error) {
+	result := d.DB.QueryRowx(queries.FindUserByEmail, email, platform)
 	user := &blueprint.User{}
 
 	err := result.StructScan(user)

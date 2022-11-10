@@ -15,6 +15,7 @@ import (
 	"orchdio/db"
 	"orchdio/universal"
 	"orchdio/util"
+	"strings"
 )
 
 type OrchQueue struct {
@@ -50,6 +51,7 @@ func (o *OrchdioQueue) NewPlaylistQueue(entityID string, payload *blueprint.Link
 	return task, nil
 }
 
+// PlaylistTaskHandler is the handler method for processing playlist conversion tasks.
 func (o *OrchdioQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task) error {
 	log.Printf("[queue][PlaylistTaskHandler] - processing task")
 	// deserialize the task payload and get the PlaylistTaskData struct
@@ -72,8 +74,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, use
 	log.Printf("[queue][PlaylistHandler] - processing task: %v", uid)
 	database := db.NewDB{DB: o.DB}
 	log.Printf("[queue][PlaylistHandler] - processing playlist: %v %v %v\n", database, info, user)
-	// create a url friendly id
-	const format = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-" // 0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-
+	const format = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-"
 	sid, err := shortid.New(1, format, 2342)
 
 	if err != nil {
@@ -160,6 +161,12 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, use
 	// TODO: implement proper retry logic for queue. After retrying for some time, it should stop (marked as failed)
 	//   current assumption is that asynq handles this but to-do is to verify this.
 	if evErr != nil {
+		log.Printf("[queue][PlaylistHandler] - error posting to webhook: %v", evErr.Error())
+		// TODO: implement retry logic. For now, if the webhook is unavailable, it will NOT be retried since we're returning nil
+		if strings.Contains(evErr.Error(), "no such host") {
+			log.Printf("[queue][PlaylistHandler] - webhook unavailable, skipping")
+			return nil
+		}
 		log.Printf("[queue][PlaylistHandler] - error posting webhook to endpoint %s=%v", webhook.Url, evErr)
 		return evErr
 	}

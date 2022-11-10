@@ -3,8 +3,10 @@ package spotify
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/go-redis/redis/v8"
+	"github.com/samber/lo"
 	"github.com/zmb3/spotify/v2"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
 	"golang.org/x/oauth2"
@@ -46,6 +48,10 @@ func FetchNewAuthToken() *oauth2.Token {
 
 	token, err := config.Token(context.Background())
 	if err != nil {
+		if err.Error() == "oauth2: cannot fetch token: 503 Service Unavailable" {
+			log.Printf("\n[services][spotify][base][FetchSingleTrack] error - 503 Service Unavailable\n")
+			return nil
+		}
 		log.Printf("\n[services][spotify][base][FetchSingleTrack] error  - could not fetch spotify token: %v\n", err)
 		return nil
 	}
@@ -83,16 +89,16 @@ func SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSear
 	result, err := SearchTrackWithTitle(title, artiste, red)
 	if err != nil {
 		log.Printf("\nError fetching track %s with channels\n. Error: %v", title, err)
+		defer wg.Done()
 		c <- nil
 		wg.Add(1)
 
-		defer wg.Done()
 		return
 	}
+	defer wg.Done()
 	c <- result
 	wg.Add(1)
 
-	defer wg.Done()
 	return
 }
 
@@ -124,7 +130,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	}
 
 	spotifySearch := FetchSingleTrack(title, strippedArtiste)
-	if spotifySearch.Tracks == nil {
+	if spotifySearch == nil {
 		log.Printf("\n[controllers][platforms][spotify][ConvertTrack] error - error fetching single track on spotify\n")
 		// panic for now.. at least until i figure out how to handle it if it can fail at all or not or can fail but be taken care of
 		return nil, blueprint.ENORESULT
@@ -187,28 +193,34 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	serializedTrack, err := json.Marshal(fetchedSpotifyTrack)
 	trackCacheKey := "spotify:" + fetchedSpotifyTrack.ID
 
-	_artiste := ""
-
-	if len(fetchedSpotifyTrack.Artistes) > 0 {
-		artiste = fetchedSpotifyTrack.Artistes[0]
+	if lo.Contains(fetchedSpotifyTrack.Artistes, artiste) {
+		err = red.MSet(context.Background(), map[string]interface{}{
+			identifierHash: string(serializedTrack),
+		}).Err()
+		if err != nil {
+			log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error caching track - %v\n", err)
+		} else {
+			log.Printf("\n[controllers][platforms][spotify][SearchTrackWithTitle] Track %s has been cached\n", fetchedSpotifyTrack.Title)
+		}
 	}
-	newIdentifier := util.HashIdentifier(fmt.Sprintf("spotify-%s-%s", _artiste, fetchedSpotifyTrack.Title))
 
-	if err != nil {
-		log.Printf("\n[services][spotify][base][SearchTrackWithTitle] error - could not marshal track: %v\n", err)
-		return nil, err
-	}
+	//newIdentifier := util.HashIdentifier(fmt.Sprintf("spotify-%s-%s", _artiste, fetchedSpotifyTrack.Title))
+
+	//if err != nil {
+	//	log.Printf("\n[services][spotify][base][SearchTrackWithTitle] error - could not marshal track: %v\n", err)
+	//	return nil, err
+	//}
 	err = red.Set(context.Background(), trackCacheKey, serializedTrack, 0).Err()
 	// cache in redis. since this is for a track that we're just searching by the title and artiste,
 	// we're saving the hash with a scheme of: "spotify-artist-title". e.g "spotify-taylor-swift-blink-182"
 	// so we save the fetched track under that hash and assumed that was what the user searched for and wanted.
-	err = red.Set(context.Background(), newIdentifier, serializedTrack, 0).Err()
+	//err = red.Set(context.Background(), newIdentifier, serializedTrack, 0).Err()
 
-	if err != nil {
-		log.Printf("\n[services][spotify][base][SearchTrackWithTitle] error - could not cache track: %v\n", err)
-	} else {
-		log.Printf("\n[services][spotify][base][SearchTrackWithTitle] success - cached track: %v\n", fetchedSpotifyTrack.Title)
-	}
+	//if err != nil {
+	//	log.Printf("\n[services][spotify][base][SearchTrackWithTitle] error - could not cache track: %v\n", err)
+	//} else {
+	//	log.Printf("\n[services][spotify][base][SearchTrackWithTitle] success - cached track: %v\n", fetchedSpotifyTrack.Title)
+	//}
 
 	return &fetchedSpotifyTrack, nil
 }
@@ -300,6 +312,10 @@ func FetchPlaylistTracksAndInfo(id string, red *redis.Client) (*blueprint.Playli
 	//client := createNewSpotifyUInstance()
 	token := FetchNewAuthToken()
 	ctx := context.Background()
+	if token == nil {
+		log.Printf("\n[services][spotify][base][FetchPlaylistTracksAndInfo] error - could not fetch token\n")
+		return nil, nil, errors.New("could not fetch token")
+	}
 	httpClient := spotifyauth.New().Client(ctx, token)
 	client := spotify.New(httpClient)
 
@@ -450,7 +466,7 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]
 		outputTrack := <-ch
 		// for some reason, there is no spotify url which means could not fetch track, we
 		// want to add to the list of "not found" tracks.
-		if outputTrack.URL == "" || outputTrack == nil {
+		if outputTrack == nil || outputTrack.URL == "" {
 			// log info about empty track
 			log.Printf("\n[services][spotify][base][FetchPlaylistSearchResult][warn] - Could not find track for %s\n", t.Title)
 			omittedTracks = append(omittedTracks, blueprint.OmittedTracks{
@@ -487,6 +503,9 @@ func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Cli
 
 func FetchPlaylistHash(playlistId string) []byte {
 	token := FetchNewAuthToken()
+	if token == nil {
+		return nil
+	}
 	httpClient := spotifyauth.New().Client(context.Background(), token)
 	client := spotify.New(httpClient)
 	opts := spotify.Fields("snapshot_id")
