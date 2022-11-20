@@ -107,7 +107,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, use
 		return err
 	}
 
-	h.ShortURL = shorturl
+	h.TaskID = shorturl
 	// serialize h
 	ser, mErr := json.Marshal(h)
 	if mErr != nil {

@@ -77,7 +77,7 @@ func (p *Platforms) ConvertTrack(ctx *fiber.Ctx) error {
 	serialized, err := json.Marshal(conversion)
 
 	// add the task ID to the conversion response
-	conversion.ShortURL = uID
+	conversion.TaskID = uID
 
 	log.Printf("\n[controllers][platforms][ConvertTrack] - serialized conversion %v\n", string(serialized))
 

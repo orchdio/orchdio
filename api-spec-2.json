@@ -5,40 +5,11 @@
     "description": "OpenAPI spec for the Orchdio API",
     "version": "1.0.0"
   },
-  "host": "www.orchdio.com",
+  "host": "api.orchdio.dev",
   "schemes": [
     "https"
   ],
   "paths": {
-    "/api/v1/{platform}/connect": {
-      "get": {
-        "description": "Returns the redirect URL for the platform in order to authenticate the user on the target platform",
-        "consumes": [
-          "application/json"
-        ],
-        "produces": [
-          "application/json"
-        ],
-        "responses": {
-            "200": {
-                "description": "Successful response",
-                "schema": {
-                "$ref": "#/definitions/ConnectPlatformResponse"
-                }
-            }
-        }
-      },
-      "parameters": [
-        {
-          "name": "platform",
-          "in": "path",
-          "description": "The platform to connect to",
-          "required": true,
-          "type": "string",
-          "enum": ["Apple", "Tidal", "Spotify", "Deezer", "YouTube"]
-        }
-      ]
-    },
     "/api/v1/track/convert": {
       "get": {
         "description": "Returns the converted track",
@@ -56,7 +27,7 @@
                 }
             },
             "400": {
-                "description": "Bad request",
+                "description": "Bad request. This response implies that the wrong parameters were passed for the conversion, most likely the wrong platform",
                 "schema": {
                 "$ref": "#/definitions/ErrorResponse"
                 }
@@ -74,8 +45,8 @@
       ]
     },
     "/api/v1/playlist/convert": {
-      "get": {
-        "description": "Converts a playlist",
+      "post": {
+        "description": "Converts a playlist. When you call this endpoint, you'll get a task_id back in the response and you need to call another endpoint to get the task status and data when it's done",
         "consumes": [
           "application/json"
         ],
@@ -86,11 +57,23 @@
           "200": {
             "description": "Successful response",
             "schema": {
-              "$ref": "#/definitions/PlaylistConversionResponse"
+              "$ref": "#/definitions/PlaylistResponse"
             }
           },
           "400": {
             "description": "Bad request",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
             "schema": {
               "$ref": "#/definitions/ErrorResponse"
             }
@@ -107,20 +90,29 @@
         }
       ]
     },
-    "/api/v1/generate-key": {
-      "post": {
-        "description": "Generates a new key",
+    "/api/v1/playlist/task": {
+      "get": {
+        "description": "Returns the status of a playlist conversion task",
         "consumes": [
           "application/json"
         ],
         "produces": [
           "application/json"
         ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "query",
+            "description": "The task id",
+            "required": true,
+            "type": "string"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
             "schema": {
-              "$ref": "#/definitions/GenerateKeyResponse"
+              "$ref": "#/definitions/PlaylistConversionTaskResponse"
             }
           },
           "400": {
@@ -128,84 +120,21 @@
             "schema": {
               "$ref": "#/definitions/ErrorResponse"
             }
-          }
-        }
-      }
-    },
-    "/api/v1/key/revoke": {
-      "post": {
-        "description": "Revokes a key",
-        "consumes": [
-          "application/json"
-        ],
-        "produces": [
-          "application/json"
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response",
+          },
+          "401": {
+            "description": "Unauthorized",
             "schema": {
-              "$ref": "#/definitions/RevokeKeyResponse"
+              "$ref": "#/definitions/ErrorResponse"
             }
           },
-          "400": {
-            "description": "Bad request",
+          "500": {
+            "description": "Internal server error",
             "schema": {
               "$ref": "#/definitions/ErrorResponse"
             }
           }
         }
       }
-    },
-    "/api/v1/key/allow": {
-        "post": {
-            "description": "Allows a key",
-            "consumes": [
-            "application/json"
-            ],
-            "produces": [
-            "application/json"
-            ],
-            "responses": {
-              "200": {
-                "description": "Successful response",
-                "schema": {
-                "$ref": "#/definitions/AllowKeyResponse"
-                }
-            },
-            "400": {
-                "description": "Bad request",
-                "schema": {
-                "$ref": "#/definitions/ErrorResponse"
-                }
-              }
-            }
-        }
-    },
-    "/api/v1/key/delete": {
-        "delete": {
-            "description": "Deletes a key",
-            "consumes": [
-            "application/json"
-            ],
-            "produces": [
-            "application/json"
-            ],
-            "responses": {
-              "200": {
-                "description": "Successful response",
-                "schema": {
-                "$ref": "#/definitions/DeleteKeyResponse"
-                }
-            },
-            "400": {
-                "description": "Bad request",
-                "schema": {
-                "$ref": "#/definitions/ErrorResponse"
-                }
-              }
-            }
-        }
     },
     "/api/v1/webhook/add": {
       "parameters": [{
@@ -247,6 +176,18 @@
             "schema": {
               "$ref": "#/definitions/ErrorResponse"
             }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "schema": {
+              "$ref": "#/definitions/UnAuthorizedResponse"
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "schema": {
+              "$ref": "#/definitions/ErrorResponse"
+            }
           }
         }
       }
@@ -285,7 +226,97 @@
         "status": 200
       }
     },
-    "ErrorResponse": {
+    "PlaylistConversionTaskResponse": {
+      "type": "object",
+      "properties": {
+        "entity": {
+          "type": "string",
+          "description": "The entity of the task. Entity is the type of thing you're trying to do — if you want to convert a playlist, the entity is playlist. There are 2 entities: playlist and track",
+            "example": "playlist",
+            "enum": [
+              "playlist",
+              "track"
+            ],
+            "default": "track"
+        },
+        "meta": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "The URL to the playlist",
+              "example": "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=6e8e9f9f1f5a4b7f"
+            },
+            "length": {
+              "type": "string",
+              "description": "The length of the playlist. This is returned in formatted time in hh:mm:ss / mm:ss. ⚠️ This may change in the future",
+              "example": "06:42:32"
+            },
+            "title": {
+                "type": "string",
+                "description": "The title of the playlist",
+                "example": "The Best of 2020"
+                },
+            "omitted_tracks": {
+                "type": "array",
+                "description": "An array of tracks that were omitted from the playlist, often because they could not be found on other platforms",
+                "example": [
+                  {
+                    "title": "The Box",
+                    "artist": "Roddy Ricch",
+                    "url": "https://open.spotify.com/track/0nbXyq5TXYPCO7pr3N8S4I?si=6e8e9f9f1f5a4b7f"
+                  }
+                ]
+            },
+            "owner": {
+              "type": "string",
+              "description": "The owner of the playlist",
+              "example": "Amakamoney"
+            },
+            "cover": {
+              "type": "string",
+              "description": "The cover of the playlist",
+              "example": "https://i.scdn.co/image/ab67706f00000003a6f8b1b2f1f8b1b2f1f8b1b2"
+            }
+          }
+        },
+        "platforms": {
+          "type": "object",
+          "description": "An object of platforms that the playlist has been converted to.",
+          "properties": {
+            "deezer": {
+              "description": "An array of object containing Track results from Deezer",
+              "type": "array",
+                "items": {
+                    "$ref": "#/definitions/TrackObject"
+                }
+            },
+            "apple_music": {
+              "description": "An array of object containing Track results from Apple Music. If the playlist is not available on Apple Music, this will be an empty array",
+              "type": "array",
+                "items": {
+                    "$ref": "#/definitions/TrackObject"
+                }
+            },
+            "spotify": {
+              "description": "An array of object containing Track results from Spotify. If the playlist could not be converted, this will not be returned",
+              "type": "array",
+                "items": {
+                    "$ref": "#/definitions/TrackObject"
+                }
+            },
+            "tidal": {
+              "description": "An array of object containing Track results from Tidal. If the playlist is not available on Tidal, this will be an empty array",
+              "type": "array",
+                "items": {
+                    "$ref": "#/definitions/TrackObject"
+                }
+            }
+          }
+        }
+      }
+    },
+    "PlaylistResponse": {
       "type": "object",
       "properties": {
         "message": {
@@ -295,12 +326,61 @@
         },
         "status": {
           "type": "integer",
-          "example": 500,
+          "example": 200,
           "description": "This is the status of the response. Its the same as the HTTP status"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "example": "pending",
+              "description": "The status of the task. Can be pending, processing, completed or failed."
+            },
+            "data": {
+              "type": "object",
+              "description": "The result from the playlist conversion. If the status of the playlist task is pending, this will be null"
+            }
+          }
+        }
+      }
+    },
+    "ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "example": "Request Ok",
+          "description": "This is an accompanying message to the error response"
+        },
+        "status": {
+          "type": "integer",
+          "example": 500,
+          "description": "This is the status of the response"
         },
         "error": {
           "type": "string",
           "example": "Internal Server Error",
+          "description": "This is the error message"
+        }
+      }
+    },
+    "UnAuthorizedResponse": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "example": "Request Ok",
+          "description": "This is an accompanying message to the error response"
+        },
+        "status": {
+          "type": "integer",
+          "example": 401,
+          "description": "This is the status of the response"
+        },
+        "error": {
+          "type": "string",
+          "example": "Unauthorized",
           "description": "This is the error message"
         }
       }

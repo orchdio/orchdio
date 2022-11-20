@@ -223,12 +223,12 @@ func main() {
 	//baseRouter.Get("/track/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
 	baseRouter.Get("/playlist/convert", authMiddleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
 
+	baseRouter.Post("/white-tiger", authMiddleware.AddAPIDeveloperToContext, whController.Handle)
+	app.Get("/white-tiger", whController.AuthenticateWebhook)
 	baseRouter.Post("/webhook/add", authMiddleware.ValidateKey, webhookController.CreateWebhookUrl)
 	baseRouter.Patch("/webhook/update", authMiddleware.ValidateKey, webhookController.UpdateUserWebhookUrl)
 	baseRouter.Get("/webhook", authMiddleware.ValidateKey, webhookController.FetchWebhookUrl)
 	baseRouter.Delete("/webhook", authMiddleware.ValidateKey, webhookController.DeleteUserWebhookUrl)
-	baseRouter.Post("/white-tiger", authMiddleware.AddAPIDeveloperToContext, whController.Handle)
-	baseRouter.Get("/white-tiger", whController.Handle)
 
 	userRouter := app.Group("/api/v1/user")
 
@@ -239,9 +239,9 @@ func main() {
 	}), middleware.VerifyToken)
 
 	userRouter.Post("/generate-key", userController.GenerateAPIKey)
-	baseRouter.Patch("/key/revoke", authMiddleware.ValidateKey, userController.RevokeKey)
-	baseRouter.Patch("/key/allow", userController.UnRevokeKey)
-	baseRouter.Delete("/key/delete", authMiddleware.ValidateKey, userController.DeleteKey)
+	userRouter.Patch("/key/revoke", authMiddleware.ValidateKey, userController.RevokeKey)
+	userRouter.Patch("/key/allow", userController.UnRevokeKey)
+	userRouter.Delete("/key/delete", middleware.VerifyToken, authMiddleware.ValidateKey, userController.DeleteKey)
 	userRouter.Get("/key", userController.RetrieveKey)
 
 	// ==========================================
@@ -263,12 +263,12 @@ func main() {
 	nextRouter.Post("/waitlist/add", userController.AddToWaitlist)
 
 	// MIDDLEWARE DEFINITION
-	app.Use(jwtware.New(jwtware.Config{
-		SigningKey: []byte(os.Getenv("JWT_SECRET")),
-		Claims:     &blueprint.OrchdioUserToken{},
-		ContextKey: "authToken",
-	}))
-	app.Use(middleware.VerifyToken)
+	//app.Use(jwtware.New(jwtware.Config{
+	//	SigningKey: []byte(os.Getenv("JWT_SECRET")),
+	//	Claims:     &blueprint.OrchdioUserToken{},
+	//	ContextKey: "authToken",
+	//}))
+	//app.Use(middleware.VerifyToken)
 
 	baseRouter.Get("/me", userController.FetchProfile)
 	// FIXME: move this endpoint thats fetching link info from the `controllers` package

@@ -136,7 +136,7 @@ func (w *WebhookController) CreateWebhookUrl(ctx *fiber.Ctx) error {
 		"url": webhookUrl,
 	}
 
-	log.Printf("[controller][user][CreateWebhookUrl] - created webhook url: '%s' for user %v\n", webhookUrl, user)
+	log.Printf("[controller][user][CreateWebhookUrl] - created webhook url: '%s' for user", webhookUrl)
 	return util.SuccessResponse(ctx, http.StatusCreated, response)
 }
 
@@ -144,13 +144,13 @@ func (w *WebhookController) CreateWebhookUrl(ctx *fiber.Ctx) error {
 func (w *WebhookController) UpdateUserWebhookUrl(ctx *fiber.Ctx) error {
 	log.Printf("[controller][user][UpdateWebhookUrl] - updating webhook url")
 	user := ctx.Locals("user").(*blueprint.User)
-	//database := c.DB
 	bod := ctx.Body()
 
 	/**
 	it'll look like:
 		{
 	      "url": "https://www.example.com/webhook",
+	      "verify_token": "1234567890"
 		}
 	*/
 
@@ -187,9 +187,9 @@ func (w *WebhookController) UpdateUserWebhookUrl(ctx *fiber.Ctx) error {
 		log.Printf("[controller][user][UpdateWebhookUrl] - error updating webhook url %s\n", upErr.Error())
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
 	}
-	log.Printf("[controller][user][UpdateWebhookUrl] - updated webhook url: '%s' for user %v\n", webhookUrl, user)
+	log.Printf("[controller][user][UpdateWebhookUrl] - updated webhook url: '%s' for user %s", webhookUrl, user.UUID)
 
-	return util.SuccessResponse(ctx, http.StatusOK, webhoookBody)
+	return util.SuccessResponse(ctx, http.StatusOK, nil)
 }
 
 // DeleteUserWebhookUrl deletes a webhook for a user
@@ -209,7 +209,7 @@ func (w *WebhookController) DeleteUserWebhookUrl(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
 	}
 
-	log.Printf("[controller][user][DeleteUserWebhookUrl] - deleted webhook url for user %v\n", user)
+	log.Printf("[controller][user][DeleteUserWebhookUrl] - deleted webhook url for user %s\n", user.UUID)
 	return util.SuccessResponse(ctx, http.StatusOK, nil)
 }
 
@@ -231,7 +231,7 @@ func (w *WebhookController) Verify(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
 	}
 
-	log.Printf("[controller][user][Verify] - webhook url is: '%s' \n", webhook)
+	log.Printf("[controller][user][Verify] - webhook url is: '%s' \n", webhook.Url)
 	// make a GET request to the webhook url
 	res, err := axios.Get(webhook.Url)
 	if err != nil {

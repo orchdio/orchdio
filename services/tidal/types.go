@@ -430,3 +430,43 @@ type PlaylistTracks struct {
 		Cut  interface{} `json:"cut"`
 	} `json:"items"`
 }
+
+type CreatePlaylistResponse struct {
+	Trn            string      `json:"trn"`
+	ItemType       string      `json:"itemType"`
+	AddedAt        string      `json:"addedAt"`
+	LastModifiedAt string      `json:"lastModifiedAt"`
+	Name           string      `json:"name"`
+	Parent         interface{} `json:"parent"`
+	Data           struct {
+		Uuid    string `json:"uuid"`
+		Type    string `json:"type"`
+		Creator struct {
+			Id      int         `json:"id"`
+			Name    string      `json:"name"`
+			Picture interface{} `json:"picture"`
+			Type    string      `json:"type"`
+		} `json:"creator"`
+		ContentBehavior string        `json:"contentBehavior"`
+		SharingLevel    string        `json:"sharingLevel"`
+		Title           string        `json:"title"`
+		Description     string        `json:"description"`
+		Image           string        `json:"image"`
+		SquareImage     string        `json:"squareImage"`
+		Url             string        `json:"url"`
+		Created         string        `json:"created"`
+		LastUpdated     string        `json:"lastUpdated"`
+		LastItemAddedAt interface{}   `json:"lastItemAddedAt"`
+		Duration        int           `json:"duration"`
+		NumberOfTracks  int           `json:"numberOfTracks"`
+		NumberOfVideos  int           `json:"numberOfVideos"`
+		PromotedArtists []interface{} `json:"promotedArtists"`
+		Trn             string        `json:"trn"`
+		ItemType        string        `json:"itemType"`
+	} `json:"data"`
+}
+
+type PlaylistItemAdditionResponse struct {
+	LastUpdated  int64 `json:"lastUpdated"`
+	AddedItemIds []int `json:"addedItemIds"`
+}

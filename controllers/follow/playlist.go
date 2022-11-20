@@ -47,6 +47,14 @@ func (c *Controller) FollowPlaylist(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "too many subscribers. Max is 20")
 	}
 
+	// make sure all the subscribers are uuids
+	for _, subscriber := range subscriberBody.Users {
+		if !util.IsValidUUID(subscriber) {
+			log.Printf("[controller][follow][FollowPlaylist] - error parsing subscriber uuid: %v", err)
+			return util.ErrorResponse(ctx, http.StatusBadRequest, "invalid subscriber uuid")
+		}
+	}
+
 	linkInfo, err := services.ExtractLinkInfo(subscriberBody.Url)
 	if err != nil {
 		log.Printf("[controller][follow][FollowPlaylist] - error extracting link info: %v", err)

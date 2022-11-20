@@ -29,7 +29,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 		deezerTrack := deezer.SearchTrackWithLink(info, red)
 		trackTitle := deezer.ExtractTitle(deezerTrack.Title)
 
-		spSingleTrack, err := spotify.SearchTrackWithTitle(trackTitle, deezerTrack.Artistes[0], red)
+		spSingleTrack, err := spotify.SearchTrackWithTitle(trackTitle, deezerTrack.Artists[0], red)
 
 		if err != nil {
 			if err == blueprint.ENORESULT {
@@ -37,7 +37,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 			}
 		}
 
-		tidalTrack, err := tidal.SearchTrackWithTitle(trackTitle, deezerTrack.Artistes[0], red)
+		tidalTrack, err := tidal.SearchTrackWithTitle(trackTitle, deezerTrack.Artists[0], red)
 
 		if err != nil {
 			if err == blueprint.ENORESULT {
@@ -45,14 +45,14 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 			}
 		}
 
-		ytmusicTrack, err := ytmusic.SearchTrackWithTitle(trackTitle, deezerTrack.Artistes[0], red)
+		ytmusicTrack, err := ytmusic.SearchTrackWithTitle(trackTitle, deezerTrack.Artists[0], red)
 		if err != nil {
 			if err == blueprint.ENORESULT {
 				conversion.Platforms.YTMusic = nil
 			}
 		}
 
-		apple, err := applemusic.SearchTrackWithTitle(trackTitle, deezerTrack.Artistes[0], red)
+		apple, err := applemusic.SearchTrackWithTitle(trackTitle, deezerTrack.Artists[0], red)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][deezer][ConvertTrack] error - could not get apple music track")
 			if err == blueprint.ENORESULT {
@@ -93,7 +93,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 			return nil, err
 		}
 
-		dzSingleTrack, err := deezer.SearchTrackWithTitle(spSingleTrack.Title, spSingleTrack.Artistes[0], spSingleTrack.Album, red)
+		dzSingleTrack, err := deezer.SearchTrackWithTitle(spSingleTrack.Title, spSingleTrack.Artists[0], spSingleTrack.Album, red)
 		if err != nil && err != blueprint.ENORESULT {
 			log.Printf("\n[controllers][platforms][spotify][ConvertTrack] error - could not search track with title '%s' on deezer. err %v\n", spSingleTrack.Title, err)
 			return nil, err
@@ -103,21 +103,21 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 			log.Printf("\n[controllers][platforms][spotify][ConvertTrack] error - could not search track with title %s on deezer. No result found\n", spSingleTrack.Title)
 		}
 
-		tidalTrack, err := tidal.SearchTrackWithTitle(spSingleTrack.Title, spSingleTrack.Artistes[0], red)
+		tidalTrack, err := tidal.SearchTrackWithTitle(spSingleTrack.Title, spSingleTrack.Artists[0], red)
 		if err != nil {
 			if err == blueprint.ENORESULT {
 				conversion.Platforms.Tidal = nil
 			}
 		}
 
-		ytmusicTrack, err := ytmusic.SearchTrackWithTitle(spSingleTrack.Title, spSingleTrack.Artistes[0], red)
+		ytmusicTrack, err := ytmusic.SearchTrackWithTitle(spSingleTrack.Title, spSingleTrack.Artists[0], red)
 		if err != nil {
 			if err == blueprint.ENORESULT {
 				conversion.Platforms.YTMusic = nil
 			}
 		}
 
-		apple, err := applemusic.SearchTrackWithTitle(spSingleTrack.Title, spSingleTrack.Artistes[0], red)
+		apple, err := applemusic.SearchTrackWithTitle(spSingleTrack.Title, spSingleTrack.Artists[0], red)
 		if err != nil {
 			if err == blueprint.ENORESULT {
 				conversion.Platforms.AppleMusic = nil
@@ -157,7 +157,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 			return nil, err
 		}
 		// then search on spotify
-		tidalArtist := tidalTrack.Artistes[0]
+		tidalArtist := tidalTrack.Artists[0]
 		tidalAlbum := tidalTrack.Album
 
 		spotifyTrack, err := spotify.SearchTrackWithTitle(tidalTrack.Title, tidalArtist, red)
@@ -222,7 +222,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 			log.Printf("\n[controllers][platforms][ytmusic][ConvertTrack] error - could not fetch track with ID from ytmusic: %v\n", err)
 			return nil, err
 		}
-		ytmusicArtiste := ytmusicTrack.Artistes[0]
+		ytmusicArtiste := ytmusicTrack.Artists[0]
 		ytmusicAlbum := ytmusicTrack.Album
 		spotifyTrack, err := spotify.SearchTrackWithTitle(ytmusicTrack.Title, ytmusicArtiste, red)
 		if err != nil {
@@ -241,7 +241,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 			}
 		}
 
-		apple, err := applemusic.SearchTrackWithTitle(ytmusicTrack.Title, ytmusicTrack.Artistes[0], red)
+		apple, err := applemusic.SearchTrackWithTitle(ytmusicTrack.Title, ytmusicTrack.Artists[0], red)
 		if err != nil {
 			if err == blueprint.ENORESULT {
 				conversion.Platforms.AppleMusic = nil
@@ -281,7 +281,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 			return nil, err
 		}
 
-		artiste := apple.Artistes[0]
+		artiste := apple.Artists[0]
 		title := apple.Title
 		album := apple.Album
 		spotifyTrack, err := spotify.SearchTrackWithTitle(title, artiste, red)
@@ -383,18 +383,17 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 		omittedTracks["spotify"] = *omittedSpotifyTracks
 		omittedTracks["tidal"] = *omittedTidalTracks
 		omittedTracks["apple"] = *omittedAppleTracks
+		conversion.Meta.URL = deezerPlaylist.URL
+		conversion.Meta.Title = deezerPlaylist.Title
+		conversion.Meta.Length = deezerPlaylist.Length
+		conversion.Meta.Owner = deezerPlaylist.Owner
+		conversion.Meta.OmittedTracks = omittedTracks
+		conversion.Meta.Cover = deezerPlaylist.Cover
 
-		conversion.URL = deezerPlaylist.URL
-		conversion.Title = deezerPlaylist.Title
-		conversion.Length = deezerPlaylist.Length
-		conversion.Owner = deezerPlaylist.Owner
-		conversion.OmittedTracks = omittedTracks
-		conversion.Cover = deezerPlaylist.Cover
-
-		conversion.Tracks.Deezer = &deezerPlaylist.Tracks
-		conversion.Tracks.Spotify = spotifyTracks
-		conversion.Tracks.Tidal = tidalTracks
-		conversion.Tracks.AppleMusic = appleTracks
+		conversion.Platforms.Deezer = &deezerPlaylist.Tracks
+		conversion.Platforms.Spotify = spotifyTracks
+		conversion.Platforms.Tidal = tidalTracks
+		conversion.Platforms.AppleMusic = appleTracks
 		/**
 		what the structure looks like
 			{
@@ -435,17 +434,17 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 		omittedTracks["tidal"] = *omittedTidalTracks
 		omittedTracks["apple"] = *omittedAppleTracks
 
-		conversion.URL = spotifyPlaylist.URL
-		conversion.Title = spotifyPlaylist.Title
-		conversion.Length = spotifyPlaylist.Length
-		conversion.Owner = spotifyPlaylist.Owner
-		conversion.OmittedTracks = omittedTracks
-		conversion.Cover = spotifyPlaylist.Cover
+		conversion.Meta.URL = spotifyPlaylist.URL
+		conversion.Meta.Title = spotifyPlaylist.Title
+		conversion.Meta.Length = spotifyPlaylist.Length
+		conversion.Meta.Owner = spotifyPlaylist.Owner
+		conversion.Meta.OmittedTracks = omittedTracks
+		conversion.Meta.Cover = spotifyPlaylist.Cover
 
-		conversion.Tracks.Spotify = &spotifyPlaylist.Tracks
-		conversion.Tracks.Deezer = deezerTracks
-		conversion.Tracks.Tidal = tidalTracks
-		conversion.Tracks.AppleMusic = appleTracks
+		conversion.Platforms.Spotify = &spotifyPlaylist.Tracks
+		conversion.Platforms.Deezer = deezerTracks
+		conversion.Platforms.Tidal = tidalTracks
+		conversion.Platforms.AppleMusic = appleTracks
 
 		log.Printf("\n[controllers][platforms][ConvertPlaylist][spotify] - caching tracks in playlist %v\n", spotifyPlaylist.URL)
 		err = CachePlaylistTracksWithID(deezerTracks, red)
@@ -479,21 +478,21 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 		omittedTracks["spotify"] = *omittedSpotifyTracks
 		omittedTracks["apple"] = *omittedAppleTracks
 
-		conversion.URL = tidalPlaylist.URL
-		conversion.Title = tidalPlaylist.Title
-		conversion.Length = tidalPlaylist.Length
-		conversion.Owner = tidalPlaylist.Owner
+		conversion.Meta.URL = tidalPlaylist.URL
+		conversion.Meta.Title = tidalPlaylist.Title
+		conversion.Meta.Length = tidalPlaylist.Length
+		conversion.Meta.Owner = tidalPlaylist.Owner
 		// hated doing this but lol tsk tsk
-		conversion.OmittedTracks = *&omittedTracks
-		conversion.Cover = tidalPlaylist.Cover
+		conversion.Meta.OmittedTracks = *&omittedTracks
+		conversion.Meta.Cover = tidalPlaylist.Cover
 
-		conversion.Tracks.Deezer = deezerTracks
-		conversion.Tracks.Spotify = spotifyTracks
-		conversion.Tracks.Tidal = &tidalPlaylist.Tracks
-		conversion.Tracks.AppleMusic = appleTracks
+		conversion.Platforms.Deezer = deezerTracks
+		conversion.Platforms.Spotify = spotifyTracks
+		conversion.Platforms.Tidal = &tidalPlaylist.Tracks
+		conversion.Platforms.AppleMusic = appleTracks
 
 		log.Printf("\n[controllers][platforms][ConvertPlaylist][tidal] - caching tracks in playlist %v\n", tidalPlaylist.URL)
-		err = CachePlaylistTracksWithID(conversion.Tracks.Tidal, red)
+		err = CachePlaylistTracksWithID(conversion.Platforms.Tidal, red)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][tidal][ConvertPlaylist] warning - could not cache tracks: %v %v\n\n", err, deezerTracks)
 		} else {
@@ -520,17 +519,17 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 		omittedTracks["spotify"] = *omittedSpotifyTracks
 		omittedTracks["tidal"] = *omittedTidalTracks
 
-		conversion.URL = applePlaylist.URL
-		conversion.Title = applePlaylist.Title
-		conversion.Length = applePlaylist.Length
-		conversion.Owner = applePlaylist.Owner
+		conversion.Meta.URL = applePlaylist.URL
+		conversion.Meta.Title = applePlaylist.Title
+		conversion.Meta.Length = applePlaylist.Length
+		conversion.Meta.Owner = applePlaylist.Owner
 		// hated doing this but lol tsk tsk
-		conversion.OmittedTracks = *&omittedTracks
-		conversion.Cover = applePlaylist.Cover
-		conversion.Tracks.Deezer = deezerTracks
-		conversion.Tracks.Spotify = spotifyTracks
-		conversion.Tracks.Tidal = tidalTracks
-		conversion.Tracks.AppleMusic = &applePlaylist.Tracks
+		conversion.Meta.OmittedTracks = *&omittedTracks
+		conversion.Meta.Cover = applePlaylist.Cover
+		conversion.Platforms.Deezer = deezerTracks
+		conversion.Platforms.Spotify = spotifyTracks
+		conversion.Platforms.Tidal = tidalTracks
+		conversion.Platforms.AppleMusic = &applePlaylist.Tracks
 		err = CachePlaylistTracksWithID(&applePlaylist.Tracks, red)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][applemusic][ConvertPlaylist] warning - could not cache tracks: %v %v\n\n", err, applePlaylist.Tracks)

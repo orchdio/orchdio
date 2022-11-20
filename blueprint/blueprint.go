@@ -128,7 +128,7 @@ type LinkInfo struct {
 // convert a link.
 type TrackSearchResult struct {
 	URL      string   `json:"url"`
-	Artistes []string `json:"artistes"`
+	Artists  []string `json:"artists"`
 	Released string   `json:"released"`
 	Duration string   `json:"duration"`
 	Explicit bool     `json:"explicit"`
@@ -176,90 +176,38 @@ type Conversion struct {
 		YTMusic    *TrackSearchResult `json:"ytmusic"`
 		AppleMusic *TrackSearchResult `json:"applemusic"`
 	} `json:"platforms"`
-	ShortURL string `json:"short_url,omitempty"`
+	TaskID string `json:"task_id,omitempty"`
 }
 
 // PlaylistConversion represents the final response for a typical playlist conversion
 type PlaylistConversion struct {
-	URL    string `json:"url"`
-	Tracks struct {
+	Entity    string `json:"entity"`
+	Platforms struct {
 		Deezer     *[]TrackSearchResult `json:"deezer"`
 		Spotify    *[]TrackSearchResult `json:"spotify"`
 		Tidal      *[]TrackSearchResult `json:"tidal"`
 		AppleMusic *[]TrackSearchResult `json:"applemusic"`
-	} `json:"tracks"`
-	Length        string                     `json:"length"`
-	Title         string                     `json:"title"`
-	Preview       string                     `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
-	OmittedTracks map[string][]OmittedTracks `json:"omitted_tracks"`
-	Owner         string                     `json:"owner"`
-	Cover         string                     `json:"cover"`
-	ShortURL      string                     `json:"short_url,omitempty"`
+	}
+	Meta struct {
+		URL           string                     `json:"url"`
+		Length        string                     `json:"length"`
+		Title         string                     `json:"title"`
+		Preview       string                     `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
+		OmittedTracks map[string][]OmittedTracks `json:"omitted_tracks"`
+		Owner         string                     `json:"owner"`
+		Cover         string                     `json:"cover"`
+	} `json:"meta,omitempty"`
+	TaskID string `json:"task_id,omitempty"`
 }
 
 type TrackConversion struct {
 	Entity    string `json:"entity"`
 	Platforms struct {
-		Deezer struct {
-			Url      string   `json:"url"`
-			Artistes []string `json:"artistes"`
-			Released string   `json:"released"`
-			Duration string   `json:"duration"`
-			Explicit bool     `json:"explicit"`
-			Title    string   `json:"title"`
-			Preview  string   `json:"preview"`
-			Album    string   `json:"album"`
-			Id       string   `json:"id"`
-			Cover    string   `json:"cover"`
-		} `json:"deezer"`
-		Spotify struct {
-			Url      string   `json:"url"`
-			Artistes []string `json:"artistes"`
-			Released string   `json:"released"`
-			Duration string   `json:"duration"`
-			Explicit bool     `json:"explicit"`
-			Title    string   `json:"title"`
-			Preview  string   `json:"preview"`
-			Album    string   `json:"album"`
-			Id       string   `json:"id"`
-			Cover    string   `json:"cover"`
-		} `json:"spotify"`
-		Tidal struct {
-			Url      string   `json:"url"`
-			Artistes []string `json:"artistes"`
-			Released string   `json:"released"`
-			Duration string   `json:"duration"`
-			Explicit bool     `json:"explicit"`
-			Title    string   `json:"title"`
-			Preview  string   `json:"preview"`
-			Album    string   `json:"album"`
-			Id       string   `json:"id"`
-			Cover    string   `json:"cover"`
-		} `json:"tidal"`
-		Ytmusic struct {
-			Url      string   `json:"url"`
-			Artistes []string `json:"artistes"`
-			Released string   `json:"released"`
-			Duration string   `json:"duration"`
-			Explicit bool     `json:"explicit"`
-			Title    string   `json:"title"`
-			Preview  string   `json:"preview"`
-			Album    string   `json:"album"`
-			Id       string   `json:"id"`
-			Cover    string   `json:"cover"`
-		} `json:"ytmusic"`
-		Applemusic struct {
-			Url      string   `json:"url"`
-			Artistes []string `json:"artistes"`
-			Released string   `json:"released"`
-			Duration string   `json:"duration"`
-			Explicit bool     `json:"explicit"`
-			Title    string   `json:"title"`
-			Preview  string   `json:"preview"`
-			Album    string   `json:"album"`
-			Id       string   `json:"id"`
-			Cover    string   `json:"cover"`
-		} `json:"applemusic"`
+		Deezer     TrackSearchResult `json:"deezer"`
+		Spotify    TrackSearchResult `json:"spotify"`
+		Tidal      TrackSearchResult `json:"tidal"`
+		Ytmusic    TrackSearchResult `json:"ytmusic"`
+		Applemusic TrackSearchResult `json:"applemusic"`
 	} `json:"platforms"`
 }
 

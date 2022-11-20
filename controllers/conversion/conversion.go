@@ -150,7 +150,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 
 	var data interface{}
 
-	if res.URL == "" {
+	if res.Meta.URL == "" {
 		data = nil
 	} else {
 		data = res

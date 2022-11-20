@@ -76,6 +76,12 @@ func Decrypt(ciphertext []byte, key []byte) (plaintext []byte, err error) {
 
 // SuccessResponse sends back a success http response to the client.
 func SuccessResponse(ctx *fiber.Ctx, statusCode int, data interface{}) error {
+	if data == nil {
+		return ctx.Status(statusCode).JSON(&fiber.Map{
+			"message": "Success",
+			"status":  statusCode,
+		})
+	}
 	return ctx.Status(statusCode).JSON(
 		fiber.Map{
 			"message": "Request Ok",

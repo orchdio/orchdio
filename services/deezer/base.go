@@ -77,7 +77,7 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) *blueprint
 			Explicit: util.DeezerIsExplicit(dzSingleTrack.ExplicitContentLyrics),
 			Duration: util.GetFormattedDuration(dzSingleTrack.Duration),
 			URL:      dzSingleTrack.Link,
-			Artistes: dzTrackContributors,
+			Artists:  dzTrackContributors,
 			Released: dzSingleTrack.Album.ReleaseDate,
 			Title:    dzSingleTrack.Title,
 			Preview:  dzSingleTrack.Preview,
@@ -162,7 +162,7 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 
 		out := blueprint.TrackSearchResult{
 			URL:      track.Link,
-			Artistes: []string{track.Artist.Name},
+			Artists:  []string{track.Artist.Name},
 			Released: "",
 			Duration: util.GetFormattedDuration(track.Duration),
 			Explicit: util.DeezerIsExplicit(track.ExplicitContentLyrics),
@@ -180,7 +180,7 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 		}
 		//newHashIdentifier := util.HashIdentifier("deezer-" + out.Artistes[0] + "-" + out.Title)
 		// if the artistes are the same, the track result is most likely the same (except remixes, an artiste doesnt have two tracks with the same name)
-		if lo.Contains(out.Artistes, artiste) {
+		if lo.Contains(out.Artists, artiste) {
 			err = red.MSet(context.Background(), map[string]interface{}{
 				identifierHash: string(serializedTrack),
 			}).Err()
@@ -309,8 +309,8 @@ func FetchPlaylistTracklist(id string, red *redis.Client) (*blueprint.PlaylistSe
 		var out []blueprint.TrackSearchResult
 		for _, track := range trackList.Tracks.Data {
 			result := &blueprint.TrackSearchResult{
-				URL:      track.Link,
-				Artistes: []string{track.Artist.Name},
+				URL:     track.Link,
+				Artists: []string{track.Artist.Name},
 				//Released: track.r,
 				Duration: util.GetFormattedDuration(track.Duration),
 				Explicit: util.DeezerIsExplicit(track.ExplicitContentLyrics),
@@ -391,7 +391,7 @@ func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Cli
 	var trackSearch []blueprint.PlatformSearchTrack
 	for _, track := range p.Tracks {
 		trackSearch = append(trackSearch, blueprint.PlatformSearchTrack{
-			Artistes: track.Artistes,
+			Artistes: track.Artists,
 			Title:    track.Title,
 			ID:       track.ID,
 			URL:      track.URL,

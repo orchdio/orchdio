@@ -17,7 +17,12 @@ import (
 // VerifyToken verifies a token and set the context local called "claim" to a type of *blueprint.OrchdioUserToken
 func VerifyToken(ctx *fiber.Ctx) error {
 	log.Printf("[middleware][VerifyToken] method - Verifying token...\n")
-	jwtToken := ctx.Locals("authToken").(*jwt.Token)
+	jt := ctx.Locals("authToken")
+	if jt == nil {
+		log.Printf("[middlware][VerifyToken] method - JWT header missing")
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "JWT header is missing")
+	}
+	jwtToken := jt.(*jwt.Token)
 	claims := jwtToken.Claims.(*blueprint.OrchdioUserToken)
 	ctx.Locals("claims", claims)
 	log.Printf("[middleware][VerifyToken] method - Token verified. Claims set: %v\n", claims)
