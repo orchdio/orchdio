@@ -729,3 +729,30 @@ func (c *UserController) AddToWaitlist(ctx *fiber.Ctx) error {
 	}
 	return util.SuccessResponse(ctx, http.StatusOK, emailFromDB)
 }
+
+func (c *UserController) CreateOrUpdateRedirectURL(ctx *fiber.Ctx) error {
+	// swagger:route POST /redirect CreateOrUpdateRedirectURL
+	// Creates or updates a redirect URL for a user
+	//
+	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+
+	body := ctx.Body()
+	redirectURL := struct {
+		Url string `json:"redirect_url"`
+	}{}
+	err := json.Unmarshal(body, &redirectURL)
+	if err != nil {
+		log.Printf("[controller][user][CreateOrUpdateRedirectURL] - error unmarshalling body %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid request body")
+	}
+
+	// TODO: validate redirectURL, perform network check to see if it's reachable
+	database := db.NewDB{DB: c.DB}
+	err = database.UpdateRedirectURL(claims.UUID.String(), redirectURL.Url)
+	if err != nil {
+		log.Printf("[controller][user][CreateOrUpdateRedirectURL] - error updating redirect url %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error occured")
+	}
+	log.Printf("[controller][user][CreateOrUpdateRedirectURL] - updated redirect url for user %v\n", claims.UUID.String())
+	return util.SuccessResponse(ctx, http.StatusOK, nil)
+}

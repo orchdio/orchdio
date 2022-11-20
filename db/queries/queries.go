@@ -62,5 +62,7 @@ const CreateWaitlistEntry = `INSERT INTO waitlists(uuid, email, created_at, upda
 // update user platform token based on the streaming platform user provides
 const UpdateUserPlatformToken = `UPDATE users SET spotify_token = (CASE WHEN $2 ILIKE '%spotify%' THEN $1 ELSE spotify_token END), applemusic_token = (CASE WHEN $2 ILIKE '%applemusic%' THEN $1 ELSE applemusic_token END), deezer_token = (CASE WHEN $2 ILIKE '%deezer%' THEN $1 ELSE deezer_token END) WHERE email = $3;`
 
+const UpdateRedirectURL = `UPDATE users SET redirect_url = $2 WHERE uuid = $1;`
+
 //const FetchPlaylistFollowsToProcess = `SELECT task.*, COALESCE(follow.entity_url, '') entity_url FROM follows follow JOIN tasks task ON task.uuid = follow.task WHERE task IS NOT NULL
 //--  	AND task.updated_at > CURRENT_DATE - interval '10 minutes'

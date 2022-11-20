@@ -211,6 +211,9 @@ func main() {
 
 	app.Use(cors.New(), authMiddleware.LogIncomingRequest)
 	baseRouter := app.Group("/api/v1")
+	baseRouter.Get("/", func(ctx *fiber.Ctx) error {
+		return ctx.SendStatus(http.StatusOK)
+	})
 	//baseRouter.Use(authMiddleware.LogIncomingRequest)
 
 	baseRouter.Get("/heartbeat", getInfo)
@@ -228,6 +231,7 @@ func main() {
 	baseRouter.Get("/webhook", authMiddleware.ValidateKey, webhookController.FetchWebhookUrl)
 	baseRouter.Delete("/webhook", authMiddleware.ValidateKey, webhookController.DeleteUserWebhookUrl)
 	baseRouter.Post("/white-tiger", authMiddleware.AddAPIDeveloperToContext, whController.Handle)
+	baseRouter.Post("/redirect-url", authMiddleware.AddAPIDeveloperToContext, userController.CreateOrUpdateRedirectURL)
 	baseRouter.Get("/white-tiger", whController.Handle)
 
 	userRouter := app.Group("/api/v1/user")

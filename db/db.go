@@ -489,6 +489,17 @@ func (d *NewDB) UpdateFollowStatus(followId, status string) error {
 	return nil
 }
 
+func (d *NewDB) UpdateRedirectURL(user, redirectURL string) error {
+	log.Printf("[db][CreateOrUpdateWebhookURL] Running query %s\n", queries.UpdateRedirectURL)
+	_, err := d.DB.Exec(queries.UpdateRedirectURL, user, redirectURL)
+	if err != nil {
+		log.Printf("[db][CreateOrUpdateWebhookURL] error creating or updating webhook url. %v\n", err)
+		return err
+	}
+	log.Printf("[db][CreateOrUpdateWebhookURL] created or updated webhook url\n")
+	return nil
+}
+
 /// MIGHT BE USEFUL, keeping around for historical reasons, remove later
 //func (d *NewDB) UpdateUserPlatformToken(token byte, email, platform string) error {
 //	log.Printf("[db][UpdateUserPlatformToken] Running query %s\n", queries.UpdateUserPlatformToken)
