@@ -734,7 +734,7 @@ func (c *UserController) CreateOrUpdateRedirectURL(ctx *fiber.Ctx) error {
 	// swagger:route POST /redirect CreateOrUpdateRedirectURL
 	// Creates or updates a redirect URL for a user
 	//
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+	claims := ctx.Locals("developer").(*blueprint.User)
 
 	body := ctx.Body()
 	redirectURL := struct {
