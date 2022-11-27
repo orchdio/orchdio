@@ -43,8 +43,16 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 			return nil, err
 		}
 
+		log.Printf("[services][ytmusic][SearchTrackWithLink] Track fetched from YT Music: %v\n", track)
+
+		if track == nil {
+			log.Printf("[services][ytmusic][SearchTrackWithLink] Track is nil: %v\n", info.EntityID)
+			return nil, nil
+		}
+
 		// get artistes
 		artistes := make([]string, 0)
+
 		for _, artist := range track.Artists {
 			artistes = append(artistes, artist.Name)
 		}

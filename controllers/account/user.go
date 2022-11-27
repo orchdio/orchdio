@@ -332,80 +332,6 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 	return ctx.Redirect(redirectTo + "?token=" + string(jToken))
 }
 
-// AuthAppleMusicUser2 authorizes a user with apple music account.
-// NB: it doesnt really work for now so not active.
-//func (c *UserController) AuthAppleMusicUser2(ctx *fiber.Ctx) error {
-//	bod := &blueprint.AppleMusicAuthBody{}
-//	err := ctx.BodyParser(&bod)
-//	if err != nil {
-//		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error parsing body: %v", err)
-//		return util.ErrorResponse(ctx, http.StatusBadRequest, err)
-//	}
-//
-//	//authedUser := map[string]interface{}{}
-//	// serialize the user
-//	//err := json.Unmarshal([]byte(bod.Authorization.), &authedUser)
-//	//if err != nil {
-//	//	log.Printf("[user][controller][AuthAppleMusicUser] Method - Error serializing user: %v", err)
-//	//	return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
-//	//}
-//
-//	//log.Printf("[user][controller][AuthAppleMusicUser] Method - Autheduser,  idToken and state: %v, %v, %v", authedUser, idToken, state)
-//
-//	// verify the token to get the user
-//	_ = "https://appleid.apple.com/auth/token"
-//
-//	client := apple.New()
-//	//vReq := apple.WebValidationTokenRequest{
-//	//	ClientID:     os.Getenv("APPLE_CLIENT_ID"),
-//	//	ClientSecret: os.Getenv("APPLE_MUSIC_API_KEY"),
-//	//	Code:         bod.Authorization.Code,
-//	//	RedirectURI:  "https://zoove.xyz",
-//	//}
-//
-//	cSecret := `-----BEGIN PRIVATE KEY-----`
-//	secret, err := apple.GenerateClientSecret(cSecret, os.Getenv("APPLE_TEAM_ID"), "com.orchdiodev.zoovestaging", os.Getenv("APPLE_KEY_ID"))
-//	if err != nil {
-//		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error generating client secret: %v", err)
-//		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
-//	}
-//
-//	vReq := apple.WebValidationTokenRequest{
-//		ClientID:     "com.orchdiodev.zoovestaging",
-//		ClientSecret: secret,
-//		Code:         bod.Authorization.IdToken,
-//		//RedirectURI:  "https://constitution-replication-metadata-quick.trycloudflare.com/api/v1/applemusic/auth",
-//	}
-//
-//	var resp apple.ValidationResponse
-//	err = client.VerifyWebToken(context.Background(), vReq, &resp)
-//	if err != nil {
-//		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error verifying token: %v", err)
-//		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
-//	}
-//
-//	if resp.Error != "" {
-//		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error verifying token: %v", resp.Error)
-//		return util.ErrorResponse(ctx, http.StatusInternalServerError, resp.Error)
-//	}
-//
-//	unique, err := apple.GetUniqueID(resp.IDToken)
-//	if err != nil {
-//		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error getting unique id: %v", err)
-//		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
-//	}
-//
-//	claim, err := apple.GetClaims(resp.IDToken)
-//	if err != nil {
-//		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error getting claims: %v", err)
-//		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
-//	}
-//
-//	log.Printf("[user][controller][AuthAppleMusicUser] Method - Claims: %v\n", claim)
-//	log.Printf("[user][controller][AuthAppleMusicUser] Method - Unique: %v\n", unique)
-//	return util.SuccessResponse(ctx, http.StatusOK, "Apple Music Auth")
-//}
-
 // AuthAppleMusicUser authenticates a user with apple music account and saves the user to the db. It also creates a token for the user.
 func (c *UserController) AuthAppleMusicUser(ctx *fiber.Ctx) error {
 	bod := &blueprint.AppleMusicAuthBody{}
@@ -719,6 +645,15 @@ func (c *UserController) AddToWaitlist(ctx *fiber.Ctx) error {
 	// generate a uuid
 	uniqueID, _ := uuid.NewRandom()
 
+	// check if the user already exists in the waitlist
+	database := db.NewDB{DB: c.DB}
+	alreadyAdded := database.AlreadyInWaitList(body.Email)
+
+	if alreadyAdded {
+		log.Printf("[controller][user][AddToWaitlist] - user already in waitlist %v\n", body)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "You are already in the wait list")
+	}
+
 	// then insert the email into the waitlist table. it returns an email and updates the updated_at field if email is already in the table
 	result := c.DB.QueryRowx(queries.CreateWaitlistEntry, uniqueID, body.Email)
 	var emailFromDB string
@@ -746,10 +681,19 @@ func (c *UserController) CreateOrUpdateRedirectURL(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid request body")
 	}
 
+	if redirectURL.Url == "" {
+		log.Printf("[controller][user][CreateOrUpdateRedirectURL] - redirect url is empty %v\n", redirectURL)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid request body")
+	}
+
 	// TODO: validate redirectURL, perform network check to see if it's reachable
 	database := db.NewDB{DB: c.DB}
 	err = database.UpdateRedirectURL(claims.UUID.String(), redirectURL.Url)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("[controller][user][CreateOrUpdateRedirectURL] - user not found %v\n", claims)
+			return util.ErrorResponse(ctx, http.StatusNotFound, "User not found")
+		}
 		log.Printf("[controller][user][CreateOrUpdateRedirectURL] - error updating redirect url %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error occured")
 	}

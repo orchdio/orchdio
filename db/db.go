@@ -500,6 +500,21 @@ func (d *NewDB) UpdateRedirectURL(user, redirectURL string) error {
 	return nil
 }
 
+func (d *NewDB) AlreadyInWaitList(user string) bool {
+	log.Printf("[db][FetchUserFromWaitlist] Running query %s\n", queries.FetchUserFromWaitlist)
+	r := d.DB.QueryRowx(queries.FetchUserFromWaitlist, user)
+	var res string
+	err := r.Scan(&res)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("[db][FetchUserFromWaitlist] user %s not found in waitlist\n", user)
+		}
+		log.Printf("[db][FetchUserFromWaitlist] error fetching user from waitlist. %v\n", err)
+		return false
+	}
+	return true
+}
+
 /// MIGHT BE USEFUL, keeping around for historical reasons, remove later
 //func (d *NewDB) UpdateUserPlatformToken(token byte, email, platform string) error {
 //	log.Printf("[db][UpdateUserPlatformToken] Running query %s\n", queries.UpdateUserPlatformToken)

@@ -222,6 +222,12 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 			log.Printf("\n[controllers][platforms][ytmusic][ConvertTrack] error - could not fetch track with ID from ytmusic: %v\n", err)
 			return nil, err
 		}
+
+		if len(ytmusicTrack.Artistes) == 0 {
+			log.Printf("\n[controllers][platforms][ytmusic][ConvertTrack] error - could not fetch track with ID from ytmusic: %v\n", err)
+			return nil, err
+		}
+
 		ytmusicArtiste := ytmusicTrack.Artistes[0]
 		ytmusicAlbum := ytmusicTrack.Album
 		spotifyTrack, err := spotify.SearchTrackWithTitle(ytmusicTrack.Title, ytmusicArtiste, red)

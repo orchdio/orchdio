@@ -75,6 +75,10 @@ func (p *Platforms) ConvertTrack(ctx *fiber.Ctx) error {
 	uID, _ := sid.Generate()
 
 	serialized, err := json.Marshal(conversion)
+	if conversion == nil {
+		log.Printf("\n[controllers][platforms][ConvertTrack] - conversion is nil %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusNotFound, err)
+	}
 
 	// add the task ID to the conversion response
 	conversion.ShortURL = uID

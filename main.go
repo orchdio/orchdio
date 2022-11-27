@@ -11,7 +11,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	jwtware "github.com/gofiber/jwt/v3"
-	"github.com/gofiber/template/html"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/hibiken/asynq"
@@ -35,7 +34,10 @@ import (
 	"orchdio/controllers/webhook"
 	"orchdio/middleware"
 	"orchdio/universal"
+	"orchdio/util"
 	"os"
+	"syscall"
+	"time"
 )
 
 func init() {
@@ -95,10 +97,7 @@ func getInfo(ctx *fiber.Ctx) error {
 }
 func main() {
 
-	engine := html.New("layouts", ".html")
-	app := fiber.New(fiber.Config{
-		Views: engine,
-	})
+	//engine := html.New("layouts", ".html")
 
 	// Database and cache setup things
 	envr := os.Getenv("ZOOVE_ENV")
@@ -159,7 +158,7 @@ func main() {
 	}
 
 	asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
-	asynqServer := asynq.NewServer(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password}, asynq.Config{Concurrency: 10})
+	asynqServer := asynq.NewServer(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password}, asynq.Config{Concurrency: 10, ShutdownTimeout: 3 * time.Second})
 
 	asynqMux := asynq.NewServeMux()
 	err = asynqServer.Start(asynqMux)
@@ -174,6 +173,55 @@ func main() {
 	// this is the job queue config shenanigans
 	//conversionContr := conversion.
 	// ===========================================================
+
+	app := fiber.New(fiber.Config{
+		DisableStartupMessage: false,
+		AppName:               "Orchdio",
+		DisableDefaultDate:    true,
+		ReadTimeout:           45 * time.Second,
+		WriteTimeout:          45 * time.Second,
+		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
+			log.Printf("Error in next router %v", err)
+			// get the PID of the asynq server and send it a kill signal to OS
+			// this is a hacky way to kill the asynq server
+			inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
+			queueServer, err := inspector.Servers()
+			if err != nil {
+				log.Printf("Error getting queue server %v", err)
+				return err
+			}
+
+			// make sure we have a queue server
+			if len(queueServer) == 0 {
+				log.Printf("No queue server found")
+				return nil
+			}
+
+			v := queueServer[0].PID
+			p, err := os.FindProcess(v)
+			if err != nil {
+				log.Printf("Error finding process %v", err)
+				return err
+			}
+
+			// send task creation signal cancelation to the queue server
+			err = p.Signal(syscall.SIGINT)
+			if err != nil {
+				log.Printf("Error stopping new tasks%v", err)
+				return err
+			}
+
+			// shutdown the queue server itself.
+			err = p.Signal(syscall.SIGKILL)
+			if err != nil {
+				log.Printf("Error stopping queue server %v", err)
+				return err
+			}
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, err.Error())
+		},
+	})
+
+	//app.Use(fiberRecover.New(fiber.))
 
 	userController = *account.NewUserController(db)
 	webhookController := account.NewWebhookController(db)
@@ -209,12 +257,14 @@ func main() {
 	 ==================================================================
 	*/
 
-	app.Use(cors.New(), authMiddleware.LogIncomingRequest)
+	app.Use(cors.New(), authMiddleware.LogIncomingRequest, authMiddleware.HandleTrolls)
 	baseRouter := app.Group("/api/v1")
 	baseRouter.Get("/", func(ctx *fiber.Ctx) error {
 		return ctx.SendStatus(http.StatusOK)
 	})
 	//baseRouter.Use(authMiddleware.LogIncomingRequest)
+
+	//baseRouter.Use(defaultFiberConfig)
 
 	baseRouter.Get("/heartbeat", getInfo)
 	baseRouter.Get("/:platform/connect", userController.RedirectAuth)

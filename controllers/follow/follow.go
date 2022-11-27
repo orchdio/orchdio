@@ -299,3 +299,12 @@ func SyncFollowsHandler(DB *sqlx.DB, red *redis.Client, asynqClient *asynq.Clien
 	log.Printf("[follow][SyncFollowsHandler] - fetched %d follow tasks to process", len(*follows))
 	return
 }
+
+//var ConfigDefault = fiber.Config{
+//	ErrorHandler: func(ctx *fiber.Ctx, err error) error {
+//		return nil
+//	},
+//}
+//
+//func NewRecoveyHandler(c *fiber.Ctx) error {
+//}

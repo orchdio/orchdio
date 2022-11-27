@@ -12,6 +12,8 @@ import (
 	"orchdio/db"
 	"orchdio/services"
 	"orchdio/util"
+	"strings"
+	"time"
 )
 
 // VerifyToken verifies a token and set the context local called "claim" to a type of *blueprint.OrchdioUserToken
@@ -178,4 +180,15 @@ func (a *AuthMiddleware) AddAPIDeveloperToContext(ctx *fiber.Ctx) error {
 		return ctx.Next()
 	}
 	return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid apikey")
+}
+
+func (a *AuthMiddleware) HandleTrolls(ctx *fiber.Ctx) error {
+	var blacklists = []string{"/.env", "/_profiler/phpinfo", "/.htcaccess", "/robot.txt", "/admin.php"}
+	for _, blacklist := range blacklists {
+		if strings.Contains(ctx.Path(), blacklist) {
+			log.Printf("[middleware][HandleTrolls] warning - Trolling attempt from IP: %s at path: %s at time: %s\n", ctx.IP(), ctx.Path(), time.Now().String())
+			return util.ErrorResponse(ctx, http.StatusExpectationFailed, "lol 🖕🏾")
+		}
+	}
+	return ctx.Next()
 }

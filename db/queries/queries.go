@@ -64,5 +64,7 @@ const UpdateUserPlatformToken = `UPDATE users SET spotify_token = (CASE WHEN $2 
 
 const UpdateRedirectURL = `UPDATE users SET redirect_url = $2 WHERE uuid = $1;`
 
+const FetchUserFromWaitlist = `SELECT uuid FROM waitlists WHERE email = $1;`
+
 //const FetchPlaylistFollowsToProcess = `SELECT task.*, COALESCE(follow.entity_url, '') entity_url FROM follows follow JOIN tasks task ON task.uuid = follow.task WHERE task IS NOT NULL
 //--  	AND task.updated_at > CURRENT_DATE - interval '10 minutes'
