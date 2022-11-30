@@ -5,8 +5,10 @@ package main
 
 import (
 	context "context"
+	"encoding/json"
 	"fmt"
 	"github.com/antoniodipinto/ikisocket"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -104,7 +106,7 @@ func getInfo(ctx *fiber.Ctx) error {
 }
 
 func taskErrorHandler(connOpts asynq.RedisClientOpt, err error) error {
-	log.Printf("Error in next router %v", err)
+	log.Printf("[main] Error processing task %v", err)
 	// get the PID of the asynq server and send it a kill signal to OS
 	// this is a hacky way to kill the asynq server
 	inspector := asynq.NewInspector(connOpts)
@@ -198,10 +200,11 @@ func main() {
 
 	if os.Getenv("ENV") == "production" {
 		log.Printf("\n[main] [info] - Running in production mode. Connecting to authenticated redis")
-
 	}
 
 	asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
+	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
+
 	asynqServer := asynq.NewServer(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password},
 		asynq.Config{Concurrency: 10,
 			ShutdownTimeout: 3 * time.Second,
@@ -209,11 +212,48 @@ func main() {
 				"playlist-conversion": 5,
 			},
 			ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
-				err = taskErrorHandler(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password}, err)
+				log.Printf("[main] Error processing task %v", err)
+				spew.Dump(task)
+
+				// get the task id
+				var taskData blueprint.PlaylistTaskData
+				err = json.Unmarshal(task.Payload(), &taskData)
 				if err != nil {
-					log.Printf("[main] [error] - Error in task error handler %v", err)
+					log.Printf("[main] [TaskErrorHandler] Error unmarshalling task payload %v", err)
 					return
 				}
+
+				// get the task queue info
+				queueInfo, err := inspector.GetTaskInfo(queue.PlaylistConversionQueue, taskData.TaskID)
+
+				if err != nil {
+					log.Printf("[main] [TaskErrorHandler] Error getting task info %v", err)
+					return
+				}
+
+				log.Printf("[main] [TaskErrorHandler] Task info\n")
+				spew.Dump(queueInfo)
+
+				// pause the queue if its not paused
+				if queueInfo.State.String() == "active" {
+					log.Printf("[main] [TaskErrorHandler] Pausing queue %v", queue.PlaylistConversionQueue)
+					err = inspector.PauseQueue(queue.PlaylistConversionQueue)
+				}
+
+				// archive the task
+				err = inspector.ArchiveTask(queue.PlaylistConversionQueue, taskData.TaskID)
+				if err != nil {
+					log.Printf("[main] [TaskErrorHandler] Error archiving task %v", err)
+					return
+				}
+				// get task info and check if its archived
+				taskInfo, err := inspector.GetTaskInfo(queue.PlaylistConversionQueue, taskData.TaskID)
+				if err != nil {
+					log.Printf("[main] [TaskErrorHandler] Error getting task info %v", err)
+					return
+				}
+
+				spew.Dump(taskInfo)
 			}),
 		})
 
@@ -242,7 +282,6 @@ func main() {
 			log.Printf("Error in next router %v", err)
 			// get the PID of the asynq server and send it a kill signal to OS
 			// this is a hacky way to kill the asynq server
-			inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
 			queueServer, err := inspector.Servers()
 			if err != nil {
 				log.Printf("Error getting queue server %v", err)
@@ -280,13 +319,26 @@ func main() {
 	})
 	serverChan := make(chan os.Signal, 1)
 	signal.Notify(serverChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
-	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
+	//inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
 	// unpause the queue server
-	err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
+	// get status of the playlist conversion queue
+	// if it is paused, unpause it
+	conversionQueuePaused, err := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
 	if err != nil {
-		log.Printf("[main][Queue] Error unpausing queue %v", err)
+		log.Printf("[main][Queue] Error getting conversion status queue %v", err)
 		_ = app.Shutdown()
 		return
+	}
+
+	if conversionQueuePaused.Paused {
+		log.Printf("[main][Queue] Conversion queue is paused. Unpausing it")
+		err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
+		if err != nil {
+			log.Printf("[main][Queue] Error unpausing conversion queue %v", err)
+			_ = app.Shutdown()
+			return
+		}
+		log.Printf("[main][Queue] Conversion queue unpaused")
 	}
 
 	log.Printf("[main][Queue] Queue server unpaused...")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-redis/redis/v8"
 	"github.com/nleeper/goment"
 	"github.com/samber/lo"
@@ -273,7 +274,7 @@ func FetchSingleTrackByTitle(title, artiste string) (*SearchResult, error) {
 	return searchResult, nil
 }
 
-// FetchPlaylistInfo returns a playlist info
+// FetchPlaylistInfo returns a playlist info[main] Error processing task handler not found for task
 func FetchPlaylistInfo(id string) (*PlaylistInfo, error) {
 	accessToken, err := FetchNewAuthToken()
 	if err != nil {
@@ -294,6 +295,8 @@ func FetchPlaylistInfo(id string) (*PlaylistInfo, error) {
 		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistInfo] - could not fetch the playlist info for %s - %v\n", err, id)
 		return nil, err
 	}
+	log.Printf("\n[controllers][platforms][tidal][FetchPlaylistInfo] - response -\n")
+	spew.Dump(response.Data)
 	playlistInfo := &PlaylistInfo{}
 	err = json.Unmarshal(response.Data, playlistInfo)
 	if err != nil {

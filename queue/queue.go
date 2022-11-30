@@ -68,8 +68,8 @@ func (o *OrchdioQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task
 	}
 	cErr := o.PlaylistHandler(task.ResultWriter().TaskID(), data.LinkInfo, data.User.UUID.String())
 	if cErr != nil {
-		log.Printf("[queue][PlaylistConversionHandler][conversion] - error processing task: %v", err)
-		return cErr
+		log.Printf("[queue][PlaylistConversionHandler][conversion] - error processing task: %v", cErr)
+		return asynq.SkipRetry
 	}
 	return nil
 }
@@ -106,16 +106,22 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, dev
 	log.Printf("[queue][PlaylistHandler] - created or updated task: %v", taskId)
 
 	h, err := universal.ConvertPlaylist(info, o.Red)
+	var status string
 	if err != nil {
 		log.Printf("[queue][EnqueueTask] - error converting playlist: %v", err)
-
+		status = "failed"
 		// update the task status to failed
-		taskErr := database.UpdateTaskStatus(taskId, "failed")
+		taskErr := database.UpdateTaskStatus(taskId, status)
 		if taskErr != nil {
 			log.Printf("[queue][EnqueueTask] - error updating task status: %v", taskErr)
 			return taskErr
 		}
 		return err
+	}
+
+	if status == "" {
+		log.Printf("[queue][PlaylistHandler] - updating task status to failed... skipping")
+		return nil
 	}
 
 	h.ShortURL = shorturl
