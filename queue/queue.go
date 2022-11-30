@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"github.com/go-redis/redis/v8"
 	"github.com/hibiken/asynq"
@@ -16,6 +15,12 @@ import (
 	"orchdio/universal"
 	"orchdio/util"
 	"strings"
+	"time"
+)
+
+const (
+	PlaylistConversionQueue = "playlist-conversion"
+	PlaylistConversionTask  = "playlist:conversion"
 )
 
 type OrchQueue struct {
@@ -61,7 +66,7 @@ func (o *OrchdioQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task
 		log.Printf("[queue][PlaylistConversionHandler][conversion] - error unmarshalling task payload: %v", err)
 		return err
 	}
-	cErr := o.PlaylistHandler(task.Type(), data.LinkInfo, data.User)
+	cErr := o.PlaylistHandler(task.ResultWriter().TaskID(), data.LinkInfo, data.User.UUID.String())
 	if cErr != nil {
 		log.Printf("[queue][PlaylistConversionHandler][conversion] - error processing task: %v", err)
 		return cErr
@@ -70,10 +75,10 @@ func (o *OrchdioQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task
 }
 
 // PlaylistHandler converts a playlist immediately.
-func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, user *blueprint.User) error {
+func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, developer string) error {
 	log.Printf("[queue][PlaylistHandler] - processing task: %v", uid)
 	database := db.NewDB{DB: o.DB}
-	log.Printf("[queue][PlaylistHandler] - processing playlist: %v %v %v\n", database, info, user)
+	log.Printf("[queue][PlaylistHandler] - processing playlist: %v %v %v\n", database, info, developer)
 	const format = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-"
 	sid, err := shortid.New(1, format, 2342)
 
@@ -83,6 +88,12 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, use
 	}
 
 	shorturl, _ := sid.Generate()
+	// fetch user from database
+	user, err := database.FindUserByUUID(developer)
+	if err != nil {
+		log.Printf("[queue][PlaylistHandler] - could not find user: %v", err)
+		return err
+	}
 
 	_taskId, dbErr := database.CreateOrUpdateTask(uid, shorturl, user.UUID.String(), info.EntityID)
 	taskId := string(_taskId)
@@ -130,10 +141,11 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, use
 
 	// post to the developer webhook
 	webhook, wErr := database.FetchWebhook(user.UUID.String())
-	// TODO: implement making sure developer has a webhook set
-	if wErr != nil && wErr != sql.ErrNoRows {
-		log.Printf("[queue][PlaylistHandler] - error fetching developer webhook: %v", wErr)
-		return wErr
+	if wErr != nil {
+		if wErr.Error() != "sql: no rows in result set" {
+			log.Printf("[queue][EnqueueTask] - error fetching webhook: %v", wErr)
+			return wErr
+		}
 	}
 
 	r := blueprint.WebhookMessage{
@@ -155,6 +167,11 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, use
 			"x-orchdio-hmac": {string(hmac)},
 		},
 	})
+
+	if webhook == nil {
+		log.Printf("[queue][PlaylistHandler] - no webhook found. Skipping. Task done.")
+		return nil
+	}
 
 	re, evErr := ax.Post(webhook.Url, r)
 
@@ -181,3 +198,44 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, use
 	// NOTE: In the case of a "follow", instead of just exiting here, we reschedule the task to  like 2 mins later.
 	return nil
 }
+
+func LoggingMiddleware(h asynq.Handler) asynq.Handler {
+	return asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
+		start := time.Now()
+		log.Printf("Start processing %q", t.ResultWriter().TaskID())
+		err := h.ProcessTask(ctx, t)
+		if err != nil {
+			return err
+		}
+		log.Printf("Finished processing %q: Elapsed Time = %v", t.Type(), time.Since(start))
+		return nil
+	})
+}
+
+//func (o *OrchdioQueue) RetryOrphanedFailedTasks(inspector asynq.Inspector, queue, developer string) error {
+//	// get all failed tasks from asynq
+//	failedTasks, err := inspector.ListRetryTasks(queue, asynq.Page(1), asynq.PageSize(1000))
+//	if err != nil {
+//		return err
+//	}
+//	for _, t := range failedTasks {
+//		task := t
+//		if task.Queue == queue {
+//			payload := &blueprint.LinkInfo{}
+//			err := json.Unmarshal(task.Payload, payload)
+//			if err != nil {
+//				log.Printf("[queue][RetryOrphanedFailedTasks] - error unmarshalling task payload: %v", err)
+//				continue
+//			}
+//			// call the handler directly
+//			// create taskinfo
+//			info := &blueprint.LinkInfo{
+//				Platform:   developer,
+//				TargetLink: "",
+//				Entity:     "",
+//				EntityID:   "",
+//			}
+//			err = o.PlaylistHandler(context.Background(), task, developer)
+//		}
+//	}
+//}

@@ -325,6 +325,7 @@ type ApiKey struct {
 type PlaylistTaskData struct {
 	LinkInfo *LinkInfo `json:"link_info"`
 	User     *User     `json:"user"`
+	TaskID   string    `json:"task_id"`
 }
 
 // TaskRecord representsUs a task record in the database

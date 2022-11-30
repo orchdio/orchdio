@@ -53,6 +53,14 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 
 	user := ctx.Locals("user").(*blueprint.User)
 	linkInfo := ctx.Locals("linkInfo").(*blueprint.LinkInfo)
+	uniqueId := uuid.New().String()
+
+	taskData := &blueprint.PlaylistTaskData{
+		LinkInfo: linkInfo,
+		User:     user,
+		TaskID:   uniqueId,
+	}
+
 	if !strings.Contains(linkInfo.Entity, "playlist") {
 		log.Printf("[controller][conversion][EchoConversion] - not a playlist")
 		return ctx.Status(http.StatusBadRequest).JSON("not a playlist")
@@ -60,24 +68,23 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 	// create new task and set the handler. the handler will create or update a new task in the db
 	// in the case where the conversion fails, it sets the status to failed and ditto for success
 	// serialize linkInfo
-	tInfo := blueprint.PlaylistTaskData{
-		LinkInfo: linkInfo,
-		User:     user,
-	}
-	ser, err := json.Marshal(&tInfo)
+	ser, err := json.Marshal(&taskData)
 	if err != nil {
 		log.Printf("[controller][conversion][EchoConversion] - error marshalling link info: %v", err)
 		return ctx.Status(http.StatusInternalServerError).JSON("error marshalling link info")
 	}
-	uniqueId, _ := uuid.NewUUID()
 	// create new task
-	conversionTask := asynq.NewTask(uniqueId.String(), ser, asynq.Retention(time.Hour*24*7*4))
+	conversionTask := asynq.NewTask("playlist:conversion", ser, asynq.Retention(time.Hour*24*7*4), asynq.Queue(queue.PlaylistConversionTask))
 	// enqueue the task
-	_, enqErr := c.Asynq.Enqueue(conversionTask)
+	taskInfo, enqErr := c.Asynq.Enqueue(conversionTask, asynq.Queue(queue.PlaylistConversionQueue), asynq.TaskID(uniqueId))
 	if enqErr != nil {
 		log.Printf("[controller][conversion][EchoConversion] - error enqueuing task: %v", enqErr)
 		return ctx.Status(http.StatusInternalServerError).JSON("error enqueuing task")
 	}
+
+	log.Printf("[controller][conversion][EchoConversion] - uunique id is %s\n", uniqueId)
+
+	log.Printf("[controller][conversion][EchoConversion] - task enqueued on queue: %s and taskid  %s\n", taskInfo.Queue, taskInfo.ID)
 
 	orchdioQueue := queue.NewOrchdioQueue(c.Asynq, c.AsynqServer, c.DB, c.Red)
 	// NB: THE SIDE EFFECT OF THIS IS THAT WHEN WE RESTART THE SERVER FOR EXAMPLE, WE LOSE
@@ -85,7 +92,7 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 	// CONVERSION HANDLER. WE SHOULD BE ABLE TO FIX THIS BY HAVING A HANDLER THAT
 	// ALWAYS RUNS AND FETCHES TASKS FROM A STORE AND ATTACH THEM TO A HANDLER.
 	// FIXME: more investigations
-	c.AsynqMux.HandleFunc(uniqueId.String(), orchdioQueue.PlaylistTaskHandler)
+	c.AsynqMux.HandleFunc("playlist:conversion", orchdioQueue.PlaylistTaskHandler)
 	//stErr := c.AsynqServer.Start(c.AsynqMux)
 	//if stErr != nil {
 	//	log.Printf("[controller][conversion][EchoConversion][error] - could not start Asynq server: %v", stErr)
@@ -93,7 +100,7 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 	//}
 
 	res := map[string]string{
-		"taskId": uniqueId.String(),
+		"taskId": uniqueId,
 	}
 	return util.SuccessResponse(ctx, http.StatusCreated, res)
 }

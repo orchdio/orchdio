@@ -4,7 +4,7 @@
 package main
 
 import (
-	"context"
+	context "context"
 	"fmt"
 	"github.com/antoniodipinto/ikisocket"
 	"github.com/go-redis/redis/v8"
@@ -33,9 +33,11 @@ import (
 	"orchdio/controllers/platforms"
 	"orchdio/controllers/webhook"
 	"orchdio/middleware"
+	"orchdio/queue"
 	"orchdio/universal"
 	"orchdio/util"
 	"os"
+	"os/signal"
 	"syscall"
 	"time"
 )
@@ -60,6 +62,11 @@ type SysInfo struct {
 	RAM      string `bson:"ram"`
 	Disk     string `bson:"disk"`
 }
+
+/**
+   ===========================================================
+  + Redis connections here
+*/
 
 func getInfo(ctx *fiber.Ctx) error {
 
@@ -95,12 +102,54 @@ func getInfo(ctx *fiber.Ctx) error {
 		"data":    response,
 	})
 }
+
+func taskErrorHandler(connOpts asynq.RedisClientOpt, err error) error {
+	log.Printf("Error in next router %v", err)
+	// get the PID of the asynq server and send it a kill signal to OS
+	// this is a hacky way to kill the asynq server
+	inspector := asynq.NewInspector(connOpts)
+	queueServer, err := inspector.Servers()
+
+	if err != nil {
+		log.Printf("Error getting queue server %v", err)
+		return err
+	}
+
+	// make sure we have a queue server
+	if len(queueServer) == 0 {
+		log.Printf("No queue server found")
+		return nil
+	}
+
+	v := queueServer[0].PID
+	p, err := os.FindProcess(v)
+	if err != nil {
+		log.Printf("Error finding process %v", err)
+		return err
+	}
+
+	// send task creation signal cancelation to the queue server
+	err = p.Signal(syscall.SIGINT)
+	if err != nil {
+		log.Printf("Error stopping new tasks%v", err)
+		return err
+	}
+
+	// shutdown the queue server itself.
+	err = p.Signal(syscall.SIGKILL)
+	if err != nil {
+		log.Printf("Error stopping queue server %v", err)
+		return err
+	}
+	return asynq.SkipRetry
+}
+
 func main() {
 
 	//engine := html.New("layouts", ".html")
 
 	// Database and cache setup things
-	envr := os.Getenv("ZOOVE_ENV")
+	envr := os.Getenv("ORCHDIO_ENV")
 	dbURL := os.Getenv("DATABASE_URL")
 	if envr != "production" {
 		dbURL = dbURL + "?sslmode=disable"
@@ -128,11 +177,6 @@ func main() {
 		DB: db,
 	}
 
-	/**
-	 ===========================================================
-	+ Redis connections here
-	*/
-
 	redisOpts, err := redis.ParseURL(os.Getenv("REDISCLOUD_URL"))
 	if err != nil {
 		log.Printf("Error parsing redis url")
@@ -158,9 +202,23 @@ func main() {
 	}
 
 	asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
-	asynqServer := asynq.NewServer(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password}, asynq.Config{Concurrency: 10, ShutdownTimeout: 3 * time.Second})
+	asynqServer := asynq.NewServer(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password},
+		asynq.Config{Concurrency: 10,
+			ShutdownTimeout: 3 * time.Second,
+			Queues: map[string]int{
+				"playlist-conversion": 5,
+			},
+			ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
+				err = taskErrorHandler(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password}, err)
+				if err != nil {
+					log.Printf("[main] [error] - Error in task error handler %v", err)
+					return
+				}
+			}),
+		})
 
 	asynqMux := asynq.NewServeMux()
+	asynqMux.Use(queue.LoggingMiddleware)
 	err = asynqServer.Start(asynqMux)
 	if err != nil {
 		log.Printf("Error starting asynq server")
@@ -176,7 +234,7 @@ func main() {
 
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: false,
-		AppName:               "Orchdio",
+		AppName:               os.Getenv("APP_NAME"),
 		DisableDefaultDate:    true,
 		ReadTimeout:           45 * time.Second,
 		WriteTimeout:          45 * time.Second,
@@ -220,8 +278,38 @@ func main() {
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, err.Error())
 		},
 	})
+	serverChan := make(chan os.Signal, 1)
+	signal.Notify(serverChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
+	// unpause the queue server
+	err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
+	if err != nil {
+		log.Printf("[main][Queue] Error unpausing queue %v", err)
+		_ = app.Shutdown()
+		return
+	}
 
-	//app.Use(fiberRecover.New(fiber.))
+	log.Printf("[main][Queue] Queue server unpaused...")
+
+	serverShutdown := make(chan struct{})
+
+	go func() {
+		_ = <-serverChan
+		log.Printf("[main] [info] - Shutting down server")
+		// inspector
+		// get all active tasks
+		err := inspector.PauseQueue(queue.PlaylistConversionQueue)
+		if err != nil {
+			log.Printf("Error pausing queue %v", err)
+			_ = app.Shutdown()
+			serverShutdown <- struct{}{}
+			return
+		}
+		log.Printf("[main] [info] - Paused queue...")
+		_ = app.Shutdown()
+		serverShutdown <- struct{}{}
+		log.Printf("[main] [info] - Queue pause successful. Server shutdown complete")
+	}()
 
 	userController = *account.NewUserController(db)
 	webhookController := account.NewWebhookController(db)
@@ -425,7 +513,8 @@ func main() {
 		log.Printf("Error starting server: %v\n", err)
 		os.Exit(1)
 	}
-
+	<-serverShutdown
+	log.Printf("[main] [info] - Cleaning up tasks: %s", port)
 }
 
 //

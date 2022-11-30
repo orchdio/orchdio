@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -58,6 +59,8 @@ func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 	// Responses:
 	//  200: redirectAuthResponse
 
+	// a list of valid urls to redirect to
+
 	var uniqueID, _ = uuid.NewUUID()
 	dz := &deezer.Deezer{
 		ClientID:     os.Getenv("DEEZER_ID"),
@@ -66,7 +69,6 @@ func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 	}
 
 	platform := strings.ToLower(ctx.Params("platform"))
-
 	if platform == "spotify" {
 		// now do spotify things here.
 		url := spotify.FetchAuthURL(uniqueID.String())
@@ -76,14 +78,14 @@ func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 		}
 
 		return util.SuccessResponse(ctx, http.StatusOK, fiber.Map{
-			"url": string(url),
+			"url": fmt.Sprintf("%s", url),
 		})
 	}
 
 	if platform == "deezer" {
 		url := dz.FetchAuthURL()
 		return util.SuccessResponse(ctx, http.StatusOK, fiber.Map{
-			"url": url,
+			"url": fmt.Sprintf("%s", url),
 		})
 	}
 
@@ -199,6 +201,25 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	}
 	token, err := util.SignJwt(claim)
 	redirectTo := os.Getenv("ZOOVE_AUTH_URL")
+
+	allowedOrigins := []string{
+		"https://orchdio.com",
+		"http://localhost:4044",
+		os.Getenv("ZOOVE_AUTH_URL"),
+		"https://zoove.xyz",
+		"https://www.zoove.xyz",
+		"https://api.orchdio.dev",
+		"https://api.orchdio.com",
+	}
+
+	// get the origin of the initial request
+	//origin := ctx.Get("Origin")
+	for _, origin := range allowedOrigins {
+		if origin == ctx.Get("Origin") {
+			redirectTo = origin
+			break
+		}
+	}
 
 	return ctx.Redirect(redirectTo + "?token=" + string(token))
 	//return util.SuccessResponse(ctx, http.StatusOK, string(token))
@@ -472,8 +493,11 @@ func (c *UserController) GenerateAPIKey(ctx *fiber.Ctx) error {
 	user, err := database.FindUserByEmail(claims.Email, claims.Platform)
 	existingKey, err := database.FetchUserApikey(user.Email)
 	if err != nil {
-		log.Printf("[controller][user][GenerateApiKey] could not fetch api key from db. %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		if err != sql.ErrNoRows {
+
+			log.Printf("[controller][user][GenerateApiKey] could not fetch api key from db. %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		}
 	}
 
 	// first check if the user already has an api key. if they do, return a
