@@ -6,7 +6,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
-	"github.com/teris-io/shortid"
 	"github.com/vicanso/go-axios"
 	"log"
 	"net/http"
@@ -66,28 +65,24 @@ func (o *OrchdioQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task
 		log.Printf("[queue][PlaylistConversionHandler][conversion] - error unmarshalling task payload: %v", err)
 		return err
 	}
-	cErr := o.PlaylistHandler(task.ResultWriter().TaskID(), data.LinkInfo, data.User.UUID.String())
+	cErr := o.PlaylistHandler(task.ResultWriter().TaskID(), data.ShortURL, data.LinkInfo, data.User.UUID.String())
 	if cErr != nil {
-		log.Printf("[queue][PlaylistConversionHandler][conversion] - error processing task: %v", cErr)
-		return asynq.SkipRetry
+		log.Printf("[queue][PlaylistConversionHandler][conversion] - error processing task in queue handler: %v", cErr)
+		if err == blueprint.EPHANTOMERR {
+			log.Printf("[queue][PlaylistConversionHandler][conversion] - phantom error, skipping but marking as done")
+			return nil
+		}
+		return cErr
 	}
 	return nil
 }
 
 // PlaylistHandler converts a playlist immediately.
-func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, developer string) error {
+func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.LinkInfo, developer string) error {
 	log.Printf("[queue][PlaylistHandler] - processing task: %v", uid)
 	database := db.NewDB{DB: o.DB}
 	log.Printf("[queue][PlaylistHandler] - processing playlist: %v %v %v\n", database, info, developer)
-	const format = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-"
-	sid, err := shortid.New(1, format, 2342)
 
-	if err != nil {
-		log.Printf("\n[controllers][platforms][ConvertTrack] - could not generate short id %v\n", err)
-		return err
-	}
-
-	shorturl, _ := sid.Generate()
 	// fetch user from database
 	user, err := database.FindUserByUUID(developer)
 	if err != nil {
@@ -95,8 +90,15 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, dev
 		return err
 	}
 
-	_taskId, dbErr := database.CreateOrUpdateTask(uid, shorturl, user.UUID.String(), info.EntityID)
-	taskId := string(_taskId)
+	//_taskId, dbErr := database.CreateOrUpdateTask(uid, shorturl, user.UUID.String(), info.EntityID)
+	//taskId := string(_taskId)
+	// get task from db
+	task, dbErr := database.FetchTask(uid)
+	if dbErr != nil {
+		log.Printf("[queue][PlaylistHandler] - could not find task: %v", dbErr)
+		return dbErr
+	}
+	taskId := task.UID.String()
 
 	if dbErr != nil {
 		log.Printf("[queue][EnqueueTask] - error creating or updating task: %v", dbErr)
@@ -119,18 +121,25 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, dev
 		return err
 	}
 
+	if h != nil {
+		status = "completed"
+	}
+
 	if status == "" {
 		log.Printf("[queue][PlaylistHandler] - updating task status to failed... skipping")
 		return nil
 	}
 
 	h.ShortURL = shorturl
+
+	log.Printf("[queue][PlaylistHandler] -shortlink gen is %v", status)
 	// serialize h
 	ser, mErr := json.Marshal(h)
 	if mErr != nil {
 		log.Printf("[queue][EnqueueTask] - error marshalling playlist conversion: %v", mErr)
 		return mErr
 	}
+	log.Printf("[queue][PlaylistHandler] - serialized data")
 	result, rErr := database.UpdateTask(taskId, string(ser))
 
 	if rErr != nil {
@@ -191,7 +200,8 @@ func (o *OrchdioQueue) PlaylistHandler(uid string, info *blueprint.LinkInfo, dev
 			return nil
 		}
 		log.Printf("[queue][PlaylistHandler] - error posting webhook to endpoint %s=%v", webhook.Url, evErr)
-		return evErr
+		// TODO: change this to return evErr
+		return nil
 	}
 
 	if re.Status != http.StatusOK {

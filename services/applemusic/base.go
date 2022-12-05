@@ -248,7 +248,7 @@ func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSe
 		Include:  "library",
 	})
 	if err != nil {
-		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error fetching playlist tracks: %v\n", err)
+		log.Printf("[services][applemusic][FetchPlaylistTrackList][error] - could not fetch playlist tracks: %v\n", err)
 		return nil, err
 	}
 
@@ -425,8 +425,22 @@ func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Cli
 
 func CreateNewPlaylist(title, description, musicToken string, tracks []string) ([]byte, error) {
 	log.Printf("[services][applemusic][CreateNewPlaylist] Creating new playlist: %v\n", title)
+	log.Printf("User Applemusic token is: %v\n", musicToken)
 	tp := applemusic.Transport{Token: os.Getenv("APPLE_MUSIC_API_KEY"), MusicUserToken: musicToken}
+
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[services][applemusic][CreateNewPlaylist] TP client creation here %v\n", r)
+		}
+	}()
+
 	client := applemusic.NewClient(tp.Client())
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("[services][applemusic][CreateNewPlaylist] Error creating playlist: %v\n", err)
+			return
+		}
+	}()
 	playlist, response, err := client.Me.CreateLibraryPlaylist(context.Background(), applemusic.CreateLibraryPlaylist{
 		Attributes: applemusic.CreateLibraryPlaylistAttributes{
 			Name:        title,
@@ -436,13 +450,22 @@ func CreateNewPlaylist(title, description, musicToken string, tracks []string) (
 	}, nil)
 
 	if err != nil {
-		log.Printf("[services][applemusic][CreateNewPlaylist] Error creating new playlist: %v\n", err)
-		return nil, err
+		log.Printf("[services][applemusic][CreateNewPlaylist][error] - could not create new playlist: %v\n", err)
 	}
 
-	if response.StatusCode != 201 {
-		log.Printf("[services][applemusic][CreateNewPlaylist] Error creating new playlist: %v\n", err)
-		return nil, err
+	if response.Response.StatusCode == 403 {
+		log.Printf("[services][applemusic][CreateNewPlaylist][error] - unauthorized: %v\n", err)
+		return nil, blueprint.EFORBIDDEN
+	}
+
+	if response.Response.StatusCode == 401 {
+		log.Printf("[services][applemusic][CreateNewPlaylist][error] - unauthorized: %v\n", err)
+		return nil, blueprint.EUNAUTHORIZED
+	}
+
+	if response.Response.StatusCode == 400 {
+		log.Printf("[services][applemusic][CreateNewPlaylist][error] - bad request: %v\n", err)
+		return nil, blueprint.EBADREQUEST
 	}
 
 	// add the tracks to the playlist

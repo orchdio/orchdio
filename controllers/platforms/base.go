@@ -240,7 +240,11 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		pl, err := applemusic.CreateNewPlaylist(createBodyData.Title, description, string(t), createBodyData.Tracks)
 		playlistlink = string(pl)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error creating new playlist - %v\n", err)
+			log.Printf("\n[controllers][platforms][AddPlaylistToAccount][error] - an error occurred while adding playlist to user platform account - %v\n", err)
+			if err == blueprint.EFORBIDDEN {
+				log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error creating new playlist - %v\n", err)
+				return util.ErrorResponse(ctx, http.StatusForbidden, err)
+			}
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 		}
 	}

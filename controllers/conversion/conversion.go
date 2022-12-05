@@ -3,11 +3,13 @@ package conversion
 import (
 	"database/sql"
 	"encoding/json"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
+	"github.com/teris-io/shortid"
 	"github.com/vmihailenco/taskq/v3"
 	"log"
 	"net/http"
@@ -15,6 +17,7 @@ import (
 	"orchdio/db"
 	"orchdio/queue"
 	"orchdio/util"
+	"os"
 	"strings"
 	"time"
 )
@@ -54,11 +57,20 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 	user := ctx.Locals("user").(*blueprint.User)
 	linkInfo := ctx.Locals("linkInfo").(*blueprint.LinkInfo)
 	uniqueId := uuid.New().String()
+	const format = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-"
+	sid, err := shortid.New(1, format, 2342)
+	if err != nil {
+		log.Printf("\n[controllers][platforms][ConvertTrack] - could not generate short id %v\n", err)
+		return err
+	}
+
+	shorturl, _ := sid.Generate()
 
 	taskData := &blueprint.PlaylistTaskData{
 		LinkInfo: linkInfo,
 		User:     user,
 		TaskID:   uniqueId,
+		ShortURL: shorturl,
 	}
 
 	if !strings.Contains(linkInfo.Entity, "playlist") {
@@ -76,32 +88,96 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 	// create new task
 	conversionTask := asynq.NewTask("playlist:conversion", ser, asynq.Retention(time.Hour*24*7*4), asynq.Queue(queue.PlaylistConversionTask))
 	// enqueue the task
-	taskInfo, enqErr := c.Asynq.Enqueue(conversionTask, asynq.Queue(queue.PlaylistConversionQueue), asynq.TaskID(uniqueId))
+	enquedTask, enqErr := c.Asynq.Enqueue(conversionTask, asynq.Queue(queue.PlaylistConversionQueue), asynq.TaskID(taskData.TaskID), asynq.Unique(time.Second*60))
 	if enqErr != nil {
 		log.Printf("[controller][conversion][EchoConversion] - error enqueuing task: %v", enqErr)
 		return ctx.Status(http.StatusInternalServerError).JSON("error enqueuing task")
 	}
 
-	log.Printf("[controller][conversion][EchoConversion] - uunique id is %s\n", uniqueId)
-
-	log.Printf("[controller][conversion][EchoConversion] - task enqueued on queue: %s and taskid  %s\n", taskInfo.Queue, taskInfo.ID)
-
+	database := db.NewDB{DB: c.DB}
+	redisOpts, err := redis.ParseURL(os.Getenv("REDISCLOUD_URL"))
+	if err != nil {
+		log.Printf("[controller][conversion][EchoConversion] - error parsing redis url: %v", err)
+		return ctx.Status(http.StatusInternalServerError).JSON("error parsing redis url")
+	}
+	//
+	_taskId, dbErr := database.CreateOrUpdateTask(enquedTask.ID, shorturl, user.UUID.String(), linkInfo.EntityID)
+	if dbErr != nil {
+		log.Printf("[controller][conversion][EchoConversion] - error creating task: %v", dbErr)
+		return ctx.Status(http.StatusInternalServerError).JSON("error creating task")
+	}
 	orchdioQueue := queue.NewOrchdioQueue(c.Asynq, c.AsynqServer, c.DB, c.Red)
+
+	res := map[string]string{
+		"taskId": string(_taskId),
+	}
+
 	// NB: THE SIDE EFFECT OF THIS IS THAT WHEN WE RESTART THE SERVER FOR EXAMPLE, WE LOSE
 	// THE HANDLER ATTACHED. THIS IS BECAUSE WE'RE TRIGGERING THE HANDLER HERE IN THE
 	// CONVERSION HANDLER. WE SHOULD BE ABLE TO FIX THIS BY HAVING A HANDLER THAT
 	// ALWAYS RUNS AND FETCHES TASKS FROM A STORE AND ATTACH THEM TO A HANDLER.
 	// FIXME: more investigations
-	c.AsynqMux.HandleFunc("playlist:conversion", orchdioQueue.PlaylistTaskHandler)
-	//stErr := c.AsynqServer.Start(c.AsynqMux)
-	//if stErr != nil {
-	//	log.Printf("[controller][conversion][EchoConversion][error] - could not start Asynq server: %v", stErr)
-	//	return util.ErrorResponse(ctx, http.StatusInternalServerError, "could not start Asynq server")
-	//}
+	defer func() error {
+		// handle panic
+		if r := recover(); r != nil {
+			log.Printf("[controller][conversion][EchoConversion] - gracefully ignoring this")
+			log.Printf("[controller][conversion][EchoConversion] - task already queued%v", r)
+			inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
+			// get the task
+			task, err := inspector.GetTaskInfo(queue.PlaylistConversionQueue, enquedTask.ID)
+			if err != nil {
+				log.Printf("[controller][conversion][EchoConversion] - error getting task info: %v", err)
+				return err
+			}
+			log.Printf("[controller][conversion][EchoConversion] - task info:")
+			spew.Dump(task)
+			queueInfo, err := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
+			if err != nil {
+				log.Printf("[controller][conversion][EchoConversion] - error getting queue info: %v", err)
+				return err
+			}
+			log.Printf("[controller][conversion][EchoConversion] - dumped task info")
+			spew.Dump(task)
 
-	res := map[string]string{
-		"taskId": uniqueId,
-	}
+			// get the task from the db
+			//taskRecord, err := database.FetchTask(string(_taskId))
+			if err != nil {
+				log.Printf("[controller][conversion][EchoConversion][error] - could not fetch task record from DB. Fatal error%v", err)
+				return err
+			}
+
+			// update the task to success. because this seems to be a race condition in production where
+			// it duplicates task scheduling even though the task is already queued
+			// update task to success
+			err = database.UpdateTaskStatus(enquedTask.ID, "pending")
+			if err != nil {
+				log.Printf("[controller][conversion][EchoConversion] - error unmarshalling task data: %v", err)
+			}
+
+			if queueInfo.Paused {
+				log.Printf("[controller][conversion][EchoConversion] - queue is paused. resuming it")
+				err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
+				if err != nil {
+					log.Printf("[controller][conversion][EchoConversion] - error resuming queue: ")
+					spew.Dump(err)
+				}
+				log.Printf("[controller][conversion][EchoConversion] - queue resumed")
+			}
+			//
+			//log.Printf("Dumped task info")
+			//spew.Dump(queueInfo)
+
+			log.Printf("[controller][conversion][EchoConversion] - task updated to success")
+			if r.(string) == "asynq: multiple registrations for playlist:conversion" {
+				log.Printf("[controller][conversion][EchoConversion] - task already queued")
+			}
+		}
+		log.Printf("[controller][conversion][EchoConversion] - recovered from panic.. task already queued")
+
+		return util.SuccessResponse(ctx, http.StatusOK, res)
+	}()
+	c.AsynqMux.HandleFunc("playlist:conversion", orchdioQueue.PlaylistTaskHandler)
+	log.Printf("[controller][conversion][EchoConversion] - task handler attached")
 	return util.SuccessResponse(ctx, http.StatusCreated, res)
 }
 

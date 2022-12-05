@@ -5,10 +5,8 @@ package main
 
 import (
 	context "context"
-	"encoding/json"
 	"fmt"
 	"github.com/antoniodipinto/ikisocket"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
@@ -212,49 +210,67 @@ func main() {
 				"playlist-conversion": 5,
 			},
 			ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
-				log.Printf("[main] Error processing task %v", err)
-				spew.Dump(task)
-
-				// get the task id
-				var taskData blueprint.PlaylistTaskData
-				err = json.Unmarshal(task.Payload(), &taskData)
+				log.Printf("[main][QueueErrorHandler] Task error handler issue here%v", err)
+				// check that the queue isnt paused
+				queueInfo, err := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
 				if err != nil {
-					log.Printf("[main] [TaskErrorHandler] Error unmarshalling task payload %v", err)
+					log.Printf("[main] [QueueErrorHandler] Error getting queue info %v", err)
 					return
 				}
 
-				// get the task queue info
-				queueInfo, err := inspector.GetTaskInfo(queue.PlaylistConversionQueue, taskData.TaskID)
-
-				if err != nil {
-					log.Printf("[main] [TaskErrorHandler] Error getting task info %v", err)
+				log.Printf("[main] [QueueErrorHandler] Queue info %v", queueInfo)
+				//spew.Dump(queueInfo)
+				if queueInfo.Paused {
+					log.Printf("Queue is paused")
+					err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
 					return
 				}
-
-				log.Printf("[main] [TaskErrorHandler] Task info\n")
-				spew.Dump(queueInfo)
-
-				// pause the queue if its not paused
-				if queueInfo.State.String() == "active" {
-					log.Printf("[main] [TaskErrorHandler] Pausing queue %v", queue.PlaylistConversionQueue)
-					err = inspector.PauseQueue(queue.PlaylistConversionQueue)
-				}
-
-				// archive the task
-				err = inspector.ArchiveTask(queue.PlaylistConversionQueue, taskData.TaskID)
-				if err != nil {
-					log.Printf("[main] [TaskErrorHandler] Error archiving task %v", err)
-					return
-				}
-				// get task info and check if its archived
-				taskInfo, err := inspector.GetTaskInfo(queue.PlaylistConversionQueue, taskData.TaskID)
-				if err != nil {
-					log.Printf("[main] [TaskErrorHandler] Error getting task info %v", err)
-					return
-				}
-
-				spew.Dump(taskInfo)
+				log.Printf("[main] [QueueErrorHandler] Queue is not paused but an error occured")
 			}),
+			//ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
+			//	log.Printf("[main] Error processing task %v", err)
+			//	spew.Dump(task)
+			//
+			//	// get the task id
+			//	var taskData blueprint.PlaylistTaskData
+			//	err = json.Unmarshal(task.Payload(), &taskData)
+			//	if err != nil {
+			//		log.Printf("[main] [TaskErrorHandler] Error unmarshalling task payload %v", err)
+			//		return
+			//	}
+			//
+			//	// get the task queue info
+			//	queueInfo, err := inspector.GetTaskInfo(queue.PlaylistConversionQueue, taskData.TaskID)
+			//
+			//	if err != nil {
+			//		log.Printf("[main] [TaskErrorHandler] Error getting task info %v", err)
+			//		return
+			//	}
+			//
+			//	log.Printf("[main] [TaskErrorHandler] Task info\n")
+			//	spew.Dump(queueInfo)
+			//
+			//	// pause the queue if its not paused
+			//	if queueInfo.State.String() == "active" {
+			//		log.Printf("[main] [TaskErrorHandler] Pausing queue %v", queue.PlaylistConversionQueue)
+			//		err = inspector.PauseQueue(queue.PlaylistConversionQueue)
+			//	}
+			//
+			//	// archive the task
+			//	err = inspector.ArchiveTask(queue.PlaylistConversionQueue, taskData.TaskID)
+			//	if err != nil {
+			//		log.Printf("[main] [TaskErrorHandler] Error archiving task %v", err)
+			//		return
+			//	}
+			//	// get task info and check if its archived
+			//	taskInfo, err := inspector.GetTaskInfo(queue.PlaylistConversionQueue, taskData.TaskID)
+			//	if err != nil {
+			//		log.Printf("[main] [TaskErrorHandler] Error getting task info %v", err)
+			//		return
+			//	}
+			//
+			//	spew.Dump(taskInfo)
+			//}),
 		})
 
 	asynqMux := asynq.NewServeMux()

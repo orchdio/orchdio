@@ -1,8 +1,15 @@
 package queries
 
-const CreateUserQuery = `WITH user_rec as ( INSERT INTO "users"(email, username, uuid, refresh_token, platform_id, created_at, updated_at) VALUES($1, $2, $3, $4, $5, now(), now()) ON CONFLICT("email")  DO UPDATE
+const CreateUserQuery = `WITH user_rec as ( INSERT INTO "users"(email, username, uuid, refresh_token, platform_id, created_at, updated_at) VALUES($1, $2, $3, $4, $5, now(), now())
+ON CONFLICT("email")  DO UPDATE
 SET email=EXCLUDED.email, username=EXCLUDED.username, refresh_token=$4, platform_id=$5, updated_at=now() RETURNING email, uuid)
 			SELECT * from user_rec;`
+
+//const UpdateUserPlatformToken = `UPDATE "users" SET spotify_token =
+//    (case when $1 = 'spotify' then spotify_token = $2 end),
+//                   applemusic_token = (case when $1 = 'apple' then applemusic_token = $2 end),
+//                   deezer_token = (case when $1 = 'deezer' then deezer_token = $2 end),
+//                   tidal_token = (case when $1 = 'tidal' then tidal_token = $2 end) WHERE uuid = $3`
 
 const UpdatePlatformUsernames = `UPDATE users SET usernames = COALESCE(usernames::JSONB, '{}') || $2 WHERE email = $1;`
 

@@ -28,6 +28,9 @@ var (
 	EALREADY_EXISTS  = errors.New("already exists")
 	EPHANTOMERR      = errors.New("unexpected error")
 	ERRTOOMANY       = errors.New("too many parameters")
+	EFORBIDDEN       = errors.New("403 Forbidden")
+	EUNAUTHORIZED    = errors.New("401 Unauthorized")
+	EBADREQUEST      = errors.New("400 Bad Request")
 )
 
 var (
@@ -195,6 +198,7 @@ type PlaylistConversion struct {
 	Owner         string                     `json:"owner"`
 	Cover         string                     `json:"cover"`
 	ShortURL      string                     `json:"short_url,omitempty"`
+	Entity        string                     `json:"entity"`
 }
 
 type TrackConversion struct {
@@ -326,6 +330,7 @@ type PlaylistTaskData struct {
 	LinkInfo *LinkInfo `json:"link_info"`
 	User     *User     `json:"user"`
 	TaskID   string    `json:"task_id"`
+	ShortURL string    `json:"short_url"`
 }
 
 // TaskRecord representsUs a task record in the database

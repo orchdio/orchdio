@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/go-redis/redis/v8"
 	"github.com/nleeper/goment"
 	"github.com/samber/lo"
@@ -296,7 +295,6 @@ func FetchPlaylistInfo(id string) (*PlaylistInfo, error) {
 		return nil, err
 	}
 	log.Printf("\n[controllers][platforms][tidal][FetchPlaylistInfo] - response -\n")
-	spew.Dump(response.Data)
 	playlistInfo := &PlaylistInfo{}
 	err = json.Unmarshal(response.Data, playlistInfo)
 	if err != nil {
