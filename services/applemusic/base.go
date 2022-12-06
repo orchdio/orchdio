@@ -60,7 +60,7 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 
 	track := &blueprint.TrackSearchResult{
 		URL:      info.TargetLink,
-		Artistes: []string{t.Attributes.ArtistName},
+		Artists:  []string{t.Attributes.ArtistName},
 		Released: t.Attributes.ReleaseDate,
 		Duration: util.GetFormattedDuration(int(t.Attributes.DurationInMillis / 1000)),
 		Explicit: false,
@@ -140,7 +140,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	coverURL := strings.ReplaceAll(t.Attributes.Artwork.URL, "{w}x{h}bb.jpg", "150x150bb.jpg")
 
 	track := &blueprint.TrackSearchResult{
-		Artistes: []string{t.Attributes.ArtistName},
+		Artists:  []string{t.Attributes.ArtistName},
 		Released: t.Attributes.ReleaseDate,
 		Duration: util.GetFormattedDuration(int(t.Attributes.DurationInMillis / 1000)),
 		Explicit: false, // apple doesnt seem to return explict content value for songs
@@ -157,7 +157,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 		return nil, err
 	}
 
-	if lo.Contains(track.Artistes, artiste) {
+	if lo.Contains(track.Artists, artiste) {
 		err = red.MSet(context.Background(), map[string]interface{}{
 			identifierHash: string(serializedTrack),
 		}).Err()
@@ -301,7 +301,7 @@ func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSe
 
 		tracks = append(tracks, blueprint.TrackSearchResult{
 			URL:      trackAttr.URL,
-			Artistes: []string{trackAttr.ArtistName},
+			Artists:  []string{trackAttr.ArtistName},
 			Released: trackAttr.ReleaseDate,
 			Duration: util.GetFormattedDuration(int(trackAttr.DurationInMillis / 1000)),
 			Explicit: false,
@@ -365,7 +365,7 @@ func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSe
 		coverURL = strings.ReplaceAll(singleTrack.Attributes.Artwork.Url, "{w}x{h}bb.jpg", "300x300bb.jpg")
 		track := &blueprint.TrackSearchResult{
 			URL:      singleTrack.Attributes.Url,
-			Artistes: []string{singleTrack.Attributes.ArtistName},
+			Artists:  []string{singleTrack.Attributes.ArtistName},
 			Released: singleTrack.Attributes.ReleaseDate,
 			Duration: util.GetFormattedDuration(singleTrack.Attributes.DurationInMillis / 1000),
 			Explicit: false,
@@ -412,7 +412,7 @@ func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Cli
 	for _, track := range p.Tracks {
 		trackSearch = append(trackSearch, blueprint.PlatformSearchTrack{
 			Title:    track.Title,
-			Artistes: track.Artistes,
+			Artistes: track.Artists,
 		})
 	}
 	tracks, omittedTracks, err := FetchTracks(trackSearch, red)

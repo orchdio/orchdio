@@ -27,15 +27,13 @@ type OrchQueue struct {
 }
 type OrchdioQueue struct {
 	AsynqClient *asynq.Client
-	AsynqServer *asynq.Server
 	DB          *sqlx.DB
 	Red         *redis.Client
 }
 
-func NewOrchdioQueue(asynqClient *asynq.Client, asynqServer *asynq.Server, db *sqlx.DB, red *redis.Client) *OrchdioQueue {
+func NewOrchdioQueue(asynqClient *asynq.Client, db *sqlx.DB, red *redis.Client) *OrchdioQueue {
 	return &OrchdioQueue{
 		AsynqClient: asynqClient,
-		AsynqServer: asynqServer,
 		DB:          db,
 		Red:         red,
 	}
@@ -58,6 +56,9 @@ func (o *OrchdioQueue) NewPlaylistQueue(entityID string, payload *blueprint.Link
 // PlaylistTaskHandler is the handler method for processing playlist conversion tasks.
 func (o *OrchdioQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task) error {
 	log.Printf("[queue][PlaylistTaskHandler] - processing task")
+
+	log.Printf("[queue][PlaylistTaskHandler] - task context info: %v", ctx)
+	//handlerChan := make(chan int)
 	// deserialize the task payload and get the PlaylistTaskData struct
 	var data blueprint.PlaylistTaskData
 	err := json.Unmarshal(task.Payload(), &data)
@@ -74,6 +75,7 @@ func (o *OrchdioQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task
 		}
 		return cErr
 	}
+
 	return nil
 }
 
@@ -130,7 +132,8 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 		return nil
 	}
 
-	h.ShortURL = shorturl
+	h.Meta.ShortURL = shorturl
+	h.Meta.Entity = "playlist"
 
 	log.Printf("[queue][PlaylistHandler] -shortlink gen is %v", status)
 	// serialize h
@@ -218,9 +221,22 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 func LoggingMiddleware(h asynq.Handler) asynq.Handler {
 	return asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
 		start := time.Now()
-		log.Printf("Start processing %q", t.ResultWriter().TaskID())
+		log.Printf("[Queue][LoggerMiddleware] Started processing task %q", t.ResultWriter().TaskID())
 		err := h.ProcessTask(ctx, t)
 		if err != nil {
+			// this block checks for tasks that are orphaned —they died mid-processing. from here, next time these errors are encountered, they will throw
+			// a ENORESULT error which is an Orchdio error that specifies that no result could be found for the action. This error will then
+			// be attached to this orphaned task and marked to be retried.
+			// then next time that the task is processed, the error handler method on the queue would be called (main.go, asyncServer declaration)
+			// and the task would then be directly processed and ran normally, updating in record etc. If there's a success, then the task is marked as
+			// done in the db and the queue but if error, then it'll retry and retry cycle happens. This feels like a workaround but at the same time strongly feels
+			// like the best way to handle this.
+			handlerNotFoundErr := asynq.NotFound(ctx, t)
+			if handlerNotFoundErr != nil {
+				log.Printf("[queue][LoggingMiddleware] - Error is a handler not found error %v", handlerNotFoundErr)
+				return blueprint.ENORESULT
+			}
+			log.Printf("[queue][LoggingMiddleware] - error processing task: %v", err)
 			return err
 		}
 		log.Printf("Finished processing %q: Elapsed Time = %v", t.Type(), time.Since(start))

@@ -92,7 +92,7 @@ func (d *NewDB) UnRevokeApiKey(key string) error {
 	log.Printf("[db][UnRevokeApiKey] Running query %s %s\n", queries.UnRevokeApiKey, key)
 	_, err := d.DB.Exec(queries.UnRevokeApiKey, key)
 	if err != nil {
-		log.Printf("[db][UnRevokeApiKey] error executing query %s.\n %v\n %s, %s\n", queries.RevokeApiKey, err, key)
+		log.Printf("[db][UnRevokeApiKey] error executing query %s.\n %v\n\n", queries.RevokeApiKey, err)
 		return err
 	}
 	log.Printf("[db][UnRevokeApiKey] Ran query %s\n", queries.UnRevokeApiKey)
@@ -197,11 +197,25 @@ func (d *NewDB) FetchUserWithApiKey(key string) (*blueprint.User, error) {
 // UpdateUserWebhook updates a user's webhook
 func (d *NewDB) UpdateUserWebhook(user, url, verifyToken string) error {
 	log.Printf("[db][UpdateUserWebhook] Running query %s with '%s', '%s' \n", queries.UpdateUserWebhook, user, url)
-	_, execErr := d.DB.Exec(queries.UpdateUserWebhook, url, user, verifyToken)
+	// temporary struct to deserialize the record update into.
+	// not creating inside blueprint because its small and used here alone. if this changes, move to blueprint
+	webhookUpdate := &struct {
+		UUID uuid.UUID `json:"uuid" db:"uuid"`
+	}{}
+
+	updatedWH := d.DB.QueryRowx(queries.UpdateUserWebhook, url, user, verifyToken)
+	execErr := updatedWH.StructScan(webhookUpdate)
+
 	if execErr != nil {
 		log.Printf("[db][UpdateUserWebhook] error updating user webhook. %v\n", execErr)
 		return execErr
 	}
+
+	if webhookUpdate.UUID.String() == "" {
+		log.Printf("[db][UpdateUserWebhook][error] no webhook to update for this user")
+		return sql.ErrNoRows
+	}
+	
 	log.Printf("[db][UpdateUserWebhook] updated user webhook\n")
 	return nil
 }

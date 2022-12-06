@@ -27,9 +27,14 @@ func NewWebhookController(db *sqlx.DB, red *redis.Client) *Controller {
 	}
 }
 
+func (c *Controller) AuthenticateWebhook(ctx *fiber.Ctx) error {
+	log.Printf("[controller][webhook][Handle] - GET request to check webhook is valid")
+	return ctx.SendStatus(http.StatusOK)
+}
+
 func (c *Controller) Handle(ctx *fiber.Ctx) error {
 	claims := ctx.Locals("developer").(*blueprint.OrchdioUserToken)
-	if ctx.Method() != "POST" {
+	if ctx.Method() == "GET" {
 		log.Printf("[controller][webhook][Handle] - GET request. Might be webhook verification")
 		return ctx.SendStatus(http.StatusOK)
 	}

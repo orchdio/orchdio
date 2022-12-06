@@ -55,7 +55,7 @@ func SearchWithID(id string, red *redis.Client) (*blueprint.TrackSearchResult, e
 
 		searchResult := blueprint.TrackSearchResult{
 			URL:      tracks.URL,
-			Artistes: artistes,
+			Artists:  artistes,
 			Released: tracks.StreamStartDate,
 			Duration: util.GetFormattedDuration(tracks.Duration),
 			Explicit: tracks.Explicit,
@@ -195,7 +195,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 
 		tidalTrack := &blueprint.TrackSearchResult{
 			URL:      track.Url,
-			Artistes: artistes,
+			Artists:  artistes,
 			Released: track.StreamStartDate,
 			Duration: util.GetFormattedDuration(track.Duration),
 			Explicit: track.Explicit,
@@ -212,7 +212,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 			return nil, err
 		}
 
-		if lo.Contains(tidalTrack.Artistes, artiste) {
+		if lo.Contains(tidalTrack.Artists, artiste) {
 			err = red.MSet(context.Background(), map[string]interface{}{
 				identifierHash: string(serialized),
 			}).Err()
@@ -421,7 +421,7 @@ func FetchPlaylist(id string, red *redis.Client) (*PlaylistInfo, *blueprint.Play
 		}
 		t := blueprint.TrackSearchResult{
 			URL:      item.Item.Url,
-			Artistes: artistes,
+			Artists:  artistes,
 			Released: item.Item.StreamStartDate,
 			Duration: util.GetFormattedDuration(item.Item.Duration),
 			Explicit: item.Item.Explicit,
@@ -487,7 +487,7 @@ func FetchTrackWithResult(p *blueprint.PlaylistSearchResult, red *redis.Client) 
 	for _, track := range p.Tracks {
 		trackSearch = append(trackSearch, blueprint.PlatformSearchTrack{
 			Title:    track.Title,
-			Artistes: track.Artistes,
+			Artistes: track.Artists,
 			URL:      track.URL,
 			ID:       track.ID,
 		})
@@ -555,4 +555,83 @@ func FetchNewAuthToken() (string, error) {
 		return "", err
 	}
 	return refresh.AccessToken, nil
+}
+
+// https://listen.tidal.com/v2/my-collection/playlists/folders/create-playlist?description=&folderId=root&isPublic=false&name=xxxxx&countryCode=US&locale=en_US&deviceType=BROWSER - create playlist PUT
+// https://listen.tidal.com/v2/my-collection/playlists/folders/remove?trns=trn:playlist:a4a41a8c-a14e-4e60-b671-5f23f07a8a7d&countryCode=US&locale=en_US&deviceType=BROWSER - delete playlist. params in the format, encoded: trns:playlist:playlist_id PUT
+
+func CreateNewPlaylist(title, description, musicToken string, tracks []string) ([]byte, error) {
+	log.Printf("\n[services][tidal][CreateNewPlaylist] - creating new playlist - %v\n", title)
+	accessToken, err := FetchNewAuthToken()
+	if err != nil {
+		log.Printf("\n[services][tidal][CreateNewPlaylist] - error fetching new auth token - %v\n", err)
+		return nil, err
+	}
+
+	instance := axios.NewInstance(&axios.InstanceConfig{
+		BaseURL: "https://listen.tidal.com/v2/my-collection/playlists/folders/",
+		Headers: map[string][]string{
+			"Content-Type":  {"application/x-www-form-urlencoded"},
+			"Authorization": {fmt.Sprintf("Bearer %s", accessToken)},
+		},
+	})
+	p := url.Values{}
+	p.Add("description", description)
+	p.Add("folderId", "root")
+	p.Add("isPublic", "true")
+	p.Add("name", title)
+	p.Add("countryCode", "US")
+	p.Add("locale", "en_US")
+	p.Add("deviceType", "BROWSER")
+
+	inst, err := instance.Post("create-playlist", p)
+	if err != nil {
+		log.Printf("\n[services][tidal][CreateNewPlaylist] - error creating playlist - %v\n", err)
+		return nil, err
+	}
+
+	if inst.Status != 200 {
+		log.Printf("\n[services][tidal][CreateNewPlaylist] - error creating playlist - %v\n", err)
+		return nil, err
+	}
+
+	playlist := &CreatePlaylistResponse{}
+	err = json.Unmarshal(inst.Data, playlist)
+	if err != nil {
+		log.Printf("\n[services][tidal][CreateNewPlaylist] - error parsing playlist response - %v\n", err)
+		return nil, err
+	}
+
+	// now add tracks to the playlist. the tracks are added in a url encoded format, with property of trackIds and can take multiple values. the api endpoint is like: https://listen.tidal.com/v1/playlists/287fae69-37f0-40cf-b95f-52d8a3173530/items?countryCode=US&locale=en_US&deviceType=BROWSER
+
+	instance = axios.NewInstance(&axios.InstanceConfig{
+		BaseURL: "https://listen.tidal.com/v1/playlists/",
+		Headers: map[string][]string{
+			"Content-Type":  {"application/x-www-form-urlencoded"},
+			"Authorization": {fmt.Sprintf("Bearer %s", accessToken)},
+		},
+	})
+	p = url.Values{}
+	for _, track := range tracks {
+		p.Add("trackIds", track)
+	}
+
+	inst, err = instance.Post(fmt.Sprintf("%s/items", playlist.Data.Uuid), p)
+	if err != nil {
+		log.Printf("\n[services][tidal][CreateNewPlaylist] - error adding tracks to playlist - %v\n", err)
+		return nil, err
+	}
+
+	if inst.Status != 200 {
+		log.Printf("\n[services][tidal][CreateNewPlaylist] - error adding tracks to playlist - %v\n", err)
+		return nil, err
+	}
+
+	itemRes := &PlaylistItemAdditionResponse{}
+	err = json.Unmarshal(inst.Data, itemRes)
+	if err != nil {
+		log.Printf("\n[services][tidal][CreateNewPlaylist] - error parsing playlist item addition response - %v\n", err)
+		return nil, err
+	}
+	return []byte(playlist.Data.Uuid), nil
 }

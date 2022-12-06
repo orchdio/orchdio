@@ -65,7 +65,7 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 		}
 		return &blueprint.TrackSearchResult{
 			URL:      info.TargetLink,
-			Artistes: artistes,
+			Artists:  artistes,
 			Released: "",
 			Duration: util.GetFormattedDuration(track.Duration),
 			Explicit: false,
@@ -149,7 +149,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 
 	result := &blueprint.TrackSearchResult{
 		URL:      fmt.Sprintf("https://music.youtube.com/watch?v=%s", track.VideoID),
-		Artistes: artistes,
+		Artists:  artistes,
 		Released: "",
 		Duration: util.GetFormattedDuration(track.Duration),
 		Explicit: track.IsExplicit,

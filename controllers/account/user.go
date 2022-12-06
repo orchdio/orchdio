@@ -160,8 +160,10 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	}
 	log.Printf("%v", user)
 
+	userProfile := &blueprint.User{}
+
 	query := queries.CreateUserQuery
-	_, dbErr := c.DB.Exec(
+	newUser := c.DB.QueryRowx(
 		query,
 		user.Email,
 		user.DisplayName,
@@ -169,6 +171,8 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 		encryptedRefreshToken,
 		user.ID,
 	)
+
+	dbErr := newUser.StructScan(&userProfile)
 
 	if dbErr != nil {
 		log.Printf("\n[controller][account][user][spotify]: [AuthUser] Error executing query: %v\n", dbErr)
@@ -196,7 +200,7 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	claim := &blueprint.OrchdioUserToken{
 		Email:    user.Email,
 		Username: user.DisplayName,
-		UUID:     uniqueID,
+		UUID:     userProfile.UUID,
 		Platform: "spotify",
 	}
 	token, err := util.SignJwt(claim)
@@ -289,18 +293,12 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 	}
 
-	// for lack of better naming. thisn is the "temp" struct that we're scanning the result of the db upsert into
-	profScan := struct {
-		Email    string
-		Username string
-		UUID     uuid.UUID
-	}{}
-
+	userProfile := &blueprint.User{}
 	// TODO: here, check if the user is already in the DB, in that case, we just update platform username
 
 	log.Printf("[user][controller][AuthDeezerUser] Running create user query: '%s' with '%s', '%s', '%s' \n", queries.CreateUserQuery, user.Email, user.Name, uniqueID)
 	deezerID := strconv.Itoa(user.ID)
-	userProfile := c.DB.QueryRowx(queries.CreateUserQuery,
+	newUser := c.DB.QueryRowx(queries.CreateUserQuery,
 		user.Email,
 		user.Name,
 		uniqueID,
@@ -308,7 +306,7 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 		deezerID,
 	)
 
-	scanErr := userProfile.StructScan(&profScan)
+	scanErr := newUser.StructScan(userProfile)
 
 	if scanErr != nil {
 		log.Printf("[user][controller][AuthDeezerUser] could not upsert createUserQuery. %v\n", scanErr)
@@ -336,7 +334,7 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 	claims := &blueprint.OrchdioUserToken{
 		Email:    user.Email,
 		Username: user.Name,
-		UUID:     profScan.UUID,
+		UUID:     userProfile.UUID,
 		Platform: "deezer",
 	}
 
@@ -391,8 +389,9 @@ func (c *UserController) AuthAppleMusicUser(ctx *fiber.Ctx) error {
 	}
 	// get the hash as a string
 	hashedEmail := hex.EncodeToString(hash.Sum(nil))
-
-	_, err = c.DB.Exec(queries.CreateUserQuery, bod.Email, displayname, uniqueID, encryptedRefreshToken, hashedEmail)
+	userProfile := &blueprint.User{}
+	newUser := c.DB.QueryRowx(queries.CreateUserQuery, bod.Email, displayname, uniqueID, encryptedRefreshToken, hashedEmail)
+	err = newUser.StructScan(userProfile)
 	if err != nil {
 		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error creating user: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
@@ -492,7 +491,7 @@ func (c *UserController) GenerateAPIKey(ctx *fiber.Ctx) error {
 	// first fetch user
 	user, err := database.FindUserByEmail(claims.Email, claims.Platform)
 	existingKey, err := database.FetchUserApikey(user.Email)
-	if err != nil {
+	if err != nil && err != sql.ErrNoRows {
 		if err != sql.ErrNoRows {
 
 			log.Printf("[controller][user][GenerateApiKey] could not fetch api key from db. %v\n", err)
@@ -516,7 +515,7 @@ func (c *UserController) GenerateAPIKey(ctx *fiber.Ctx) error {
 	)
 
 	if dbErr != nil {
-		log.Printf("\n[controller][account][user] : [AuthUser] Error executing query: %v\n. Could not create new key", dbErr)
+		log.Printf("\n[controller][account][user][AuthUser] Error executing query: %v\n. Could not create new key", dbErr)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 	}
 

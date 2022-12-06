@@ -5,6 +5,8 @@ package main
 
 import (
 	context "context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/antoniodipinto/ikisocket"
 	"github.com/go-redis/redis/v8"
@@ -35,9 +37,9 @@ import (
 	"orchdio/middleware"
 	"orchdio/queue"
 	"orchdio/universal"
-	"orchdio/util"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -155,6 +157,14 @@ func main() {
 		dbURL = dbURL + "?sslmode=disable"
 	}
 
+	port := os.Getenv("PORT")
+	log.Printf("Port: %v", port)
+	if port == " " {
+		port = "52800"
+	}
+
+	port = fmt.Sprintf(":%s", port)
+
 	db, err := sqlx.Open("postgres", dbURL)
 	if err != nil {
 		log.Printf("Error connecting to postgresql db")
@@ -195,6 +205,7 @@ func main() {
 		Name:  "orchdio-playlist-queue",
 		Redis: redisClient,
 	})
+	asynqMux := asynq.NewServeMux()
 
 	if os.Getenv("ENV") == "production" {
 		log.Printf("\n[main] [info] - Running in production mode. Connecting to authenticated redis")
@@ -212,68 +223,44 @@ func main() {
 			ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
 				log.Printf("[main][QueueErrorHandler] Task error handler issue here%v", err)
 				// check that the queue isnt paused
-				queueInfo, err := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
-				if err != nil {
-					log.Printf("[main] [QueueErrorHandler] Error getting queue info %v", err)
+				queueInfo, qErr := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
+				if qErr != nil {
+					log.Printf("[main] [QueueErrorHandler] Error getting queue info %v", qErr)
 					return
 				}
 
+				var taskData blueprint.PlaylistTaskData
+				err = json.Unmarshal(task.Payload(), &taskData)
+				if err != nil {
+					log.Printf("[main] [QueueErrorHandler] Error unmarshalling task payload %v", err)
+					return
+				}
 				log.Printf("[main] [QueueErrorHandler] Queue info %v", queueInfo)
-				//spew.Dump(queueInfo)
 				if queueInfo.Paused {
 					log.Printf("Queue is paused")
 					err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
 					return
 				}
+
+				asynqMux.Handle(task.Type(), asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
+					log.Printf("[main] [QueueErrorHandler] Custom running handler here%v", err)
+					// create new taskHandler that will then process this job. From the ```queue.LoggerMiddleware``` method,
+					// we check for "orphaned" tasks, these tasks are tasks that were created but were never fully processed,
+					// for example during server restart or shutdown during task processing, even though we detect queue pauses and pause them
+					// when we do this, the next task the queue server picks up the task, we'll attach this handler to it and just process it.
+					taskHandler := queue.NewOrchdioQueue(asyncClient, db, redisClient)
+					err = taskHandler.PlaylistHandler(t.ResultWriter().TaskID(), taskData.ShortURL, taskData.LinkInfo, taskData.User.UUID.String())
+					if err != nil {
+						log.Printf("[main] [QueueErrorHandler] Error processing task %v", err)
+						return err
+					}
+					log.Printf("[main] [QueueErrorHandler] Task processed successfully")
+					return nil
+				}))
 				log.Printf("[main] [QueueErrorHandler] Queue is not paused but an error occured")
 			}),
-			//ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
-			//	log.Printf("[main] Error processing task %v", err)
-			//	spew.Dump(task)
-			//
-			//	// get the task id
-			//	var taskData blueprint.PlaylistTaskData
-			//	err = json.Unmarshal(task.Payload(), &taskData)
-			//	if err != nil {
-			//		log.Printf("[main] [TaskErrorHandler] Error unmarshalling task payload %v", err)
-			//		return
-			//	}
-			//
-			//	// get the task queue info
-			//	queueInfo, err := inspector.GetTaskInfo(queue.PlaylistConversionQueue, taskData.TaskID)
-			//
-			//	if err != nil {
-			//		log.Printf("[main] [TaskErrorHandler] Error getting task info %v", err)
-			//		return
-			//	}
-			//
-			//	log.Printf("[main] [TaskErrorHandler] Task info\n")
-			//	spew.Dump(queueInfo)
-			//
-			//	// pause the queue if its not paused
-			//	if queueInfo.State.String() == "active" {
-			//		log.Printf("[main] [TaskErrorHandler] Pausing queue %v", queue.PlaylistConversionQueue)
-			//		err = inspector.PauseQueue(queue.PlaylistConversionQueue)
-			//	}
-			//
-			//	// archive the task
-			//	err = inspector.ArchiveTask(queue.PlaylistConversionQueue, taskData.TaskID)
-			//	if err != nil {
-			//		log.Printf("[main] [TaskErrorHandler] Error archiving task %v", err)
-			//		return
-			//	}
-			//	// get task info and check if its archived
-			//	taskInfo, err := inspector.GetTaskInfo(queue.PlaylistConversionQueue, taskData.TaskID)
-			//	if err != nil {
-			//		log.Printf("[main] [TaskErrorHandler] Error getting task info %v", err)
-			//		return
-			//	}
-			//
-			//	spew.Dump(taskInfo)
-			//}),
 		})
 
-	asynqMux := asynq.NewServeMux()
 	asynqMux.Use(queue.LoggingMiddleware)
 	err = asynqServer.Start(asynqMux)
 	if err != nil {
@@ -295,6 +282,13 @@ func main() {
 		ReadTimeout:           45 * time.Second,
 		WriteTimeout:          45 * time.Second,
 		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
+			var e *fiber.Error
+			if errors.As(err, &e) {
+				// e.Code will be the status code.
+				// e.Message will be the error message.
+				log.Printf(err.Error())
+				return nil
+			}
 			log.Printf("Error in next router %v", err)
 			// get the PID of the asynq server and send it a kill signal to OS
 			// this is a hacky way to kill the asynq server
@@ -330,7 +324,7 @@ func main() {
 				log.Printf("Error stopping queue server %v", err)
 				return err
 			}
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, err.Error())
+			return nil
 		},
 	})
 	serverChan := make(chan os.Signal, 1)
@@ -341,20 +335,24 @@ func main() {
 	// if it is paused, unpause it
 	conversionQueuePaused, err := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
 	if err != nil {
-		log.Printf("[main][Queue] Error getting conversion status queue %v", err)
-		_ = app.Shutdown()
-		return
-	}
-
-	if conversionQueuePaused.Paused {
-		log.Printf("[main][Queue] Conversion queue is paused. Unpausing it")
-		err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
-		if err != nil {
-			log.Printf("[main][Queue] Error unpausing conversion queue %v", err)
+		log.Printf("[main][Queue] Error getting conversion status queue %v", err.Error())
+		if !strings.Contains(err.Error(), "NOT_FOUND: queue") {
 			_ = app.Shutdown()
 			return
 		}
-		log.Printf("[main][Queue] Conversion queue unpaused")
+	}
+
+	if conversionQueuePaused != nil {
+		if conversionQueuePaused.Paused {
+			log.Printf("[main][Queue] Conversion queue is paused. Unpausing it")
+			err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
+			if err != nil {
+				log.Printf("[main][Queue] Error unpausing conversion queue %v", err)
+				_ = app.Shutdown()
+				return
+			}
+			log.Printf("[main][Queue] Conversion queue unpaused")
+		}
 	}
 
 	log.Printf("[main][Queue] Queue server unpaused...")
@@ -380,7 +378,7 @@ func main() {
 	}()
 
 	userController = *account.NewUserController(db)
-	webhookController := account.NewWebhookController(db)
+	webhookController := account.NewAccountWebhookController(db)
 	authMiddleware := middleware.NewAuthMiddleware(db)
 	conversionController := conversion.NewConversionController(db, redisClient, playlistQueue, QueueFactory, asyncClient, asynqServer, asynqMux)
 	followController := follow.NewController(db, redisClient)
@@ -438,7 +436,7 @@ func main() {
 	baseRouter.Delete("/webhook", authMiddleware.ValidateKey, webhookController.DeleteUserWebhookUrl)
 	baseRouter.Post("/white-tiger", authMiddleware.AddAPIDeveloperToContext, whController.Handle)
 	baseRouter.Post("/redirect-url", authMiddleware.AddAPIDeveloperToContext, userController.CreateOrUpdateRedirectURL)
-	baseRouter.Get("/white-tiger", whController.Handle)
+	baseRouter.Get("/white-tiger", whController.AuthenticateWebhook)
 
 	userRouter := app.Group("/api/v1/user")
 
@@ -449,9 +447,9 @@ func main() {
 	}), middleware.VerifyToken)
 
 	userRouter.Post("/generate-key", userController.GenerateAPIKey)
-	baseRouter.Patch("/key/revoke", authMiddleware.ValidateKey, userController.RevokeKey)
-	baseRouter.Patch("/key/allow", userController.UnRevokeKey)
-	baseRouter.Delete("/key/delete", authMiddleware.ValidateKey, userController.DeleteKey)
+	userRouter.Patch("/key/revoke", authMiddleware.ValidateKey, userController.RevokeKey)
+	userRouter.Patch("/key/allow", userController.UnRevokeKey)
+	userRouter.Delete("/key/delete", authMiddleware.ValidateKey, userController.DeleteKey)
 	userRouter.Get("/key", userController.RetrieveKey)
 
 	// ==========================================
@@ -460,25 +458,18 @@ func main() {
 
 	nextRouter.Post("/playlist/convert", middleware.ExtractLinkInfoFromBody, conversionController.ConvertPlaylist)
 	nextRouter.Get("/task/:taskId", conversionController.GetPlaylistTask)
-	nextRouter.Delete("/task/:taskId", conversionController.DeletePlaylistTask)
+	// TODO: implement checking for superuser access in middleware before deleting then remove kanye prefix
+	nextRouter.Delete("/kanye/task/:taskId", conversionController.DeletePlaylistTask)
 
 	// user account action routes
-	userActionAddRouter := nextRouter.Group("/add")
-	userActionAddRouter.Post("/playlist/:platform/:playlistId", platformsControllers.AddPlaylistToAccount)
+	//userActionAddRouter := nextRouter.Group("/add")
+	//userActionAddRouter.Post("/playlist/:platform/:playlistId", platformsControllers.AddPlaylistToAccount)
 
 	// FIXME: remove later. this is just for compatibility with the ping api for dev.
 	nextRouter.Post("/job/ping", conversionController.ConvertPlaylist)
 	nextRouter.Post("/follow", followController.FollowPlaylist)
 	nextRouter.Post("/playlist/:platform/add", platformsControllers.AddPlaylistToAccount)
 	nextRouter.Post("/waitlist/add", userController.AddToWaitlist)
-
-	// MIDDLEWARE DEFINITION
-	app.Use(jwtware.New(jwtware.Config{
-		SigningKey: []byte(os.Getenv("JWT_SECRET")),
-		Claims:     &blueprint.OrchdioUserToken{},
-		ContextKey: "authToken",
-	}))
-	app.Use(middleware.VerifyToken)
 
 	baseRouter.Get("/me", userController.FetchProfile)
 	// FIXME: move this endpoint thats fetching link info from the `controllers` package
@@ -534,13 +525,6 @@ func main() {
 	+
 	 ==================================================================
 	*/
-	port := os.Getenv("PORT")
-	log.Printf("Port: %v", port)
-	if port == " " {
-		port = "52800"
-	}
-
-	port = fmt.Sprintf(":%s", port)
 
 	//if aErr := asynqServer.Run(asynqMux); aErr != nil {
 	//	log.Printf("\n[main] [error] - Could not start asynq server. Are you sure redis is configured correctly? Also, something else might be wrong")

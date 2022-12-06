@@ -17,11 +17,9 @@ type WebhookController struct {
 	DB *sqlx.DB
 }
 
-func NewWebhookController(db *sqlx.DB) *WebhookController {
+func NewAccountWebhookController(db *sqlx.DB) *WebhookController {
 	return &WebhookController{DB: db}
 }
-
-//func (w *WebhookController)
 
 func (w *WebhookController) FetchWebhookUrl(c *fiber.Ctx) error {
 	log.Printf("[controller][user][FetchWebhookUrl] - fetching webhook url")
@@ -136,7 +134,7 @@ func (w *WebhookController) CreateWebhookUrl(ctx *fiber.Ctx) error {
 		"url": webhookUrl,
 	}
 
-	log.Printf("[controller][user][CreateWebhookUrl] - created webhook url: '%s' for user %v\n", webhookUrl, user)
+	log.Printf("[controller][user][CreateWebhookUrl] - created webhook url: '%s' for user %s.\n", webhookUrl, user.UUID.String())
 	return util.SuccessResponse(ctx, http.StatusCreated, response)
 }
 
@@ -151,6 +149,7 @@ func (w *WebhookController) UpdateUserWebhookUrl(ctx *fiber.Ctx) error {
 	it'll look like:
 		{
 	      "url": "https://www.example.com/webhook",
+		  "verify_token": "1234567890"
 		}
 	*/
 
@@ -187,7 +186,7 @@ func (w *WebhookController) UpdateUserWebhookUrl(ctx *fiber.Ctx) error {
 		log.Printf("[controller][user][UpdateWebhookUrl] - error updating webhook url %s\n", upErr.Error())
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
 	}
-	log.Printf("[controller][user][UpdateWebhookUrl] - updated webhook url: '%s' for user %v\n", webhookUrl, user)
+	log.Printf("[controller][user][UpdateWebhookUrl] - updated webhook url: '%s' for user %s\n", webhookUrl, user.UUID)
 
 	return util.SuccessResponse(ctx, http.StatusOK, webhoookBody)
 }
@@ -231,7 +230,7 @@ func (w *WebhookController) Verify(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
 	}
 
-	log.Printf("[controller][user][Verify] - webhook url is: '%s' \n", webhook)
+	log.Printf("[controller][user][Verify] - webhook url is: '%s' \n", webhook.Url)
 	// make a GET request to the webhook url
 	res, err := axios.Get(webhook.Url)
 	if err != nil {

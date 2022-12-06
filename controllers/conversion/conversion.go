@@ -3,6 +3,7 @@ package conversion
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
@@ -86,8 +87,12 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 		return ctx.Status(http.StatusInternalServerError).JSON("error marshalling link info")
 	}
 	// create new task
-	conversionTask := asynq.NewTask("playlist:conversion", ser, asynq.Retention(time.Hour*24*7*4), asynq.Queue(queue.PlaylistConversionTask))
+	conversionTask := asynq.NewTask(fmt.Sprintf("playlist:conversion:%s", taskData.TaskID), ser, asynq.Retention(time.Hour*24*7*4), asynq.Queue(queue.PlaylistConversionTask))
+
+	//conversionCtx := context.WithValue(context.Background(), "payload", taskData)
+	//log.Printf("[controller][conversion][EchoConversion] - conversionCtx: %v", conversionCtx)
 	// enqueue the task
+	// enquedTask, enqErr := c.Asynq.EnqueueContext(conversionCtx, conversionTask, asynq.Queue(queue.PlaylistConversionQueue), asynq.TaskID(taskData.TaskID), asynq.Unique(time.Second*60))
 	enquedTask, enqErr := c.Asynq.Enqueue(conversionTask, asynq.Queue(queue.PlaylistConversionQueue), asynq.TaskID(taskData.TaskID), asynq.Unique(time.Second*60))
 	if enqErr != nil {
 		log.Printf("[controller][conversion][EchoConversion] - error enqueuing task: %v", enqErr)
@@ -106,11 +111,10 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 		log.Printf("[controller][conversion][EchoConversion] - error creating task: %v", dbErr)
 		return ctx.Status(http.StatusInternalServerError).JSON("error creating task")
 	}
-	orchdioQueue := queue.NewOrchdioQueue(c.Asynq, c.AsynqServer, c.DB, c.Red)
+	orchdioQueue := queue.NewOrchdioQueue(c.Asynq, c.DB, c.Red)
 
-	res := map[string]string{
-		"taskId": string(_taskId),
-	}
+	// Conversion task response to be polled later
+	res := &blueprint.NewTask{ID: string(_taskId)}
 
 	// NB: THE SIDE EFFECT OF THIS IS THAT WHEN WE RESTART THE SERVER FOR EXAMPLE, WE LOSE
 	// THE HANDLER ATTACHED. THIS IS BECAUSE WE'RE TRIGGERING THE HANDLER HERE IN THE
@@ -176,7 +180,7 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 
 		return util.SuccessResponse(ctx, http.StatusOK, res)
 	}()
-	c.AsynqMux.HandleFunc("playlist:conversion", orchdioQueue.PlaylistTaskHandler)
+	c.AsynqMux.HandleFunc("playlist:conversion:", orchdioQueue.PlaylistTaskHandler)
 	log.Printf("[controller][conversion][EchoConversion] - task handler attached")
 	return util.SuccessResponse(ctx, http.StatusCreated, res)
 }
@@ -197,21 +201,29 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "error fetching task")
 	}
 
-	_, err = uuid.Parse(taskId)
+	taskUUID, err := uuid.Parse(taskId)
 	if err != nil {
-		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - not a playlist task")
+		log.Printf("[controller][conversion][GetPlaylistTaskStatus][warning] - not a playlist task, most likely a short url")
+		// TODO: type track response task. Ideally this would be for a shortlink, but returning interface for now,
+		//   kill this when i move this to a separate handler method
 		var res interface{}
 		// HACK: to check if the task is a playlist task result as to be able to format the right type
 		err = json.Unmarshal([]byte(taskRecord.Result), &res)
-
-		var data interface{}
-
-		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - data: %v", data)
-		result := map[string]interface{}{
-			"taskId": taskId,
-			"status": taskRecord.Status,
-			"data":   res,
+		if err != nil {
+			log.Printf("[controller][conversion][GetPlaylistTaskStatus] - not a playlist task")
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "Could not deserialize task result")
 		}
+
+		result := &blueprint.TaskResponse{
+			ID:      taskId,
+			Status:  taskRecord.Status,
+			Payload: res,
+		}
+		//result := map[string]interface{}{
+		//	"task_id": taskId,
+		//	"status":  taskRecord.Status,
+		//	"data":    res,
+		//}
 
 		return util.SuccessResponse(ctx, http.StatusOK, result)
 	}
@@ -226,25 +238,26 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 	err = json.Unmarshal([]byte(taskRecord.Result), &res)
 	if err != nil {
 		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - error unmarshalling task data: %v", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "error unmarshalling task data")
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "could not deserialize playlist task result")
 	}
 
-	log.Printf("[controller][conversion][GetPlaylistTaskStatus] - result: %v", res)
-
-	var data interface{}
-
-	if res.URL == "" {
-		data = nil
-	} else {
-		data = res
+	if res.Meta.URL == "" {
+		taskResponse := &blueprint.TaskResponse{
+			ID:      taskId,
+			Payload: nil,
+			Status:  "pending",
+		}
+		return util.SuccessResponse(ctx, http.StatusOK, taskResponse)
+	}
+	
+	res.Meta.Entity = "playlist"
+	taskResponse := &blueprint.TaskResponse{
+		ID:      taskUUID.String(),
+		Payload: res,
+		Status:  taskRecord.Status,
 	}
 
-	result := map[string]interface{}{
-		"taskId": taskId,
-		"status": taskRecord.Status,
-		"data":   data,
-	}
-	return util.SuccessResponse(ctx, http.StatusOK, result)
+	return util.SuccessResponse(ctx, http.StatusOK, taskResponse)
 }
 
 // DeletePlaylistTask deletes a playlist task

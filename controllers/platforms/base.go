@@ -83,8 +83,6 @@ func (p *Platforms) ConvertTrack(ctx *fiber.Ctx) error {
 	// add the task ID to the conversion response
 	conversion.ShortURL = uID
 
-	log.Printf("\n[controllers][platforms][ConvertTrack] - serialized conversion %v\n", string(serialized))
-
 	if err != nil {
 		log.Printf("[db][CreateTrackTaskRecord] error serializing result. %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
@@ -96,7 +94,12 @@ func (p *Platforms) ConvertTrack(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 	}
 
-	return util.SuccessResponse(ctx, http.StatusOK, conversion)
+	conversion.Entity = "track"
+	taskResponse := blueprint.TaskResponse{
+		Payload: conversion,
+	}
+
+	return util.SuccessResponse(ctx, http.StatusOK, taskResponse)
 }
 
 // ConvertPlaylist retrieves info about a playlist from various platforms.

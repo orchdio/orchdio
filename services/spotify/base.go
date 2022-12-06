@@ -152,7 +152,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	//	return nil, blueprint.ENORESULT
 	//}
 
-	log.Printf("\n[controllers][platforms][spotify][ConvertTrack] info - found %v tracks on spotify\n", spotifySearch)
+	log.Printf("\n[controllers][platforms][spotify][ConvertTrack] info - found %v tracks on spotify\n", len(spotifySearch.Tracks.Tracks))
 
 	var spSingleTrack spotify.FullTrack
 
@@ -179,7 +179,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	fetchedSpotifyTrack := blueprint.TrackSearchResult{
 		Released: spSingleTrack.Album.ReleaseDate,
 		URL:      spSingleTrack.SimpleTrack.ExternalURLs["spotify"],
-		Artistes: spTrackContributors,
+		Artists:  spTrackContributors,
 		Duration: util.GetFormattedDuration(spSingleTrack.Duration / 1000),
 		Explicit: spSingleTrack.Explicit,
 		Title:    spSingleTrack.Name,
@@ -193,7 +193,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	serializedTrack, err := json.Marshal(fetchedSpotifyTrack)
 	trackCacheKey := "spotify:" + fetchedSpotifyTrack.ID
 
-	if lo.Contains(fetchedSpotifyTrack.Artistes, artiste) {
+	if lo.Contains(fetchedSpotifyTrack.Artists, artiste) {
 		err = red.MSet(context.Background(), map[string]interface{}{
 			identifierHash: string(serializedTrack),
 		}).Err()
@@ -271,7 +271,7 @@ func SearchTrackWithID(id string, red *redis.Client) (*blueprint.TrackSearchResu
 
 		out := blueprint.TrackSearchResult{
 			URL:      results.ExternalURLs["spotify"],
-			Artistes: artistes,
+			Artists:  artistes,
 			Released: results.Album.ReleaseDate,
 			Duration: util.GetFormattedDuration(results.Duration / 1000),
 			Explicit: results.Explicit,
@@ -386,7 +386,7 @@ func FetchPlaylistTracksAndInfo(id string, red *redis.Client) (*blueprint.Playli
 
 			trackCopy := blueprint.TrackSearchResult{
 				URL:      track.Track.ExternalURLs["spotify"],
-				Artistes: artistes,
+				Artists:  artistes,
 				Released: track.Track.Album.ReleaseDate,
 				Duration: util.GetFormattedDuration(track.Track.Duration / 1000),
 				Explicit: track.Track.Explicit,
@@ -407,7 +407,7 @@ func FetchPlaylistTracksAndInfo(id string, red *redis.Client) (*blueprint.Playli
 			if err != nil {
 				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not cache track: %v\n", err)
 			} else {
-				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] success - track %s by %s has been cached\n", trackCopy.Title, trackCopy.Artistes[0])
+				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] success - track %s by %s has been cached\n", trackCopy.Title, trackCopy.Artists[0])
 			}
 		}
 
@@ -491,7 +491,7 @@ func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Cli
 	var trackSearch []blueprint.PlatformSearchTrack
 	for _, track := range p.Tracks {
 		trackSearch = append(trackSearch, blueprint.PlatformSearchTrack{
-			Artistes: track.Artistes,
+			Artistes: track.Artists,
 			Title:    track.Title,
 			ID:       track.ID,
 			URL:      track.URL,

@@ -226,7 +226,7 @@ func (s *TaskCronHandler) ProcessFollowTaskHandler(ctx context.Context, task *as
 			log.Printf("[queue][ProcessFollowTaskHandler] - error updating snapshot: %v", err)
 			return err
 		}
-		log.Printf("[queue][ProcessFollowTaskHandler] - playlist has been cached %s", updatedPlaylist.URL)
+		log.Printf("[queue][ProcessFollowTaskHandler] - playlist has been cached %s", updatedPlaylist.Meta.URL)
 
 		log.Printf("[queue][ProcessFollowTaskHandler] - Playlist has been updated and subscribers notified")
 		return nil
