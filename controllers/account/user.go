@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -60,33 +59,38 @@ func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 	//  200: redirectAuthResponse
 
 	// a list of valid urls to redirect to
+	// get the special flag that says the auth is from orchdio dev
+	authSrc := ctx.Query("src")
+
+	deezerSecret := os.Getenv("DEEZER_SECRET")
+	deezerRedirectURL := os.Getenv("DEEZER_REDIRECT_URI")
+
+	if authSrc == "orchdio" {
+		deezerRedirectURL = os.Getenv("ORCHDIO_DEEZER_REDIRECT_URI")
+	}
 
 	var uniqueID, _ = uuid.NewUUID()
 	dz := &deezer.Deezer{
 		ClientID:     os.Getenv("DEEZER_ID"),
-		ClientSecret: os.Getenv("DEEZER_SECRET"),
-		RedirectURI:  os.Getenv("DEEZER_REDIRECT_URI"),
+		ClientSecret: deezerSecret,
+		RedirectURI:  deezerRedirectURL,
 	}
 
 	platform := strings.ToLower(ctx.Params("platform"))
+	var url string
 	if platform == "spotify" {
 		// now do spotify things here.
-		url := spotify.FetchAuthURL(uniqueID.String())
-		if url == nil {
+		_url := spotify.FetchAuthURL(uniqueID.String(), authSrc)
+		if _url == nil {
 			log.Printf("[account][auth] error - Could return URL for user")
 			return util.ErrorResponse(ctx, http.StatusOK, "Error creating auth URL")
 		}
 
-		return util.SuccessResponse(ctx, http.StatusOK, fiber.Map{
-			"url": fmt.Sprintf("%s", url),
-		})
+		url = string(_url)
 	}
 
 	if platform == "deezer" {
-		url := dz.FetchAuthURL()
-		return util.SuccessResponse(ctx, http.StatusOK, fiber.Map{
-			"url": fmt.Sprintf("%s", url),
-		})
+		url = dz.FetchAuthURL()
 	}
 
 	if platform == "applemusic" {
@@ -96,7 +100,11 @@ func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 		})
 	}
 
-	return util.ErrorResponse(ctx, http.StatusNotImplemented, "Other Platforms have not been implemented")
+	u := map[string]string{
+		"url": url,
+	}
+
+	return util.SuccessResponse(ctx, http.StatusOK, u)
 }
 
 // AuthSpotifyUser authorizes a user with spotify account. It generates a JWT token for
@@ -137,8 +145,14 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 		log.Printf("[controllers][account][user] Error - error creating a new http request - %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 	}
+	// recover from panic
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[controller][account][user][error] %v\n", r)
+		}
+	}()
 
-	client, refreshToken := spotify.CompleteUserAuth(context.Background(), r)
+	client, refreshToken := spotify.CompleteUserAuth(context.Background(), r, "zoove")
 	encryptedRefreshToken, encErr := util.Encrypt(refreshToken, []byte(encryptionSecretKey))
 	if encErr != nil {
 		log.Printf("\n[controllers][account][user] Error - could not encrypt refreshToken - %v\n", encErr)
@@ -172,7 +186,7 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 		user.ID,
 	)
 
-	dbErr := newUser.StructScan(&userProfile)
+	dbErr := newUser.StructScan(userProfile)
 
 	if dbErr != nil {
 		log.Printf("\n[controller][account][user][spotify]: [AuthUser] Error executing query: %v\n", dbErr)
@@ -226,7 +240,119 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	}
 
 	return ctx.Redirect(redirectTo + "?token=" + string(token))
-	//return util.SuccessResponse(ctx, http.StatusOK, string(token))
+}
+func (c *UserController) AuthOrchdioSpotifyUser(ctx *fiber.Ctx) error {
+	// swagger:route GET /spotify/auth AuthSpotifyUser
+	//
+	// Authorizes a user with spotify account. This is connects a user with a spotify account, with Orchdio.
+	//
+	// ---
+	// Consumes:
+	//  - application/json
+	//
+	// Produces:
+	//  - application/json
+	//
+	// Schemes: https
+	//
+	// Responses:
+	//  200: redirectAuthResponse
+	var uniqueID, _ = uuid.NewUUID()
+	state := ctx.Query("state")
+	errorCode := ctx.Query("error")
+
+	if errorCode == "access_denied" {
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "User denied access")
+	}
+
+	encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
+	if state == "" {
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "State is not present")
+	}
+
+	// create a new net/http instance since *fasthttp.Request() cannot be passed
+	r, err := http.NewRequest("GET", string(ctx.Request().RequestURI()), nil)
+
+	if err != nil {
+		log.Printf("[controllers][account][user] Error - error creating a new http request - %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+	}
+	// recover from panic
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[controller][account][user][error] %v\n", r)
+		}
+	}()
+
+	client, refreshToken := spotify.CompleteUserAuth(context.Background(), r, "orchdio")
+	encryptedRefreshToken, encErr := util.Encrypt(refreshToken, []byte(encryptionSecretKey))
+	if encErr != nil {
+		log.Printf("\n[controllers][account][user] Error - could not encrypt refreshToken - %v\n", encErr)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, encErr)
+	}
+
+	log.Printf("[account][auth] encrypted refresh token: %v\n", encryptedRefreshToken)
+
+	user, err := client.CurrentUser(context.Background())
+	if err != nil {
+		log.Printf("\n[controllers][account][user] Error - could not fetch current spotify user- %v\n", err)
+
+		// THIS IS THE BEGINING OF A SUPPOSEDLY CURSED IMPLEMENTATION
+		// since we might need to request token quota extension for users
+		// AQB7csFtf_58P-Rq-jqrfFMhBXDJnC2xwFjLMwXr439vxbXCZdFxKpwTrnDLzJvFrY3nc2B4YeCRLOs5zgrMA4zwWZROc4P7qPt_ySlTi-qHM5w5y_eQ27PUJzLKQae5SJs
+		// when the user just auths for the first time, it seems that the refresh token is gotten (for some reason, during dev)
+
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+	}
+	log.Printf("%v", user)
+
+	userProfile := &blueprint.User{}
+
+	query := queries.CreateUserQuery
+	newUser := c.DB.QueryRowx(
+		query,
+		user.Email,
+		user.DisplayName,
+		uniqueID,
+		encryptedRefreshToken,
+		user.ID,
+	)
+
+	dbErr := newUser.StructScan(userProfile)
+
+	if dbErr != nil {
+		log.Printf("\n[controller][account][user][spotify]: [AuthUser] Error executing query: %v\n", dbErr)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, dbErr)
+	}
+
+	serialized, err := json.Marshal(map[string]string{
+		"spotify": user.DisplayName,
+	})
+
+	// update the usernames the user has on various playlist.
+	// NB: I wasn't sure how to really handle this, if its better to do it in the createUserQuery above or split here
+	// decided to split here because its just easier for me to bother with right now.
+	_, err = c.DB.Exec(queries.UpdatePlatformUsernames, user.Email, string(serialized))
+
+	// update user platform token
+	_, err = c.DB.Exec(queries.UpdateUserPlatformToken, encryptedRefreshToken, "spotify", user.Email)
+	if err != nil {
+		log.Printf("[db][UpdateUserPlatformToken] error updating user platform token. %v\n", err)
+		return err
+	}
+
+	log.Printf("\n[user][controller][AuthUser] Method - User with the email %s just signed up or logged in with their Spotify account.\n", user.Email)
+	// create a jwt
+	claim := &blueprint.OrchdioUserToken{
+		Email:    user.Email,
+		Username: user.DisplayName,
+		UUID:     userProfile.UUID,
+		Platform: "spotify",
+	}
+	token, err := util.SignJwt(claim)
+	redirectTo := os.Getenv("ORCHDIO_REDIRECT_URI")
+
+	return ctx.Redirect(redirectTo + "?token=" + string(token))
 }
 
 // AuthDeezerUser authorizes a user with deezer account. It generates a JWT token for

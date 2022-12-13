@@ -37,6 +37,7 @@ import (
 	"orchdio/middleware"
 	"orchdio/queue"
 	"orchdio/universal"
+	"orchdio/util"
 	"os"
 	"os/signal"
 	"strings"
@@ -287,7 +288,7 @@ func main() {
 				// e.Code will be the status code.
 				// e.Message will be the error message.
 				log.Printf(err.Error())
-				return nil
+				return util.ErrorResponse(ctx, e.Code, e.Message)
 			}
 			log.Printf("Error in next router %v", err)
 			// get the PID of the asynq server and send it a kill signal to OS
@@ -422,7 +423,9 @@ func main() {
 
 	baseRouter.Get("/heartbeat", getInfo)
 	baseRouter.Get("/:platform/connect", userController.RedirectAuth)
+	baseRouter.Get("/orchdio/:platform/connect", userController.RedirectAuth)
 	baseRouter.Get("/spotify/auth", userController.AuthSpotifyUser)
+	baseRouter.Get("/orchdio/spotify/auth", userController.AuthOrchdioSpotifyUser)
 	baseRouter.Get("/deezer/auth", userController.AuthDeezerUser)
 	//baseRouter.Post("/applemusic/auth", userController.AuthAppleMusicUser)
 	baseRouter.Post("/applemusic/auth", userController.AuthAppleMusicUser)

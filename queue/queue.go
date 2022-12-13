@@ -111,16 +111,76 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 
 	h, err := universal.ConvertPlaylist(info, o.Red)
 	var status string
+	// for now, we dont want to bother about retrying and all of that. we're simply going to mark a task as failed if it fails
+	// the reason is that it's hard handling the retry for it to worth it. In the future, we might add a proper retry system
+	// but for now, if a playlist conversion fails, it fails. In the frontend, the user will most likely retry anyway and that means
+	// calling the endpoint again, which will create a new task.
 	if err != nil {
 		log.Printf("[queue][EnqueueTask] - error converting playlist: %v", err)
 		status = "failed"
+		// this is for when for example, apple music returns Not Found for a playlist thats visible but not public.
+		if err == blueprint.ENORESULT {
+			// create a new
+			payload := blueprint.TaskErrorPayload{
+				Platform: "applemusic",
+				Status:   "failed",
+				Error:    "Not Found",
+				Message:  "It could be that the playlist is visible but has not been added to public and search by Author. See https://support.apple.com/en-gb/HT207948",
+			}
+
+			// serialize the payload
+			ser, err := json.Marshal(&payload)
+			if err != nil {
+				log.Printf("[queue][EnqueueTask] - error marshalling task 'result not found' payload: %v", err)
+			}
+			taskErr := database.UpdateTaskStatus(taskId, status)
+			if taskErr != nil {
+				log.Printf("[queue][EnqueueTask] - could not update task status in DB when updating not found conversion: %v", taskErr)
+				return taskErr
+			}
+
+			// update task result to payload
+			_, updateErr := database.UpdateTaskResult(taskId, string(ser))
+			if updateErr != nil {
+				log.Printf("[queue][EnqueueTask] - could not update task result in DB when updating not found conversion: %v", updateErr)
+				return updateErr
+			}
+
+			log.Printf("[queue][EnqueueTask] could not fetch the playlist. skipping but marking as done")
+			return nil
+		}
+
 		// update the task status to failed
 		taskErr := database.UpdateTaskStatus(taskId, status)
 		if taskErr != nil {
 			log.Printf("[queue][EnqueueTask] - error updating task status: %v", taskErr)
 			return taskErr
 		}
-		return err
+
+		// create new task error payload
+		payload := blueprint.TaskErrorPayload{
+			Platform: info.Platform,
+			Status:   "failed",
+			Error:    err.Error(),
+			Message:  "An error occurred while converting the playlist",
+		}
+
+		// serialize the payload
+		ser, err := json.Marshal(&payload)
+		if err != nil {
+			log.Printf("[queue][EnqueueTask] - error marshalling task error payload: %v", err)
+			return err
+		}
+
+		// update task result to payload
+		_, updateErr := database.UpdateTaskResult(taskId, string(ser))
+		if updateErr != nil {
+			log.Printf("[queue][EnqueueTask] - failed to process playlist task and could not update 'task error payload' in database %v", updateErr)
+			return updateErr
+		}
+		log.Printf("[queue][EnqueueTask] - error converting playlist: For some reason, we couldnt convert this playlist but we will mark as done.%v", err)
+
+		return nil
 	}
 
 	if h != nil {
@@ -143,7 +203,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 		return mErr
 	}
 	log.Printf("[queue][PlaylistHandler] - serialized data")
-	result, rErr := database.UpdateTask(taskId, string(ser))
+	result, rErr := database.UpdateTaskResult(taskId, string(ser))
 
 	if rErr != nil {
 		log.Printf("[queue][EnqueueTask] - error updating task status: %v", rErr)

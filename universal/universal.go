@@ -156,6 +156,11 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 			log.Printf("\n[controllers][platforms][tidal][ConvertTrack] error - could not fetch track with ID from tidal: %v\n", err)
 			return nil, err
 		}
+
+		if len(tidalTrack.Artists) == 0 {
+			log.Printf("\n[controllers][platforms][tidal][ConvertTrack] error - could not fetch track with ID from tidal: %v\n", err)
+			return nil, err
+		}
 		// then search on spotify
 		tidalArtist := tidalTrack.Artists[0]
 		tidalAlbum := tidalTrack.Album
@@ -510,10 +515,17 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 	case applemusic.IDENTIFIER:
 		log.Printf("\n[controllers][platforms][ConvertPlaylist][applemusic] - converting playlist %v\n", info.EntityID)
 		applePlaylist, err := applemusic.FetchPlaylistTrackList(info.EntityID, red)
+
 		if err != nil {
-			log.Printf("\n[controllers][platforms][applemusic][ConvertPlaylist] error - could not fetch playlist with ID from applemusic: %v\n", err)
+			log.Printf("\n[controllers][platforms][applemusic][ConvertPlaylist] error - could not fetch playlist with ID from applemusic. perhaps its not public: %v\n", err)
 			return nil, err
 		}
+
+		if applePlaylist == nil {
+			log.Printf("\n[controllers][platforms][applemusic][ConvertPlaylist] error - could not fetch playlist with ID from applemusic: %v\n", err)
+			return nil, blueprint.ENORESULT
+		}
+
 		deezerTracks, omittedDeezerTracks := deezer.FetchPlaylistSearchResult(applePlaylist, red)
 		log.Printf("\n[controllers][platforms][base][applemusic] - fetched playlist tracks and info from deezer: %v\n", deezerTracks)
 

@@ -37,10 +37,10 @@ const CreateOrUpdateTask = `INSERT INTO tasks(uuid, shortid, "user", entity_id, 
 DO UPDATE SET status = 'pending', updated_at = now() RETURNING uuid;`
 
 const UpdateTaskStatus = `UPDATE tasks SET status = $2, updated_at = now() WHERE uuid = $1 RETURNING uuid;`
-const UpdateTask = `UPDATE tasks SET result = $2, updated_at = now() WHERE uuid = $1 RETURNING result;`
+const UpdateTaskResult = `UPDATE tasks SET result = $2, updated_at = now() WHERE uuid = $1 RETURNING result;`
 
 const FetchTask = `SELECT id, uuid, entity_id, created_at, updated_at, "user", status, coalesce(result, '{}') as result FROM tasks WHERE uuid= $1;`
-const FetchTaskByShorID = `SELECT id, uuid, entity_id, created_at, updated_at, "user", status, coalesce(result, '{}') as result FROM tasks WHERE shortid = $1;`
+const FetchTaskByShortID = `SELECT id, uuid, entity_id, created_at, updated_at, "user", status, coalesce(result, '{}') as result FROM tasks WHERE shortid = $1;`
 const DeleteTask = `DELETE FROM tasks WHERE uuid = $1;`
 
 const CreateOrAddSubscriberFollow = `INSERT INTO follows(uuid, developer, entity_id, subscribers, entity_url, created_at, updated_at) values ($1, $2, $3, $4, $5, now(), now())

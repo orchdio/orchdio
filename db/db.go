@@ -215,7 +215,7 @@ func (d *NewDB) UpdateUserWebhook(user, url, verifyToken string) error {
 		log.Printf("[db][UpdateUserWebhook][error] no webhook to update for this user")
 		return sql.ErrNoRows
 	}
-	
+
 	log.Printf("[db][UpdateUserWebhook] updated user webhook\n")
 	return nil
 }
@@ -258,16 +258,16 @@ func (d *NewDB) UpdateTaskStatus(uid, status string) error {
 	return nil
 }
 
-// UpdateTask updates a task and returns the result of the task or an error
-func (d *NewDB) UpdateTask(uid, data string) (*blueprint.PlaylistConversion, error) {
-	log.Printf("[db][UpdateTask] Running query %s with '%s'\n", queries.UpdateTask, uid)
-	r := d.DB.QueryRowx(queries.UpdateTask, uid, data)
+// UpdateTaskResult updates a task and returns the result of the task or an error
+func (d *NewDB) UpdateTaskResult(uid, data string) (*blueprint.PlaylistConversion, error) {
+	log.Printf("[db][UpdateTaskResult] Running query %s with '%s'\n", queries.UpdateTaskResult, uid)
+	r := d.DB.QueryRowx(queries.UpdateTaskResult, uid, data)
 	//var res blueprint.PlaylistConversion
 	var res string
 	execErr := r.Scan(&res)
 
 	if execErr != nil {
-		log.Printf("[db][UpdateTask] error updating task. %v\n", execErr)
+		log.Printf("[db][UpdateTaskResult] error updating task. %v\n", execErr)
 		return nil, execErr
 	}
 
@@ -275,7 +275,7 @@ func (d *NewDB) UpdateTask(uid, data string) (*blueprint.PlaylistConversion, err
 	var pc blueprint.PlaylistConversion
 	err := json.Unmarshal([]byte(res), &pc)
 	if err != nil {
-		log.Printf("[db][UpdateTask] error deserializing task. %v\n", err)
+		log.Printf("[db][UpdateTaskResult] error deserializing task. %v\n", err)
 		return nil, err
 	}
 	return &pc, nil
@@ -290,9 +290,9 @@ func (d *NewDB) FetchTask(uid string) (*blueprint.TaskRecord, error) {
 	_, err := uuid.Parse(uid)
 	if err != nil {
 		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - not a valid uuid, fetching by shortid")
-		log.Printf("[db][FetchTask] Running query %s with '%s'\n", queries.FetchTaskByShorID, uid)
+		log.Printf("[db][FetchTask] Running query %s with '%s'\n", queries.FetchTaskByShortID, uid)
 		//var res blueprint.PlaylistConversion
-		r := d.DB.QueryRowx(queries.FetchTaskByShorID, uid)
+		r := d.DB.QueryRowx(queries.FetchTaskByShortID, uid)
 
 		var res blueprint.TaskRecord
 		err := r.StructScan(&res)

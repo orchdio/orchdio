@@ -10,8 +10,11 @@ import (
 )
 
 // FetchAuthURL fetches the auth url
-func FetchAuthURL(state string) []byte {
+func FetchAuthURL(state, src string) []byte {
 	redirectURI := os.Getenv("SPOTIFY_REDIRECT_URI")
+	if src == "orchdio" {
+		redirectURI = os.Getenv("ORCHDIO_SPOTIFY_REDIRECT_URI")
+	}
 	var auth = spotifyauth.New(spotifyauth.WithRedirectURL(redirectURI),
 		// TODO: update the scopes as I need them
 		spotifyauth.WithScopes(spotifyauth.ScopeUserReadPrivate,
@@ -27,13 +30,18 @@ func FetchAuthURL(state string) []byte {
 }
 
 // CompleteUserAuth finishes authorizing a spotify user
-func CompleteUserAuth(ctx context.Context, request *http.Request) (*spotify.Client, []byte) {
+func CompleteUserAuth(ctx context.Context, request *http.Request, src string) (*spotify.Client, []byte) {
 	redirectURI := os.Getenv("SPOTIFY_REDIRECT_URI")
+
+	if src == "orchdio" {
+		redirectURI = os.Getenv("ORCHDIO_SPOTIFY_REDIRECT_URI")
+	}
 	state := request.FormValue("state")
 	auth := spotifyauth.New(spotifyauth.WithRedirectURL(redirectURI))
 
 	token, err := auth.Token(ctx, state, request)
 	if err != nil {
+		// TODO: handle auth error here. instead of ending up throwing a 500, just return accordingly
 		log.Printf("[account][auth][spotify] error - Error getting authorized token %v", err.Error())
 		return nil, nil
 	}

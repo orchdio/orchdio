@@ -230,18 +230,52 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 
 	if taskRecord.Status == "failed" {
 		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - task ")
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "task failed. Playlist couldnt be converted.")
+		// deserialize the taskrecord result into blueprint.TaskErrorPayload
+		var res blueprint.TaskErrorPayload
+		err = json.Unmarshal([]byte(taskRecord.Result), &res)
+		if err != nil {
+			log.Printf("[controller][conversion][GetPlaylistTaskStatus] - error deserializing task result: %v", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "task failed. could not process or unknown error")
+		}
+
+		// create a new task response
+		result := &blueprint.TaskResponse{
+			ID:      taskId,
+			Status:  taskRecord.Status,
+			Payload: res,
+		}
+		return util.ErrorResponse(ctx, http.StatusOK, result)
 	}
 
-	// deserialize the task data
-	var res blueprint.PlaylistConversion
-	err = json.Unmarshal([]byte(taskRecord.Result), &res)
-	if err != nil {
-		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - error unmarshalling task data: %v", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "could not deserialize playlist task result")
+	if taskRecord.Status == "completed" {
+		// deserialize the task data
+		var res blueprint.PlaylistConversion
+		err = json.Unmarshal([]byte(taskRecord.Result), &res)
+		if err != nil {
+			log.Printf("[controller][conversion][GetPlaylistTaskStatus] - error unmarshalling task data: %v", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "could not deserialize playlist task result")
+		}
+
+		if res.Meta.URL == "" {
+			taskResponse := &blueprint.TaskResponse{
+				ID:      taskId,
+				Payload: nil,
+				Status:  "pending",
+			}
+			return util.SuccessResponse(ctx, http.StatusOK, taskResponse)
+		}
+
+		res.Meta.Entity = "playlist"
+		taskResponse := &blueprint.TaskResponse{
+			ID:      taskUUID.String(),
+			Payload: res,
+			Status:  taskRecord.Status,
+		}
+
+		return util.SuccessResponse(ctx, http.StatusOK, taskResponse)
 	}
 
-	if res.Meta.URL == "" {
+	if taskRecord.Status == "pending" {
 		taskResponse := &blueprint.TaskResponse{
 			ID:      taskId,
 			Payload: nil,
@@ -249,15 +283,8 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		}
 		return util.SuccessResponse(ctx, http.StatusOK, taskResponse)
 	}
-	
-	res.Meta.Entity = "playlist"
-	taskResponse := &blueprint.TaskResponse{
-		ID:      taskUUID.String(),
-		Payload: res,
-		Status:  taskRecord.Status,
-	}
-
-	return util.SuccessResponse(ctx, http.StatusOK, taskResponse)
+	log.Printf("[controller][conversion][GetPlaylistTaskStatus] - task status: %s", taskRecord.Status)
+	return util.ErrorResponse(ctx, http.StatusInternalServerError, "unknown error")
 }
 
 // DeletePlaylistTask deletes a playlist task

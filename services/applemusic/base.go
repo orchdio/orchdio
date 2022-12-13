@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-redis/redis/v8"
 	"github.com/minchao/go-apple-music"
 	"github.com/samber/lo"
@@ -243,21 +244,24 @@ func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSe
 
 	//for page = 1; ; page++ {
 	log.Printf("[services][applemusic][FetchPlaylistTrackList] Fetching playlist tracks: %v\n", id)
-	results, response, err := client.Catalog.GetPlaylist(context.Background(), "us", id, &applemusic.Options{
-		Language: "",
-		Include:  "library",
-	})
+	//id = strings.ReplaceAll(id, "/", "")
+	playlistId := strings.ReplaceAll(id, "/", "")
+	log.Printf("[services][applemusic][FetchPlaylistTrackList] Playlist id: %v\n", playlistId)
+	results, response, err := client.Catalog.GetPlaylist(context.Background(), "us", playlistId, nil)
+
 	if err != nil {
-		log.Printf("[services][applemusic][FetchPlaylistTrackList][error] - could not fetch playlist tracks: %v\n", err)
+		log.Printf("[services][applemusic][FetchPlaylistTrackList][error] - could not fetch playlist tracks:")
+		spew.Dump(response.StatusCode)
 		return nil, err
 	}
 
 	if response.StatusCode != 200 {
-		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error fetching playlist tracks: %v\n", err)
-		return nil, err
+		log.Printf("[services][applemusic][FetchPlaylistTrackList][GetPlaylist] Status - %v could not fetch playlist tracks: %v\n", response.StatusCode, err)
+		return nil, blueprint.EUNKNOWN
 	}
+
 	if len(results.Data) == 0 {
-		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error fetching playlist tracks: %v\n", err)
+		log.Printf("[services][applemusic][FetchPlaylistTrackList] result data is empty. Could not fetch playlist tracks: %v\n", err)
 		return nil, err
 	}
 
@@ -312,6 +316,10 @@ func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSe
 			Cover:    cover,
 		})
 	}
+	playlistCover := ""
+	if playlistData.Attributes.Artwork != nil {
+		playlistCover = strings.ReplaceAll(playlistData.Attributes.Artwork.URL, "{w}x{h}cc.jpg", "300x300cc.jpg")
+	}
 
 	// in order to add support for paginated playlists, we need to somehow get the total number of tracks in the playlist and or get the next page of tracks
 	// if there is next page, we keep fetching (in a loop) until we get all the tracks and break out of the loop. This is similar to how we fetch paginated playlists
@@ -325,19 +333,40 @@ func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSe
 	ax := axios.NewInstance(&axios.InstanceConfig{
 		BaseURL: "https://api.music.apple.com",
 		Headers: map[string][]string{
-			"Authorization":    {fmt.Sprintf("Bearer %s", os.Getenv("APPLE_MUSIC_API_KEY"))},
-			"Music-User-Token": {os.Getenv("APPLE_MUSIC_USER_TOKEN")},
+			"Authorization": {fmt.Sprintf("Bearer %s", os.Getenv("APPLE_MUSIC_API_KEY"))},
 		},
 	})
 
-	_allTracksRes, err := ax.Get(fmt.Sprintf("/v1/catalog/us/playlists/%s/tracks", id), p)
-	if err != nil {
-		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error fetching playlist tracks: %v\n", err)
-		return nil, err
+	log.Printf("[services][applemusic][FetchPlaylistTrackList] Request configs ")
+
+	_allTracksRes, tErr := ax.Get(fmt.Sprintf("/v1/catalog/us/playlists/%s/tracks", playlistId), p)
+
+	if tErr != nil {
+		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error fetching playlist tracks from apple music %v\n", tErr.Error())
+		return nil, tErr
+	}
+
+	// if the response is a 404 and the length of the tracks we got earlier is 0, that means we really cant get the playlist tracks
+	if _allTracksRes.Status == 404 {
+		if len(tracks) == 0 {
+			log.Printf("[services][applemusic][FetchPlaylistTrackList] Could not fetch playlist tracks: %v\n", err)
+			return nil, blueprint.EUNKNOWN
+		}
+		result := blueprint.PlaylistSearchResult{
+			Title:   playlistData.Attributes.Name,
+			Tracks:  tracks,
+			URL:     playlistData.Attributes.URL,
+			Length:  util.GetFormattedDuration(duration / 1000),
+			Preview: "",
+			Owner:   playlistData.Attributes.CuratorName,
+			Cover:   playlistCover,
+		}
+		return &result, nil
 	}
 
 	if _allTracksRes.Status != 200 {
-		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error fetching playlist tracks: %v\n", err)
+		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error fetching playlist tracks: %v\n", string(_allTracksRes.Data))
+		log.Printf("original req url %v", _allTracksRes.Request.URL)
 		return nil, err
 	}
 
@@ -384,11 +413,6 @@ func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSe
 	if err != nil {
 		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error setting last updated at: %v\n", err)
 		return nil, err
-	}
-
-	playlistCover := ""
-	if playlistData.Attributes.Artwork != nil {
-		playlistCover = strings.ReplaceAll(playlistData.Attributes.Artwork.URL, "{w}x{h}cc.jpg", "300x300cc.jpg")
 	}
 
 	playlist = &blueprint.PlaylistSearchResult{

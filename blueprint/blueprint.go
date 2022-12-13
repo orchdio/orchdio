@@ -21,9 +21,10 @@ const (
 
 var (
 	EHOSTUNSUPPORTED = errors.New("EHOSTUNSUPPORTED")
-	ENORESULT        = errors.New("ENORESULT")
+	ENORESULT        = errors.New("Not Found")
 	ENOTIMPLEMENTED  = errors.New("NOT_IMPLEMENTED")
 	EGENERAL         = errors.New("EGENERAL")
+	EUNKNOWN         = errors.New("EUNKNOWN")
 	EINVALIDLINK     = errors.New("invalid link")
 	EALREADY_EXISTS  = errors.New("already exists")
 	EPHANTOMERR      = errors.New("unexpected error")
@@ -140,7 +141,6 @@ type TrackSearchResult struct {
 	Album    string   `json:"album,omitempty"`
 	ID       string   `json:"id"`
 	Cover    string   `json:"cover"`
-	TaskID   string   `json:"task_id"`
 }
 
 type Pagination struct {
@@ -157,7 +157,7 @@ type PlaylistSearchResult struct {
 	URL     string              `json:"url"`
 	Length  string              `json:"length,omitempty"`
 	Preview string              `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
-	Owner   string              `json:"owner"`
+	Owner   string              `json:"owner,omitempty"`
 	Cover   string              `json:"cover"`
 }
 
@@ -223,6 +223,13 @@ type TaskResponse struct {
 	ID      string      `json:"task_id,omitempty"`
 	Payload interface{} `json:"payload"`
 	Status  string      `json:"status,omitempty"`
+}
+
+type TaskErrorPayload struct {
+	Platform string `json:"platform"`
+	Status   string `json:"status"`
+	Error    string `json:"error"`
+	Message  string `json:"message"`
 }
 
 // Message represents a message sent from the client to the server over websocket
@@ -293,15 +300,16 @@ type PlaylistTaskData struct {
 
 // TaskRecord representsUs a task record in the database
 type TaskRecord struct {
-	Id        int       `json:"id,omitempty" db:"id"`
-	User      uuid.UUID `json:"user,omitempty" db:"user"`
-	UID       uuid.UUID `json:"uid,omitempty" db:"uuid"`
-	CreatedAt time.Time `json:"created_at,omitempty" db:"created_at"`
-	UpdatedAt time.Time `json:"updated_at,omitempty" db:"updated_at"`
-	Result    string    `json:"result,omitempty" db:"result"`
-	Status    string    `json:"status,omitempty" db:"status"`
-	EntityID  string    `json:"entity_id,omitempty" db:"entity_id"`
-	Type      string    `json:"type,omitempty" db:"type"`
+	Id         int       `json:"id,omitempty" db:"id"`
+	User       uuid.UUID `json:"user,omitempty" db:"user"`
+	UID        uuid.UUID `json:"uid,omitempty" db:"uuid"`
+	CreatedAt  time.Time `json:"created_at,omitempty" db:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at,omitempty" db:"updated_at"`
+	Result     string    `json:"result,omitempty" db:"result"`
+	Status     string    `json:"status,omitempty" db:"status"`
+	EntityID   string    `json:"entity_id,omitempty" db:"entity_id"`
+	Type       string    `json:"type,omitempty" db:"type"`
+	RetryCount int       `json:"retry_count,omitempty" db:"retry_count"`
 }
 
 type FollowTask struct {
