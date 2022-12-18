@@ -88,10 +88,12 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 
 // SearchTrack searches for a track using the query.
 func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
-	identifierHash := util.HashIdentifier(fmt.Sprintf("applemusic-%s-%s", artiste, title))
-	if red.Exists(context.Background(), identifierHash).Val() == 1 {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] Track found in cache: %v\n", identifierHash)
-		track, err := red.Get(context.Background(), identifierHash).Result()
+	cleanedArtiste := fmt.Sprintf("applemusic-%s-%s", util.NormalizeString(artiste), title)
+	log.Printf("Apple music: Searching with stripped artiste: %s. Original artiste: %s", cleanedArtiste, artiste)
+	//identifierHash := fmt.Sprintf("applemusic-%s-%s", artiste, title)
+	if red.Exists(context.Background(), cleanedArtiste).Val() == 1 {
+		log.Printf("[services][applemusic][SearchTrackWithTitle] Track found in cache: %v\n", cleanedArtiste)
+		track, err := red.Get(context.Background(), cleanedArtiste).Result()
 		if err != nil {
 			log.Printf("[services][applemusic][SearchTrackWithTitle] Error fetching track from cache: %v\n", err)
 			return nil, err
@@ -160,7 +162,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 
 	if lo.Contains(track.Artists, artiste) {
 		err = red.MSet(context.Background(), map[string]interface{}{
-			identifierHash: string(serializedTrack),
+			cleanedArtiste: string(serializedTrack),
 		}).Err()
 		if err != nil {
 			log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error caching track - %v\n", err)
@@ -202,7 +204,7 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]
 	var ch = make(chan *blueprint.TrackSearchResult, len(tracks))
 	var wg sync.WaitGroup
 	for _, track := range tracks {
-		identifier := util.HashIdentifier(fmt.Sprintf("applemusic-%s-%s", track.Artistes[0], track.Title))
+		identifier := fmt.Sprintf("applemusic-%s-%s", track.Artistes[0], track.Title)
 		if red.Exists(context.Background(), identifier).Val() == 1 {
 			var deserializedTrack *blueprint.TrackSearchResult
 			track, err := red.Get(context.Background(), identifier).Result()

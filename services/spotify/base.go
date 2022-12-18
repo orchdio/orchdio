@@ -35,7 +35,7 @@ func ExtractArtiste(artiste string) string {
 	if featIndex != -1 {
 		return strings.Trim(artiste[:featIndex], " ")
 	}
-	return artiste
+	return strings.ReplaceAll(artiste, " ", "")
 }
 
 // FetchNewAuthToken returns a fresh oauth2 token to be used for spotify api calls
@@ -107,16 +107,19 @@ func SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSear
 // want to search on. That is, the other platforms that the user is trying to convert to.
 func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
 	strippedArtiste := ExtractArtiste(artiste)
-	identifierHash := util.HashIdentifier(fmt.Sprintf("spotify-%s-%s", strippedArtiste, title))
+	//identifierHash := util.HashIdentifier(fmt.Sprintf("spotify-%s-%s", strippedArtiste, title))
+	cleanedArtiste := fmt.Sprintf("spotify-%s-%s", util.NormalizeString(artiste), title)
 
+	log.Printf("Spotify: Searching with stripped artiste: %s. Original artiste: %s", cleanedArtiste, strippedArtiste)
 	// if we have searched for this specific track before, we return the cached result
 	// And how do we know if we have cached it before?
 	// We store the hash of the title and artiste of the track in redis. we check if the hash of the
 	// track we want to search exist.
-	if red.Exists(context.Background(), identifierHash).Val() == 1 {
+	if red.Exists(context.Background(), cleanedArtiste).Val() == 1 {
+		log.Printf("Spotify: Found cached result for %s", cleanedArtiste)
 		// deserialize the result from redis
 		var result *blueprint.TrackSearchResult
-		cachedResult, err := red.Get(context.Background(), identifierHash).Result()
+		cachedResult, err := red.Get(context.Background(), cleanedArtiste).Result()
 		if err != nil {
 			log.Printf("\n[services][spotify][base][SearchTrackWithTitle] error - could not get cached result for track. This is an unexpected error: %v\n", err)
 			return nil, err
@@ -195,7 +198,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 
 	if lo.Contains(fetchedSpotifyTrack.Artists, artiste) {
 		err = red.MSet(context.Background(), map[string]interface{}{
-			identifierHash: string(serializedTrack),
+			cleanedArtiste: string(serializedTrack),
 		}).Err()
 		if err != nil {
 			log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error caching track - %v\n", err)

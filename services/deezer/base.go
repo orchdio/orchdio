@@ -115,13 +115,14 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) *blueprint
 // This is typically expected to be used when the track we want to fetch is the one we just
 // want to search on. That is, the other platforms that the user is trying to convert to.
 func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
-	identifierHash := util.HashIdentifier(fmt.Sprintf("deezer-%s-%s", artiste, title))
+	cleanedArtiste := fmt.Sprintf("deezer-%s-%s", util.NormalizeString(artiste), title)
+	//identifierHash := util.HashIdentifier()
 	log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] first artiste and title %s %s\n", artiste, title)
 	// get the cached track
-	if red.Exists(context.Background(), identifierHash).Val() == 1 {
+	if red.Exists(context.Background(), cleanedArtiste).Val() == 1 {
 		log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] Track has been cached\n")
 		// deserialize the result from redis
-		cachedTrack, err := red.Get(context.Background(), identifierHash).Result()
+		cachedTrack, err := red.Get(context.Background(), cleanedArtiste).Result()
 		if err != nil {
 			log.Printf("\n[platforms][base][SearchTrackWithTitle] Could not get cached track. err %v\n", err)
 			return nil, err
@@ -138,7 +139,8 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 	log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] Track has not been cached\n")
 
 	trackTitle := ExtractTitle(title)
-	_link := fmt.Sprintf("track:\"%s\" artist:\"%s\" album:\"%s\"", strings.Trim(trackTitle, " "), strings.Trim(artiste, " "), strings.Trim(album, " "))
+	// DEEZER:LABEL
+	_link := fmt.Sprintf("track:\"%s\" artist:\"%s\" album:\"%s\"", strings.Trim(trackTitle, " "), strings.ReplaceAll(strings.Trim(artiste, " "), " ", ""), strings.Trim(album, " "))
 	payload := url.QueryEscape(_link)
 	link := fmt.Sprintf("%s/search?q=%s", os.Getenv("DEEZER_API_BASE"), payload)
 
@@ -182,7 +184,7 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 		// if the artistes are the same, the track result is most likely the same (except remixes, an artiste doesnt have two tracks with the same name)
 		if lo.Contains(out.Artists, artiste) {
 			err = red.MSet(context.Background(), map[string]interface{}{
-				identifierHash: string(serializedTrack),
+				artiste: string(serializedTrack),
 			}).Err()
 			if err != nil {
 				log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error caching track - %v\n", err)
@@ -231,13 +233,20 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]
 	var ch = make(chan *blueprint.TrackSearchResult, len(tracks))
 	var wg sync.WaitGroup
 	for _, track := range tracks {
+		// in order to create the identifier that we use to recognize tracks in cache, we simply take the artiste
+		// name. but the thing is that an artiste can have spaces in their name, etc. this is definitely going to not go as we expect
+		// so we need to remove spaces and weird characters from the artiste name
+		// this is the same for the title of the track
+
+		//cleanedArtiste := util.NormalizeString("deezer-" + track.Artistes[0] + "-" + track.Title)
+		cleanedArtiste := fmt.Sprintf("deezer-%s-%s", util.NormalizeString(track.Artistes[0]), track.Title)
 		// WARNING: unhandled slice index
-		identifierHash := util.HashIdentifier("deezer-" + track.Artistes[0] + "-" + track.Title)
+		//identifierHash := util.HashIdentifier("deezer-" + track.Artistes[0] + "-" + track.Title)
 		// check if its been cached. if so, we grab and return it. if not, we let it search
-		if red.Exists(context.Background(), identifierHash).Val() == 1 {
+		if red.Exists(context.Background(), cleanedArtiste).Val() == 1 {
 			// deserialize the result from redis
 			var deserializedTrack *blueprint.TrackSearchResult
-			cachedResult := red.Get(context.Background(), identifierHash).Val()
+			cachedResult := red.Get(context.Background(), cleanedArtiste).Val()
 			err := json.Unmarshal([]byte(cachedResult), &deserializedTrack)
 			if err != nil {
 				log.Printf("\n[platforms][base][FetchTracks] Could not deserialize cache result. err %v\n", err)

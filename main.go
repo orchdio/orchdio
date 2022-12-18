@@ -30,6 +30,7 @@ import (
 	"orchdio/blueprint"
 	"orchdio/controllers"
 	"orchdio/controllers/account"
+	"orchdio/controllers/auth"
 	"orchdio/controllers/conversion"
 	"orchdio/controllers/follow"
 	"orchdio/controllers/platforms"
@@ -221,8 +222,12 @@ func main() {
 			Queues: map[string]int{
 				"playlist-conversion": 5,
 			},
+			// NB: from the queue LoggingMiddleware, when we handle orphaned task and we return a blueprint.ENORESULT error, the execution
+			// jumps here, so when the middleware runs and we return a blueprint.ENORESULT error, it'll run this block and reprocess the task
+			// if the handler has successfully been attached or do nothing (and let the queue retry later) if there was an error
 			ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
-				log.Printf("[main][QueueErrorHandler] Task error handler issue here%v", err)
+				log.Printf("[main][QueueErrorHandler] Running queue server error handler...")
+				log.Printf("[main][QueueErrorHandler][info] This middleware is called when the queue server encounters an error and rescheduling the queues")
 				// check that the queue isnt paused
 				queueInfo, qErr := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
 				if qErr != nil {
@@ -238,27 +243,43 @@ func main() {
 				}
 				log.Printf("[main] [QueueErrorHandler] Queue info %v", queueInfo)
 				if queueInfo.Paused {
-					log.Printf("Queue is paused")
+					log.Printf("[main][QueueErrorHandler] Queue is paused")
 					err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
 					return
 				}
 
-				asynqMux.Handle(task.Type(), asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
-					log.Printf("[main] [QueueErrorHandler] Custom running handler here%v", err)
-					// create new taskHandler that will then process this job. From the ```queue.LoggerMiddleware``` method,
-					// we check for "orphaned" tasks, these tasks are tasks that were created but were never fully processed,
-					// for example during server restart or shutdown during task processing, even though we detect queue pauses and pause them
-					// when we do this, the next task the queue server picks up the task, we'll attach this handler to it and just process it.
-					taskHandler := queue.NewOrchdioQueue(asyncClient, db, redisClient)
-					err = taskHandler.PlaylistHandler(t.ResultWriter().TaskID(), taskData.ShortURL, taskData.LinkInfo, taskData.User.UUID.String())
-					if err != nil {
-						log.Printf("[main] [QueueErrorHandler] Error processing task %v", err)
-						return err
-					}
-					log.Printf("[main] [QueueErrorHandler] Task processed successfully")
-					return nil
-				}))
-				log.Printf("[main] [QueueErrorHandler] Queue is not paused but an error occured")
+				// check if task has already been scheduled (has an handler), by fetching task from queue
+				notFound := asynq.NotFound(context.Background(), task)
+				if notFound != nil {
+					log.Printf("[main] [QueueErrorHandler][warning] Task not scheduled")
+					asynqMux.Handle(task.Type(), asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
+						log.Printf("[main] [QueueErrorHandler] Custom running handler here%v", err)
+						// create new taskHandler that will then process this job. From the ```queue.LoggerMiddleware``` method,
+						// we check for "orphaned" tasks, these tasks are tasks that were created but were never fully processed,
+						// for example during server restart or shutdown during task processing, even though we detect queue pauses and pause them
+						// when we do this, the next task the queue server picks up the task, we'll attach this handler to it and just process it.
+						taskHandler := queue.NewOrchdioQueue(asyncClient, db, redisClient)
+						err = taskHandler.PlaylistHandler(t.ResultWriter().TaskID(), taskData.ShortURL, taskData.LinkInfo, taskData.User.UUID.String())
+						if err != nil {
+							log.Printf("[main] [QueueErrorHandler] Error processing task %v", err)
+							return err
+						}
+						log.Printf("[main] [QueueErrorHandler] Task processed successfully")
+						return nil
+					}))
+					log.Printf("[main] [QueueErrorHandler][warning] Queue is not paused but an error occured")
+					return
+				}
+
+				taskHandler := queue.NewOrchdioQueue(asyncClient, db, redisClient)
+				err = taskHandler.PlaylistHandler(task.ResultWriter().TaskID(), taskData.ShortURL, taskData.LinkInfo, taskData.User.UUID.String())
+				if err != nil {
+					log.Printf("[main] [QueueErrorHandler] Error processing task %v", err)
+					return
+				}
+				// process task
+
+				log.Printf("[main] [QueueErrorHandler] Task already has a handler")
 			}),
 		})
 
@@ -420,6 +441,12 @@ func main() {
 	//baseRouter.Use(authMiddleware.LogIncomingRequest)
 
 	//baseRouter.Use(defaultFiberConfig)
+
+	authController := auth.NewAuthController(db)
+	nextAuthGroup := baseRouter.Group("/next/auth/:platform")
+	// temp routes to map to for the new auth. replace later
+	nextAuthGroup.Get("/connect", authMiddleware.ValidateKey, authMiddleware.AddAPIDeveloperToContext, authController.AppAuthRedirect)
+	nextAuthGroup.Get("/callback", authController.HandleAppAuthRedirect)
 
 	baseRouter.Get("/heartbeat", getInfo)
 	baseRouter.Get("/:platform/connect", userController.RedirectAuth)

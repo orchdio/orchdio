@@ -268,8 +268,8 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 	}
 
 	if re.Status != http.StatusOK {
-		log.Printf("[queue][PlaylistHandler] - error posting webhook: %v", re)
-		return blueprint.EPHANTOMERR
+		log.Printf("[queue][PlaylistHandler][warning] - error posting webhook: %v", re)
+		return nil
 	}
 
 	log.Printf("[queue][EnqueueTask] - successfully processed task: %v", taskId)
@@ -293,7 +293,7 @@ func LoggingMiddleware(h asynq.Handler) asynq.Handler {
 			// like the best way to handle this.
 			handlerNotFoundErr := asynq.NotFound(ctx, t)
 			if handlerNotFoundErr != nil {
-				log.Printf("[queue][LoggingMiddleware] - Error is a handler not found error %v", handlerNotFoundErr)
+				log.Printf("[queue][LoggingMiddleware][warning] - Error is a handler not found error %v", handlerNotFoundErr)
 				return blueprint.ENORESULT
 			}
 			log.Printf("[queue][LoggingMiddleware] - error processing task: %v", err)

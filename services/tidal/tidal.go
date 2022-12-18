@@ -14,6 +14,7 @@ import (
 	"orchdio/util"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -158,12 +159,15 @@ func FetchSingleTrack(id string) (*Track, error) {
 
 // SearchTrackWithTitle will perform a search on tidal for the track we want
 func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
-	identifierHash := util.HashIdentifier(fmt.Sprintf("tidal-%s-%s", title, artiste))
+	//identifierHash := util.HashIdentifier(fmt.Sprintf("tidal-%s-%s", title, artiste))
 
-	if red.Exists(context.Background(), identifierHash).Val() == 1 {
+	cleanedArtiste := strings.ToLower(fmt.Sprintf("tidal-%s-%s", util.NormalizeString(artiste), title))
+	log.Printf("Searching with stripped artiste: %s. Original artiste: %s", cleanedArtiste, artiste)
+
+	if red.Exists(context.Background(), cleanedArtiste).Val() == 1 {
 		log.Printf("\n[services][tidal][SearchTrackWithTitle] - track found in cache\n")
 		var result *blueprint.TrackSearchResult
-		cachedResult, err := red.Get(context.Background(), identifierHash).Result()
+		cachedResult, err := red.Get(context.Background(), cleanedArtiste).Result()
 		if err != nil {
 			log.Printf("\n[services][tidal][SearchTrackWithTitle] - ⚠️ error fetching key from redis. - %v\n", err)
 			return nil, err
@@ -214,7 +218,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 
 		if lo.Contains(tidalTrack.Artists, artiste) {
 			err = red.MSet(context.Background(), map[string]interface{}{
-				identifierHash: string(serialized),
+				cleanedArtiste: string(serialized),
 			}).Err()
 			if err != nil {
 				log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error caching track - %v\n", err)

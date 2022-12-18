@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"github.com/vicanso/go-axios"
 	"log"
 	"net/http"
@@ -17,11 +16,19 @@ type Deezer struct {
 	RedirectURI  string
 }
 
+// NewDeezerAuth returns a new deezer auth instance.
+func NewDeezerAuth(clientID, clientSecret, redirectURI string) *Deezer {
+	return &Deezer{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		RedirectURI:  redirectURI,
+	}
+}
+
 // FetchAuthURL fetches the auth url.
-func (d *Deezer) FetchAuthURL() string {
+func (d *Deezer) FetchAuthURL(state string) string {
 	permissions := fmt.Sprintf("%s,%s,%s,%s,%s,%s", "basic_access", "email", "manage_library", "delete_library", "offline_access", "listening_history")
-	uniqueID, _ := uuid.NewUUID()
-	return fmt.Sprintf("%s/auth.php?app_id=%s&redirect_uri=%s&perms=%s&state=%s", AuthBase, d.ClientID, d.RedirectURI, permissions, uniqueID.String())
+	return fmt.Sprintf("%s/auth.php?app_id=%s&redirect_uri=%s&perms=%s&state=%s", AuthBase, d.ClientID, d.RedirectURI, permissions, state)
 }
 
 // FetchAccessToken fetches the access token.
