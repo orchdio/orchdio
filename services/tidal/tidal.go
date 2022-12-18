@@ -312,7 +312,6 @@ func FetchPlaylistInfo(id string) (*PlaylistInfo, error) {
 // a bool to indicate if the playlist has been updated since the last time a call was made
 // and an error if there is one
 func FetchPlaylist(id string, red *redis.Client) (*PlaylistInfo, *blueprint.PlaylistSearchResult, bool, error) {
-	// identifierHash represents the hash for the playlist info
 	identifierHash := fmt.Sprintf("tidal:playlist:%s", id)
 
 	// infoHash represents the key for the snapshot of the playlist info, in this case

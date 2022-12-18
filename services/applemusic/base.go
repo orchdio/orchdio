@@ -90,7 +90,6 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
 	cleanedArtiste := fmt.Sprintf("applemusic-%s-%s", util.NormalizeString(artiste), title)
 	log.Printf("Apple music: Searching with stripped artiste: %s. Original artiste: %s", cleanedArtiste, artiste)
-	//identifierHash := fmt.Sprintf("applemusic-%s-%s", artiste, title)
 	if red.Exists(context.Background(), cleanedArtiste).Val() == 1 {
 		log.Printf("[services][applemusic][SearchTrackWithTitle] Track found in cache: %v\n", cleanedArtiste)
 		track, err := red.Get(context.Background(), cleanedArtiste).Result()
@@ -171,13 +170,6 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 		}
 	}
 
-	//newHashIdentifier := util.HashIdentifier(fmt.Sprintf("applemusic-%s-%s", t.Attributes.ArtistName, t.Attributes.Name))
-	//trackIdentifierHash := util.HashIdentifier(fmt.Sprintf("applemusic:%s", t.Id))
-	//err = red.MSet(context.Background(), newHashIdentifier, string(serializedTrack), trackIdentifierHash, string(serializedTrack)).Err()
-	//if err != nil {
-	//	log.Printf("[services][applemusic][SearchTrackWithTitle] Error caching track: %v\n", err)
-	//	return nil, err
-	//}
 	return track, nil
 }
 

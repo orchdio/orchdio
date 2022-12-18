@@ -116,7 +116,6 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) *blueprint
 // want to search on. That is, the other platforms that the user is trying to convert to.
 func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
 	cleanedArtiste := fmt.Sprintf("deezer-%s-%s", util.NormalizeString(artiste), title)
-	//identifierHash := util.HashIdentifier()
 	log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] first artiste and title %s %s\n", artiste, title)
 	// get the cached track
 	if red.Exists(context.Background(), cleanedArtiste).Val() == 1 {
@@ -241,7 +240,6 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]
 		//cleanedArtiste := util.NormalizeString("deezer-" + track.Artistes[0] + "-" + track.Title)
 		cleanedArtiste := fmt.Sprintf("deezer-%s-%s", util.NormalizeString(track.Artistes[0]), track.Title)
 		// WARNING: unhandled slice index
-		//identifierHash := util.HashIdentifier("deezer-" + track.Artistes[0] + "-" + track.Title)
 		// check if its been cached. if so, we grab and return it. if not, we let it search
 		if red.Exists(context.Background(), cleanedArtiste).Val() == 1 {
 			// deserialize the result from redis

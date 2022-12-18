@@ -88,7 +88,6 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 }
 
 func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
-	//identifierHash := util.HashIdentifier()
 	cleanedArtiste := fmt.Sprintf("ytmusic-%s-%s", util.NormalizeString(artiste), title)
 
 	log.Printf("Searching with stripped artiste: %s. Original artiste: %s", cleanedArtiste, artiste)

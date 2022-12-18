@@ -107,7 +107,6 @@ func SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSear
 // want to search on. That is, the other platforms that the user is trying to convert to.
 func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
 	strippedArtiste := ExtractArtiste(artiste)
-	//identifierHash := util.HashIdentifier(fmt.Sprintf("spotify-%s-%s", strippedArtiste, title))
 	cleanedArtiste := fmt.Sprintf("spotify-%s-%s", util.NormalizeString(artiste), title)
 
 	log.Printf("Spotify: Searching with stripped artiste: %s. Original artiste: %s", cleanedArtiste, strippedArtiste)
