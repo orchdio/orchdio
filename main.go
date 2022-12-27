@@ -32,12 +32,12 @@ import (
 	"orchdio/controllers/account"
 	"orchdio/controllers/auth"
 	"orchdio/controllers/conversion"
+	"orchdio/controllers/developer"
 	"orchdio/controllers/follow"
 	"orchdio/controllers/platforms"
 	"orchdio/controllers/webhook"
 	"orchdio/middleware"
 	"orchdio/queue"
-	"orchdio/universal"
 	"orchdio/util"
 	"os"
 	"os/signal"
@@ -348,6 +348,7 @@ func main() {
 			}
 			return nil
 		},
+		//Prefork: true,
 	})
 	serverChan := make(chan os.Signal, 1)
 	signal.Notify(serverChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
@@ -404,6 +405,8 @@ func main() {
 	authMiddleware := middleware.NewAuthMiddleware(db)
 	conversionController := conversion.NewConversionController(db, redisClient, playlistQueue, QueueFactory, asyncClient, asynqServer, asynqMux)
 	followController := follow.NewController(db, redisClient)
+	devAppController := developer.NewDeveloperController(db)
+
 	// ==========================================
 	// Migrate
 
@@ -435,6 +438,8 @@ func main() {
 
 	app.Use(cors.New(), authMiddleware.LogIncomingRequest, authMiddleware.HandleTrolls)
 	baseRouter := app.Group("/api/v1")
+	orchRouter := app.Group("/v1")
+
 	baseRouter.Get("/", func(ctx *fiber.Ctx) error {
 		return ctx.SendStatus(http.StatusOK)
 	})
@@ -443,9 +448,25 @@ func main() {
 	//baseRouter.Use(defaultFiberConfig)
 
 	authController := auth.NewAuthController(db)
+	// connect endpoints
+	orchRouter.Get("/auth/:platform/connect", authController.AppAuthRedirect)
+	// the callback that the auth platform will redirect to and this is where we handle the redirect and generate an auth token for the user, as response
+	orchRouter.Get("/auth/:platform/callback", authController.HandleAppAuthRedirect)
+	orchRouter.Post("/track/convert", authMiddleware.AddDeveloperToContext, middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
+
+	orchRouter.Get("/app/:appId", devAppController.FetchApp)
+	// developer endpoints
+	orchRouter.Use(jwtware.New(jwtware.Config{
+		SigningKey: []byte("qwertyuiopasdfghjklzxcvbnm123456"), // TODO: change this to use the .env value
+		Claims:     &blueprint.OrchdioUserToken{},
+		ContextKey: "authToken",
+	}), middleware.VerifyToken)
+
+	orchRouter.Post("/app/new", authMiddleware.AddDeveloperToContext, devAppController.CreateApp)
+
 	nextAuthGroup := baseRouter.Group("/next/auth/:platform")
 	// temp routes to map to for the new auth. replace later
-	nextAuthGroup.Get("/connect", authMiddleware.ValidateKey, authMiddleware.AddAPIDeveloperToContext, authController.AppAuthRedirect)
+	nextAuthGroup.Get("/connect", authMiddleware.ValidateKey, authMiddleware.AddDeveloperToContext, authController.AppAuthRedirect)
 	nextAuthGroup.Get("/callback", authController.HandleAppAuthRedirect)
 
 	baseRouter.Get("/heartbeat", getInfo)
@@ -456,7 +477,7 @@ func main() {
 	baseRouter.Get("/deezer/auth", userController.AuthDeezerUser)
 	//baseRouter.Post("/applemusic/auth", userController.AuthAppleMusicUser)
 	baseRouter.Post("/applemusic/auth", userController.AuthAppleMusicUser)
-	baseRouter.Get("/track/convert", authMiddleware.ValidateKey, authMiddleware.AddAPIDeveloperToContext, middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
+	baseRouter.Get("/track/convert", authMiddleware.ValidateKey, authMiddleware.AddDeveloperToContext, middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
 	//baseRouter.Get("/track/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
 	baseRouter.Get("/playlist/convert", authMiddleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
 
@@ -464,8 +485,8 @@ func main() {
 	baseRouter.Patch("/webhook/update", authMiddleware.ValidateKey, webhookController.UpdateUserWebhookUrl)
 	baseRouter.Get("/webhook", authMiddleware.ValidateKey, webhookController.FetchWebhookUrl)
 	baseRouter.Delete("/webhook", authMiddleware.ValidateKey, webhookController.DeleteUserWebhookUrl)
-	baseRouter.Post("/white-tiger", authMiddleware.AddAPIDeveloperToContext, whController.Handle)
-	baseRouter.Post("/redirect-url", authMiddleware.AddAPIDeveloperToContext, userController.CreateOrUpdateRedirectURL)
+	baseRouter.Post("/white-tiger", authMiddleware.AddDeveloperToContext, whController.Handle)
+	baseRouter.Post("/redirect-url", authMiddleware.AddDeveloperToContext, userController.CreateOrUpdateRedirectURL)
 	baseRouter.Get("/white-tiger", whController.AuthenticateWebhook)
 
 	userRouter := app.Group("/api/v1/user")
@@ -524,28 +545,6 @@ func main() {
 	this is a test to see hpw the keyboard light patterns    are.
 	*/
 
-	// WEBSOCKET EVENT HANDLERS
-	ikisocket.On(ikisocket.EventConnect, func(payload *ikisocket.EventPayload) {
-		log.Printf("\n[main][SocketEvent][EventConnect] - A new client connected\n")
-	})
-
-	ikisocket.On(ikisocket.EventDisconnect, func(payload *ikisocket.EventPayload) {
-		// TODO: incrementally retry to reconnect with the client
-		log.Printf("\nClient has disconnected")
-	})
-
-	ikisocket.On(ikisocket.EventMessage, universal.TrackConversion)
-	ikisocket.On(ikisocket.EventMessage, func(payload *ikisocket.EventPayload) {
-		universal.PlaylistConversion(payload, redisClient)
-	})
-
-	/**
-	 ==================================================================
-	+ some job queue shenanigans here
-	*/
-	// consume all the jobs in the queue
-	//if err :=
-
 	/**
 	 ==================================================================
 	+
@@ -555,22 +554,6 @@ func main() {
 	+
 	 ==================================================================
 	*/
-
-	//if aErr := asynqServer.Run(asynqMux); aErr != nil {
-	//	log.Printf("\n[main] [error] - Could not start asynq server. Are you sure redis is configured correctly? Also, something else might be wrong")
-	//	panic(aErr)
-	//}
-
-	//defer func(s *asynq.Server) {
-	//	s.Stop()
-	//}(asynqServer)
-
-	//go func(DB *sqlx.DB) {
-	//	c := make(chan int)
-	//	log.Printf("\n[main] [info] - Process background tasks")
-	//	<-c
-	//	ProcessFollows(c, DB)
-	//}(db)
 
 	// hERE WE WANT TO SETUP A CRONJOB THAT RUNS EVERY 2 MINS TO PROCESS THE FOLLOWS
 	c := cron.New()
@@ -598,14 +581,3 @@ func main() {
 	<-serverShutdown
 	log.Printf("[main] [info] - Cleaning up tasks: %s", port)
 }
-
-//
-//func ProcessFollows(c chan int, redisClient *redis.Client, DB *sqlx.DB, aClient *asynq.Client, aMux *asynq.ServeMux) {
-//	for {
-//		select {
-//		case <-c:
-//			follow.SyncFollowsHandler(DB, redisClient, aClient, aMux)
-//			log.Printf("\n[main] [info] - Follows processed")
-//		}
-//	}
-//}

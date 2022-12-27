@@ -53,6 +53,7 @@ type User struct {
 	UpdatedAt    string      `json:"updated_at" db:"updated_at"`
 	RefreshToken []byte      `json:"refresh_token" db:"refresh_token,omitempty"`
 	PlatformID   string      `json:"platform_id" db:"platform_id"`
+	Authorized   bool        `json:"authorized" db:"authorized,omitempty"`
 }
 
 //type AppleMusicAuthBody struct {
@@ -389,6 +390,14 @@ type DeveloperApp struct {
 	VerifyToken []byte    `json:"verify_token,omitempty" db:"verify_token"`
 	CreatedAt   string    `json:"created_at,omitempty" db:"created_at"`
 	UpdatedAt   string    `json:"updated_at,omitempty" db:"updated_at"`
+	Authorized  bool      `json:"authorized,omitempty" db:"authorized"`
+}
+
+type UpdateDeveloperAppData struct {
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	RedirectURL string `json:"redirect_url,omitempty"`
+	WebhookURL  string `json:"webhook_url,omitempty"`
 }
 
 type CreateNewDeveloperAppData struct {

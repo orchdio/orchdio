@@ -35,7 +35,7 @@ func NewAuthController(db *sqlx.DB) *AuthController {
 func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 	// we want to check the incoming platform redirect. we make sure its only valid for spotify apple and deezer
 	platform := ctx.Params("platform")
-	appId := ctx.Query("app_id")
+	pubKey := ctx.Get("x-orchdio-public-key")
 	//developer := ctx.Locals("developer").(blueprint.User)
 	reg := regexp.MustCompile(`spotify|apple|deezer`)
 
@@ -43,17 +43,10 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "Invalid platform")
 	}
 
-	if appId == "" {
+	if pubKey == "" {
 		log.Printf("[controllers][AppAuthRedirect] developer -  error: no app id provided\n")
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "App ID is not present. please pass your app id as a query parameter")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "App ID is not present. please pass your app id as a header")
 	}
-
-	if ctx.Locals("developer") == nil {
-		log.Printf("[controllers][AppAuthRedirect] developer -  error: no developer found\n")
-		return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "Unauthorized developer request")
-	}
-
-	//developer := ctx.Locals("developer").(blueprint.User)
 
 	// we want to get the developer redirect url to redirect to after authenticating the user
 	// after the user has been redirected to the platform auth page, the platform will redirect
@@ -65,7 +58,7 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 	// The jwt token should have a lifetime of 5 - 15 minutes.
 
 	// validate app id is a valid uuid
-	isValid := util.IsValidUUID(appId)
+	isValid := util.IsValidUUID(pubKey)
 	if !isValid {
 		log.Printf("[controllers][AppAuthRedirect] developer -  error: invalid app id\n")
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "Invalid app id")
@@ -73,9 +66,10 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 
 	// get the redirect url of the developer
 	database := db.NewDB{DB: a.DB}
-	developerApp, err := database.FetchAppByAppId(appId)
+	// TODO: check if the app is actually "active"
+	developerApp, err := database.FetchAppByPublicKey(pubKey)
 	if err != nil {
-		log.Printf("[controllers][AppAuthRedirect] developer -  error: unable to  fetch the developer app with appId %v\n", err)
+		log.Printf("[controllers][AppAuthRedirect] developer -  error: unable to  fetch the developer app with pubKey %v\n", err)
 		if errors.Is(err, sql.ErrNoRows) {
 			return util.ErrorResponse(ctx, fiber.StatusNotFound, "App not found")
 		}
@@ -83,7 +77,8 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 	}
 
 	redirectToken := blueprint.AppAuthToken{
-		App:         developerApp.UID.String(),
+		App: developerApp.UID.String(),
+		// FIXME (suggestion): maybe not encrypt this in the jwt but just the app id and then fetch app and app info from db using the app id
 		RedirectURL: developerApp.RedirectURL,
 		Action: struct {
 			Payload interface{} `json:"payload"`
@@ -356,10 +351,10 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
 		}
 
-		serialed, err := json.Marshal(map[string]string{
+		serialized, err := json.Marshal(map[string]string{
 			"applemusic": displayName,
 		})
-		_, err = a.DB.Exec(queries.UpdatePlatformUsernames, hashedEmail, string(serialed))
+		_, err = a.DB.Exec(queries.UpdatePlatformUsernames, hashedEmail, string(serialized))
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to update apple music platform usernames: %v\n", err)
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)

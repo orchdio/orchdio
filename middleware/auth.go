@@ -2,12 +2,17 @@ package middleware
 
 import (
 	"database/sql"
+	"errors"
 	"github.com/gofiber/fiber/v2"
 	"github.com/jmoiron/sqlx"
 	"log"
 	"net/http"
+	"orchdio/blueprint"
 	"orchdio/db"
+	"orchdio/db/queries"
+	"orchdio/services/spotify"
 	"orchdio/util"
+	"os"
 	"strings"
 	"time"
 )
@@ -61,37 +66,64 @@ func (a *AuthMiddleware) LogIncomingRequest(ctx *fiber.Ctx) error {
 	return ctx.Next()
 }
 
-func (a *AuthMiddleware) AddAPIDeveloperToContext(ctx *fiber.Ctx) error {
-	// get the api key from the header
-	apiKey := ctx.Get("x-orchdio-key")
+//func (a *AuthMiddleware) AddAPIDeveloperToContext(ctx *fiber.Ctx) error {
+//	// get the api key from the header
+//	apiKey := ctx.Get("x-orchdio-key")
+//
+//	if len([]byte(apiKey)) > 36 {
+//		log.Printf("[middleware][ValidateKey] key is too long. %s\n", apiKey)
+//		return util.ErrorResponse(ctx, http.StatusUnauthorized, "Key too long")
+//	}
+//
+//	if apiKey == "" {
+//		log.Printf("[middleware][ValidateKey] key is empty. %s\n", apiKey)
+//		return util.ErrorResponse(ctx, http.StatusUnauthorized, "Key is empty")
+//	}
+//
+//	isValid := util.IsValidUUID(apiKey)
+//	if isValid {
+//		log.Printf("[middleware][ValidateKey] key is valid. %s\n", apiKey)
+//		database := db.NewDB{DB: a.DB}
+//		developerApp, err := database.FetchAppBySecretKey(apiKey)
+//		if err != nil {
+//			if err == sql.ErrNoRows {
+//				log.Printf("[middleware][ValidateKey] key not found. %s\n", apiKey)
+//				return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid apikey")
+//			}
+//			log.Printf("[middleware][ValidateKey] error - Could not fetch user with api key: %v\n", err)
+//			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+//		}
+//		// fetch developer with the key
+//		ctx.Locals("developer")
+//		return ctx.Next()
+//	}
+//	return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid apikey")
+//}
 
-	if len([]byte(apiKey)) > 36 {
-		log.Printf("[middleware][ValidateKey] key is too long. %s\n", apiKey)
-		return util.ErrorResponse(ctx, http.StatusUnauthorized, "Key too long")
+func (a *AuthMiddleware) AddDeveloperToContext(ctx *fiber.Ctx) error {
+	log.Printf("[db][middleware][FetchAppDeveloperWithSecretKey] developer -  fetching app developer with secret key\n")
+	key := ctx.Get("x-orchdio-key")
+	if key == "" {
+		log.Printf("[db][FetchAppDeveloperWithSecretKey] developer -  error: could not fetch app developer with secret")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "missing x-orchdio-key header")
 	}
 
-	if apiKey == "" {
-		log.Printf("[middleware][ValidateKey] key is empty. %s\n", apiKey)
-		return util.ErrorResponse(ctx, http.StatusUnauthorized, "Key is empty")
+	encryptedKey, err := util.Encrypt([]byte(key), []byte(os.Getenv("ENCRYPTION_SECRET")))
+	if err != nil {
+		log.Printf("[db][FetchAppDeveloperWithSecretKey] developer -  error: could not fetch app developer with secret. Key could not be encrypted %v\n", err)
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "invalid x-orchdio-key header")
 	}
 
-	isValid := util.IsValidUUID(apiKey)
-	if isValid {
-		log.Printf("[middleware][ValidateKey] key is valid. %s\n", apiKey)
-		database := db.NewDB{DB: a.DB}
-		user, err := database.FetchUserWithApiKey(apiKey)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				log.Printf("[middleware][ValidateKey] key not found. %s\n", apiKey)
-				return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid apikey")
-			}
-			log.Printf("[middleware][ValidateKey] error - Could not fetch user with api key: %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+	var developer *blueprint.User
+	err = a.DB.QueryRowx(queries.FetchAppDeveloperBySecretKey, encryptedKey).StructScan(&developer)
+	if err != nil {
+		log.Printf("[db][FetchAppDeveloperWithSecretKey] developer -  error: could not fetch app developer with secret %v\n", err)
+		if errors.Is(err, sql.ErrNoRows) {
+			return util.ErrorResponse(ctx, fiber.StatusNotFound, "app not found")
 		}
-		ctx.Locals("developer", user)
-		return ctx.Next()
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "invalid x-orchdio-key header")
 	}
-	return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid apikey")
+	return util.SuccessResponse(ctx, fiber.StatusOK, developer)
 }
 
 func (a *AuthMiddleware) HandleTrolls(ctx *fiber.Ctx) error {
@@ -105,13 +137,98 @@ func (a *AuthMiddleware) HandleTrolls(ctx *fiber.Ctx) error {
 	return ctx.Next()
 }
 
-// CheckUserAuthStatus checks if the user is already authenticated on orchdio. If the user has been authorized, we will
+// CheckOrInitiateUserAuthStatus checks if the user is already authenticated on orchdio. If the user has been authorized, we will
 // continue to the next handler in line by proceeding to next but if the user is not authenticated then we
 // will return a redirect auth for the platform the user is trying to perform an action and or auth on.
-func (a *AuthMiddleware) CheckUserAuthStatus(ctx *fiber.Ctx) error {
+func (a *AuthMiddleware) CheckOrInitiateUserAuthStatus(ctx *fiber.Ctx) error {
+	// extract the user id from the path. tbhe assumotion here is that the user id would be passed in the endpoints path
+	userId := ctx.Params("userId")
+	// attach appId as query params. if we change the verb to POST, we can simply attach the appId to the header as
+	// x-orchdio-app-id
+	appId := ctx.Query("app_id")
+	if userId == "" {
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Missing user id")
+	}
 
-	// check for the user in the session
+	if appId == "" {
+		log.Printf("[middleware][CheckUserAuthStatus] missing app id")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Missing app id")
+	}
+
+	isValidUserId := util.IsValidUUID(userId)
+	if !isValidUserId {
+		log.Printf("[middleware][CheckUserAuthStatus] invalid user id")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid user id")
+	}
+
+	// extract the platform to auth for
+	platform := ctx.Query("platform")
+	if platform == "" {
+		log.Printf("[middleare][auth][CheckUserAuthStatus] - platform not present. Please specify platform to auth user on")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid Auth platform")
+	}
+
+	// find the user in the db with the id
+	database := db.NewDB{DB: a.DB}
+	user, err := database.FindUserByUUID(userId)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return util.ErrorResponse(ctx, http.StatusNotFound, "User not found")
+		}
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+	}
+
+	// check if the user is authenticated on orchdio
+	if !user.Authorized {
+		log.Printf("[middleware][CheckUserAuthStatus] user is not authorized. Redirecting to auth page. %s\n", userId)
+		// TODO: handle fetching auth url depending on the platform here.
+		developerApp, err := database.FetchAppByAppId(appId)
+		if err != nil {
+			log.Printf("[middleware][CheckUserAuthStatus] could not retrieve developer app")
+			return util.ErrorResponse(ctx, http.StatusNotFound, "Invalid App ID")
+		}
+
+		redirectToken := blueprint.AppAuthToken{
+			App:         appId,
+			RedirectURL: developerApp.RedirectURL,
+			Action: struct {
+				Payload interface{} `json:"payload"`
+				Action  string      `json:"action"`
+			}(struct {
+				Payload interface{}
+				Action  string
+			}{Payload: nil, Action: "app_auth"}),
+			Platform: platform,
+		}
+
+		switch platform {
+		case "spotify":
+			encryptedAuthToken, err := util.SignAuthJwt(&redirectToken)
+			if err != nil {
+				log.Printf("[middleware][auth][CheckUserAuthStatus] - could not sign auth token. This is a serious error - %v\n", err)
+				return util.ErrorResponse(ctx, http.StatusInternalServerError, "Could not sign JWT token")
+			}
+
+			authURL := spotify.FetchAuthURL(string(encryptedAuthToken))
+			log.Printf("[middleware][auth][CheckUserAuthStatus] - user auth redirect url - %v\n", string(authURL))
+			return util.SuccessResponse(ctx, http.StatusOK, string(authURL))
+
+		case "deezer":
+			log.Printf("[middleware][auth][CheckAuthMiddleware] - generating user deezer auth redirect url")
+			encryptedToken, err := util.SignAuthJwt(&redirectToken)
+			if err != nil {
+				log.Printf("[middleare][auth][CheckUserAuthStatus] - could not sign auth token. This is a serious error: %v\n", err)
+				return util.ErrorResponse(ctx, http.StatusInternalServerError, "Could not sign redirect token")
+			}
+			return util.SuccessResponse(ctx, http.StatusOK, string(encryptedToken))
+
+		case "applemusic":
+			log.Printf("[middleware][CheckUserAuthStatus] - generating apple music auth token")
+			return ctx.Status(http.StatusNotImplemented).JSON(fiber.Map{
+				"message": "Apple Music auth not implemented yet",
+			})
+		}
+	}
 
 	return ctx.Next()
-	//return util.SuccessResponse(ctx, http.StatusOK, "User is authenticated")
 }
