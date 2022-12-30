@@ -1,6 +1,7 @@
 package developer
 
 import (
+	"database/sql"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -8,7 +9,6 @@ import (
 	"orchdio/blueprint"
 	"orchdio/db"
 	"orchdio/util"
-	"os"
 )
 
 type DeveloperController struct {
@@ -31,11 +31,7 @@ func (d *DeveloperController) CreateApp(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "Could not deserialize request body")
 	}
 	pubKey := uuid.NewString()
-	secretKey, err := util.Encrypt([]byte(uuid.NewString()), []byte(os.Getenv("ENCRYPTION_SECRET")))
-	if err != nil {
-		log.Printf("[controllers][CreateApp] developer -  error: could not encrypt secret key during app creation: %v\n", err)
-		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "Could not encrypt secret key during app creation")
-	}
+	secretKey := uuid.NewString()
 
 	// create new developer
 	database := db.NewDB{DB: d.DB}
@@ -130,4 +126,67 @@ func (d *DeveloperController) FetchApp(ctx *fiber.Ctx) error {
 		"authorized":   app.Authorized,
 	}
 	return util.SuccessResponse(ctx, fiber.StatusOK, info)
+}
+
+func (d *DeveloperController) DisableApp(ctx *fiber.Ctx) error {
+	log.Printf("[controllers][DisableApp] developer -  disabling app\n")
+	appId := ctx.Params("appId")
+	if appId == "" {
+		log.Printf("[controllers][DisableApp] developer -  error: appId is empty\n")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "appId is empty")
+	}
+
+	// disable the app
+	database := db.NewDB{DB: d.DB}
+	err := database.DisableApp(appId)
+	if err != nil {
+		log.Printf("[controllers][DisableApp] developer -  error: could not disable app in Database: %v\n", err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+	}
+
+	log.Printf("[controllers][DisableApp] developer -  app disabled: %s\n", appId)
+	return util.SuccessResponse(ctx, fiber.StatusOK, "App disabled successfully")
+}
+
+func (d *DeveloperController) EnableApp(ctx *fiber.Ctx) error {
+	log.Printf("[controllers][EnableApp] developer -  enabling app\n")
+	appId := ctx.Params("appId")
+	if appId == "" {
+		log.Printf("[controllers][EnableApp] developer -  error: appId is empty\n")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "appId is empty")
+	}
+
+	// enable the app
+	database := db.NewDB{DB: d.DB}
+	err := database.EnableApp(appId)
+	if err != nil {
+		log.Printf("[controllers][EnableApp] developer -  error: could not enable app in Database: %v\n", err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+	}
+
+	log.Printf("[controllers][EnableApp] developer -  app enabled: %s\n", appId)
+	return util.SuccessResponse(ctx, fiber.StatusOK, "App enabled successfully")
+}
+
+func (d *DeveloperController) FetchKeys(ctx *fiber.Ctx) error {
+	log.Printf("[controllers][FetchKeys] developer -  fetching keys\n")
+	appId := ctx.Params("appId")
+	if appId == "" {
+		log.Printf("[controllers][FetchKeys] developer -  error: appId is empty\n")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "appId is empty")
+	}
+
+	// fetch the app
+	database := db.NewDB{DB: d.DB}
+	keys, err := database.FetchAppKeys(appId)
+	if err != nil {
+		log.Printf("[controllers][FetchKeys] developer -  error: could not fetch app keys from the Database: %v\n", err)
+		if err == sql.ErrNoRows {
+			return util.ErrorResponse(ctx, fiber.StatusNotFound, "App not found")
+		}
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+	}
+
+	log.Printf("[controllers][FetchKeys] developer -  app keys fetched: %s\n", appId)
+	return util.SuccessResponse(ctx, fiber.StatusOK, keys)
 }

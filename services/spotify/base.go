@@ -133,7 +133,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 
 	spotifySearch := FetchSingleTrack(title, strippedArtiste)
 	if spotifySearch == nil {
-		log.Printf("\n[controllers][platforms][spotify][ConvertTrack] error - error fetching single track on spotify\n")
+		log.Printf("\n[controllers][platforms][spotify][ConvertEntity] error - error fetching single track on spotify\n")
 		// panic for now.. at least until i figure out how to handle it if it can fail at all or not or can fail but be taken care of
 		return nil, blueprint.ENORESULT
 	}
@@ -143,18 +143,18 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	// a similar problem where a result is empty but not detected as omittedTrack comes up again for spotify,
 	// then we should check here and do the former.
 	if len(spotifySearch.Tracks.Tracks) == 0 {
-		log.Printf("\n[controllers][platforms][spotify][ConvertTrack] error - error fetching single track on spotify\n")
+		log.Printf("\n[controllers][platforms][spotify][ConvertEntity] error - error fetching single track on spotify\n")
 		// panic for now.. at least until i figure out how to handle it if it can fail at all or not or can fail but be taken care of
 		return nil, blueprint.ENORESULT
 	}
 
 	//if spotifySearch.Artists == nil {
-	//	log.Printf("\n[controllers][platforms][spotify][ConvertTrack] error - error fetching single track on spotify\n")
+	//	log.Printf("\n[controllers][platforms][spotify][ConvertEntity] error - error fetching single track on spotify\n")
 	//	// panic for now.. at least until i figure out how to handle it if it can fail at all or not or can fail but be taken care of
 	//	return nil, blueprint.ENORESULT
 	//}
 
-	log.Printf("\n[controllers][platforms][spotify][ConvertTrack] info - found %v tracks on spotify\n", len(spotifySearch.Tracks.Tracks))
+	log.Printf("\n[controllers][platforms][spotify][ConvertEntity] info - found %v tracks on spotify\n", len(spotifySearch.Tracks.Tracks))
 
 	var spSingleTrack spotify.FullTrack
 

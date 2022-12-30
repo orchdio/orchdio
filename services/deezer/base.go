@@ -64,7 +64,7 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) *blueprint
 
 	// if we have not cached this track before
 	if err != nil && err == redis.Nil {
-		log.Printf("\n[universal][ConvertTrack] Track has not been cached\n")
+		log.Printf("\n[universal][ConvertEntity] Track has not been cached\n")
 		dzSingleTrack, err := FetchSingleTrack(info.TargetLink)
 		var dzTrackContributors []string
 		for _, contributor := range dzSingleTrack.Contributors {
@@ -89,7 +89,7 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) *blueprint
 		// serialize the result
 		serializedTrack, err := json.Marshal(fetchedDeezerTrack)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][deezer][ConvertTrack] error serializing track - %v\n", err)
+			log.Printf("\n[controllers][platforms][deezer][ConvertEntity] error serializing track - %v\n", err)
 		}
 
 		// cache the result
@@ -149,12 +149,16 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 		return nil, err
 	}
 
+	log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] Searched deezer for track...")
+
 	fullTrack := FullTrack{}
 	err = json.Unmarshal(response.Data, &fullTrack)
 	if err != nil {
 		log.Printf("\n[services][deezer][base][SearchTrackWithTitle] error - Could not deserialize the body into the out response: %v\n", err)
 		return nil, err
 	}
+
+	log.Printf("\n[services][deezer][base][SearchTrackWithTitle] Track from Deezer search with title result %v\n", fullTrack)
 
 	// NB: when the time comes to properly handle the results and return the best match (sometimes its like the 2nd result)
 	// then, this is where to probably start.
@@ -191,6 +195,8 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 				log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] Track %s has been cached\n", out.Title)
 			}
 		}
+
+		log.Printf("\n[services][deezer][base][SearchTrackWithTitle] Deezer search for track done %v\n", out)
 
 		//log.Printf("Old identifier: %s and new identifier: %s", identifierHash, newHashIdentifier)
 		//log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] second artiste and title %s %s\n", out.Artistes[0], out.Title)

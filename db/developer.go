@@ -3,14 +3,16 @@ package db
 import (
 	"database/sql"
 	"errors"
+	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"log"
 	"orchdio/blueprint"
 	"orchdio/db/queries"
+	"orchdio/util"
 )
 
 // CreateNewApp creates a new app for the developer and returns a uuid of the newly created app
-func (d *NewDB) CreateNewApp(name, description, redirectURL, webhookURL, publicKey, developerId string, secretKey []byte) ([]byte, error) {
+func (d *NewDB) CreateNewApp(name, description, redirectURL, webhookURL, publicKey, developerId, secretKey string) ([]byte, error) {
 	log.Printf("[db][CreateNewApp] developer -  creating new app: %s\n", name)
 	// create a new app
 	uid := uuid.NewString()
@@ -88,4 +90,80 @@ func (d *NewDB) DeleteApp(appId string) error {
 
 	log.Printf("[db][DeleteApp] developer -  app deleted: %s\n", appId)
 	return nil
+}
+
+// FetchAuthorizedDeveloperApp fetches a developer for an authorized app, meaning the app is active.
+func (d *NewDB) FetchAuthorizedDeveloperApp(ctx *fiber.Ctx) error {
+	log.Printf("[db][FetchAuthorizedDeveloperApp] developer -  fetching authorized developer app:\n")
+	var app blueprint.DeveloperApp
+	err := d.DB.QueryRowx(queries.FetchAuthorizedAppDeveloperBySecretKey, ctx.Locals("secretKey")).StructScan(&app)
+	if err != nil {
+		log.Printf("[db][FetchAuthorizedDeveloperApp] developer -  error: could not fetch authorized developer app: %v\n", err)
+		if errors.Is(err, sql.ErrNoRows) {
+			log.Printf("[db][FetchAuthorizedDeveloperApp] developer - App does not exist%v\n", err)
+			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "Unauthorized")
+		}
+		return err
+	}
+
+	log.Printf("[db][FetchAuthorizedDeveloperApp] developer -  authorized developer app fetched: %s\n", app.Name)
+	return util.SuccessResponse(ctx, fiber.StatusOK, app)
+}
+
+func (d *NewDB) DisableApp(appId string) error {
+	log.Printf("[db][DisableApp] developer -  disabling app: %s\n", appId)
+	_, err := d.DB.Exec(queries.DisableApp, appId)
+	if err != nil {
+		log.Printf("[db][DisableApp] developer -  error: could not disable app: %v\n", err)
+		return err
+	}
+
+	log.Printf("[db][DisableApp] developer -  app disabled: %s\n", appId)
+	return nil
+}
+
+func (d *NewDB) EnableApp(appId string) error {
+	log.Printf("[db][EnableApp] developer -  enabling app: %s\n", appId)
+	_, err := d.DB.Exec(queries.EnableApp, appId)
+	if err != nil {
+		log.Printf("[db][EnableApp] developer -  error: could not enable app: %v\n", err)
+		return err
+	}
+
+	log.Printf("[db][EnableApp] developer -  app enabled: %s\n", appId)
+	return nil
+}
+
+func (d *NewDB) FetchAppKeys(appId string) (*blueprint.AppKeys, error) {
+	log.Printf("[db][FetchAppKeys] developer -  fetching app keys: %s\n", appId)
+	keys := blueprint.AppKeys{}
+	err := d.DB.QueryRowx(queries.FetchAppKeysByID, appId).StructScan(&keys)
+	if err != nil {
+		log.Printf("[db][FetchAppKeys] developer -  error: could not fetch app keys: %v\n", err)
+		return nil, err
+	}
+	return &keys, nil
+}
+
+func (d *NewDB) FetchApps(developerId string) (*[]blueprint.DeveloperApp, error) {
+	log.Printf("[db][FetchAppKeys] developer - fetching apps that belong to developer: %s\n", developerId)
+	var apps []blueprint.DeveloperApp
+	rows, err := d.DB.Queryx(queries.FetchAppsByDeveloper, developerId)
+	if err != nil {
+		log.Printf("[db][FetchAppKeys] developer - error: could not fetch apps that belong to developer: %v\n", err)
+		return nil, err
+	}
+
+	for rows.Next() {
+		var app blueprint.DeveloperApp
+		err = rows.StructScan(&app)
+		if err != nil {
+			log.Printf("[db][FetchAppKeys] developer - error: could not fetch apps that belong to developer: %v\n", err)
+			return nil, err
+		}
+		apps = append(apps, app)
+	}
+
+	log.Printf("[db][FetchAppKeys] developer - apps fetched: %s\n", developerId)
+	return &apps, nil
 }

@@ -12,7 +12,6 @@ import (
 	"orchdio/db/queries"
 	"orchdio/services/spotify"
 	"orchdio/util"
-	"os"
 	"strings"
 	"time"
 )
@@ -66,40 +65,6 @@ func (a *AuthMiddleware) LogIncomingRequest(ctx *fiber.Ctx) error {
 	return ctx.Next()
 }
 
-//func (a *AuthMiddleware) AddAPIDeveloperToContext(ctx *fiber.Ctx) error {
-//	// get the api key from the header
-//	apiKey := ctx.Get("x-orchdio-key")
-//
-//	if len([]byte(apiKey)) > 36 {
-//		log.Printf("[middleware][ValidateKey] key is too long. %s\n", apiKey)
-//		return util.ErrorResponse(ctx, http.StatusUnauthorized, "Key too long")
-//	}
-//
-//	if apiKey == "" {
-//		log.Printf("[middleware][ValidateKey] key is empty. %s\n", apiKey)
-//		return util.ErrorResponse(ctx, http.StatusUnauthorized, "Key is empty")
-//	}
-//
-//	isValid := util.IsValidUUID(apiKey)
-//	if isValid {
-//		log.Printf("[middleware][ValidateKey] key is valid. %s\n", apiKey)
-//		database := db.NewDB{DB: a.DB}
-//		developerApp, err := database.FetchAppBySecretKey(apiKey)
-//		if err != nil {
-//			if err == sql.ErrNoRows {
-//				log.Printf("[middleware][ValidateKey] key not found. %s\n", apiKey)
-//				return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid apikey")
-//			}
-//			log.Printf("[middleware][ValidateKey] error - Could not fetch user with api key: %v\n", err)
-//			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
-//		}
-//		// fetch developer with the key
-//		ctx.Locals("developer")
-//		return ctx.Next()
-//	}
-//	return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid apikey")
-//}
-
 func (a *AuthMiddleware) AddDeveloperToContext(ctx *fiber.Ctx) error {
 	log.Printf("[db][middleware][FetchAppDeveloperWithSecretKey] developer -  fetching app developer with secret key\n")
 	key := ctx.Get("x-orchdio-key")
@@ -108,14 +73,17 @@ func (a *AuthMiddleware) AddDeveloperToContext(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "missing x-orchdio-key header")
 	}
 
-	encryptedKey, err := util.Encrypt([]byte(key), []byte(os.Getenv("ENCRYPTION_SECRET")))
-	if err != nil {
-		log.Printf("[db][FetchAppDeveloperWithSecretKey] developer -  error: could not fetch app developer with secret. Key could not be encrypted %v\n", err)
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "invalid x-orchdio-key header")
-	}
+	//encryptedKey, err := util.Encrypt([]byte(key), []byte(os.Getenv("ENCRYPTION_SECRET")))
+	//if err != nil {
+	//	log.Printf("[db][FetchAppDeveloperWithSecretKey] developer - error: Key could not be encrypted %v\n", err)
+	//	return util.ErrorResponse(ctx, fiber.StatusBadRequest, "invalid x-orchdio-key header")
+	//}
+	//
+	//encodedKey := base64.StdEncoding.EncodeToString(encryptedKey)
+	//log.Printf("[db][FetchAppDeveloperWithSecretKey] developer -  encoded key: %s\n", encodedKey)
 
-	var developer *blueprint.User
-	err = a.DB.QueryRowx(queries.FetchAppDeveloperBySecretKey, encryptedKey).StructScan(&developer)
+	var developer blueprint.User
+	err := a.DB.QueryRowx(queries.FetchAuthorizedAppDeveloperBySecretKey, key).StructScan(&developer)
 	if err != nil {
 		log.Printf("[db][FetchAppDeveloperWithSecretKey] developer -  error: could not fetch app developer with secret %v\n", err)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -123,7 +91,8 @@ func (a *AuthMiddleware) AddDeveloperToContext(ctx *fiber.Ctx) error {
 		}
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "invalid x-orchdio-key header")
 	}
-	return util.SuccessResponse(ctx, fiber.StatusOK, developer)
+	ctx.Locals("developer", &developer)
+	return ctx.Next()
 }
 
 func (a *AuthMiddleware) HandleTrolls(ctx *fiber.Ctx) error {

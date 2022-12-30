@@ -26,17 +26,17 @@ func TrackConversion(payload *ikisocket.EventPayload) {
 	}
 	// now fetch the info
 	if strings.Contains(linkInfo.Entity, "track") {
-		log.Printf("\n[universal][SocketEvent][EventMessage][ConvertTrack - Message is a track conversion\n")
+		log.Printf("\n[universal][SocketEvent][EventMessage][ConvertEntity - Message is a track conversion\n")
 		// TODO: pass the proper redis client here.
 		conversion, err := ConvertTrack(linkInfo, nil)
 		if err != nil {
-			log.Printf("\n[main][SocketEvent][EventMessage][ConvertTrack][error] - error converting track %v\n", err)
+			log.Printf("\n[main][SocketEvent][EventMessage][ConvertEntity][error] - error converting track %v\n", err)
 			payload.Kws.Emit([]byte("Could not convert track error event"))
 			return
 		}
 		conversionBytes, mErr := json.Marshal(conversion)
 		if mErr != nil {
-			log.Printf("\n[main][SocketEvent][EventMessage][ConvertTrack][error] - error converting track %v\n", mErr)
+			log.Printf("\n[main][SocketEvent][EventMessage][ConvertEntity][error] - error converting track %v\n", mErr)
 			payload.Kws.Emit([]byte("Could not convert track error event"))
 			return
 		}

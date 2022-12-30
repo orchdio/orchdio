@@ -7,7 +7,8 @@ const FetchAppByAppID = `SELECT * FROM apps WHERE uuid = $1`
 const FetchAppByPubKey = `SELECT * FROM apps WHERE public_key = $1`
 const FetchAppBySecretKey = `SELECT * FROM apps WHERE secret_key = $1`
 
-const FetchAppDeveloperBySecretKey = `SELECT u.email, u.usernames, u.username, u.id, u.uuid, u.created_at, u.updated_at, u.refresh_token, u.platform_id FROM apps a JOIN users u on a.developer = u.uuid WHERE a.secret_key =  $1`
+const FetchAppDeveloperBySecretKey = `SELECT u.email, u.usernames, u.username, u.id, u.uuid, u.created_at, u.updated_at, u.refresh_token, u.platform_id FROM apps a JOIN users u on a.developer = u.uuid WHERE a.secret_key = $1`
+const FetchAuthorizedAppDeveloperBySecretKey = `SELECT u.email, u.usernames, u.username, u.id, u.uuid, u.created_at, u.updated_at, u.refresh_token, u.platform_id FROM apps a JOIN users u on a.developer = u.uuid WHERE a.secret_key = $1 AND a.authorized = true`
 
 // UpdateApp updates the developer app with data passed. If the values are empty, it falls back to what the original value of the column is
 const UpdateApp = `UPDATE apps SET  description = (CASE WHEN $1 = '' THEN description ELSE $1 END),
@@ -17,3 +18,11 @@ webhook_url = (CASE WHEN $4 = '' THEN webhook_url ELSE $4 END),
 updated_at = now() WHERE uuid = $5`
 
 const DeleteApp = `DELETE FROM apps WHERE uuid = $1`
+
+// App queries
+
+const DisableApp = `UPDATE apps SET authorized = false WHERE uuid = $1;`
+const EnableApp = `UPDATE apps SET authorized = true WHERE uuid = $1;`
+const FetchAppKeysByID = `SELECT public_key, secret_key FROM apps WHERE uuid = $1;`
+
+const FetchAppsByDeveloper = `SELECT * FROM apps WHERE developer = $1`

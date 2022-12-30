@@ -421,3 +421,8 @@ type AppAuthToken struct {
 		Action string `json:"action"`
 	} `json:"action,omitempty"`
 }
+
+type AppKeys struct {
+	PublicKey string `json:"public_key,omitempty" db:"public_key"`
+	SecretKey string `json:"secret_key,omitempty" db:"secret_key"`
+}

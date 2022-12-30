@@ -55,13 +55,13 @@ func NewConversionController(db *sqlx.DB, red *redis.Client, queue taskq.Queue, 
 func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 	log.Printf("[controller][conversion][EchoConversion] - echo conversion")
 
-	user := ctx.Locals("user").(*blueprint.User)
+	user := ctx.Locals("developer").(*blueprint.User)
 	linkInfo := ctx.Locals("linkInfo").(*blueprint.LinkInfo)
 	uniqueId := uuid.New().String()
 	const format = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-"
 	sid, err := shortid.New(1, format, 2342)
 	if err != nil {
-		log.Printf("\n[controllers][platforms][ConvertTrack] - could not generate short id %v\n", err)
+		log.Printf("\n[controllers][platforms][ConvertEntity] - could not generate short id %v\n", err)
 		return err
 	}
 

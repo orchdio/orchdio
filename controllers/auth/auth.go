@@ -241,8 +241,22 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
 		}
 
+		t := blueprint.OrchdioUserToken{
+			RegisteredClaims: jwt.RegisteredClaims{},
+			Email:            userProfile.Email,
+			Username:         user.DisplayName,
+			UUID:             userProfile.UUID,
+			Platform:         "spotify",
+		}
+
+		authToken, err := util.SignJwt(&t)
+		if err != nil {
+			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign spotify auth jwt: %v\n", err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+		}
+
 		// if developer is orchdio labs, create jwt token and redirect to the app url
-		devURL := appToken.RedirectURL
+		devURL := fmt.Sprintf("%s?token=%s", appToken.RedirectURL, string(authToken))
 		return ctx.Redirect(devURL, fiber.StatusTemporaryRedirect)
 
 		// deezer auth flow
@@ -298,6 +312,30 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
 		}
 
+		appToken, err := util.DecodeAuthJwt(state)
+		if err != nil {
+			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: could not decode state token. perhaps it has expired: %v\n", err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+		}
+
+		// generate jwt token for orchdio labs
+		t := blueprint.OrchdioUserToken{
+			RegisteredClaims: jwt.RegisteredClaims{},
+			Email:            deezerUser.Email,
+			Username:         userProfile.Username,
+			UUID:             userProfile.UUID,
+			Platform:         "deezer",
+		}
+
+		authToken, err := util.SignJwt(&t)
+		if err != nil {
+			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign deezer auth jwt: %v\n", err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+		}
+
+		redirectURL := fmt.Sprintf("%s?token=%s", appToken.RedirectURL, string(authToken))
+
+		return ctx.Redirect(redirectURL, fiber.StatusTemporaryRedirect)
 		// apple music auth flow
 	case "applemusic":
 		log.Printf("[controllers][HandleAppAuthRedirect] developer -  apple music auth flow")
@@ -366,8 +404,24 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
 		}
 
+		t := blueprint.OrchdioUserToken{
+			RegisteredClaims: jwt.RegisteredClaims{},
+			Email:            body.Email,
+			Username:         displayName,
+			UUID:             userProfile.UUID,
+			Platform:         "applemusic",
+		}
+
+		authToken, err := util.SignJwt(&t)
+		if err != nil {
+			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign apple music auth jwt: %v\n", err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+		}
+
+		redirectURL := fmt.Sprintf("%v?token=%v", appToken.RedirectURL, authToken)
+		log.Printf("[controllers][HandleAppAuthRedirect] developer -  redirecting to: %v\n", redirectURL)
 		// redirect to the redirect url from the state token.
-		return ctx.Redirect(appToken.RedirectURL, fiber.StatusTemporaryRedirect)
+		return ctx.Redirect(redirectURL, fiber.StatusTemporaryRedirect)
 	}
 
 	// not supported yet??

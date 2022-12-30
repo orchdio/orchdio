@@ -11,7 +11,12 @@ import (
 	"github.com/antoniodipinto/ikisocket"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/etag"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
+	"github.com/gofiber/fiber/v2/middleware/monitor"
+	"github.com/gofiber/fiber/v2/middleware/requestid"
 	jwtware "github.com/gofiber/jwt/v3"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -149,9 +154,6 @@ func taskErrorHandler(connOpts asynq.RedisClientOpt, err error) error {
 }
 
 func main() {
-
-	//engine := html.New("layouts", ".html")
-
 	// Database and cache setup things
 	envr := os.Getenv("ORCHDIO_ENV")
 	dbURL := os.Getenv("DATABASE_URL")
@@ -213,6 +215,9 @@ func main() {
 		log.Printf("\n[main] [info] - Running in production mode. Connecting to authenticated redis")
 	}
 
+	// ===========================================================
+	// this is the job queue config shenanigans
+	// ===========================================================
 	asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
 	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
 
@@ -222,7 +227,7 @@ func main() {
 			Queues: map[string]int{
 				"playlist-conversion": 5,
 			},
-			// NB: from the queue LoggingMiddleware, when we handle orphaned task and we return a blueprint.ENORESULT error, the execution
+			// NB: from the queue ConversionMiddleware, when we handle orphaned task and we return a blueprint.ENORESULT error, the execution
 			// jumps here, so when the middleware runs and we return a blueprint.ENORESULT error, it'll run this block and reprocess the task
 			// if the handler has successfully been attached or do nothing (and let the queue retry later) if there was an error
 			ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
@@ -277,25 +282,17 @@ func main() {
 					log.Printf("[main] [QueueErrorHandler] Error processing task %v", err)
 					return
 				}
-				// process task
 
 				log.Printf("[main] [QueueErrorHandler] Task already has a handler")
 			}),
 		})
 
-	asynqMux.Use(queue.LoggingMiddleware)
+	asynqMux.Use(queue.ConversionMiddleware)
 	err = asynqServer.Start(asynqMux)
 	if err != nil {
 		log.Printf("Error starting asynq server")
 		panic(err)
 	}
-
-	//asynqMux.HandleFunc("orchdio-playlist-queue", orchdioQueue.PlaylistTaskHandler)
-
-	// ===========================================================
-	// this is the job queue config shenanigans
-	//conversionContr := conversion.
-	// ===========================================================
 
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: false,
@@ -401,29 +398,13 @@ func main() {
 	}()
 
 	userController = *account.NewUserController(db)
-	webhookController := account.NewAccountWebhookController(db)
+	//webhookController := account.NewAccountWebhookController(db)
 	authMiddleware := middleware.NewAuthMiddleware(db)
 	conversionController := conversion.NewConversionController(db, redisClient, playlistQueue, QueueFactory, asyncClient, asynqServer, asynqMux)
 	followController := follow.NewController(db, redisClient)
 	devAppController := developer.NewDeveloperController(db)
 
-	// ==========================================
-	// Migrate
-
-	//log.Printf("Here is the db url %s", dbURL)
-	//m, err := migrate.New("file://db/migration", dbURL)
-
-	//if err != nil {
-	//	log.Printf("Error firing up migrate %v", err)
-	//}
-
-	//log.Printf("Here is the migrate stuff")userController
-	//if err := m.Up(); err != nil {
-	//	log.Printf("Error migrating :sadface:")
-	//	panic(err)
-	//}
-
-	platformsControllers := platforms.NewPlatform(redisClient, db)
+	platformsControllers := platforms.NewPlatform(redisClient, db, asyncClient, asynqMux)
 	whController := webhook.NewWebhookController(db, redisClient)
 
 	/**
@@ -437,6 +418,24 @@ func main() {
 	*/
 
 	app.Use(cors.New(), authMiddleware.LogIncomingRequest, authMiddleware.HandleTrolls)
+	app.Use(compress.New(compress.Config{
+		Level: compress.LevelBestSpeed,
+	}))
+	app.Use(etag.New())
+	app.Use(limiter.New(limiter.Config{
+		Max:               100,
+		Expiration:        30 * time.Second,
+		LimiterMiddleware: limiter.SlidingWindow{},
+		LimitReached: func(ctx *fiber.Ctx) error {
+			log.Printf("[main] [info] - Rate limit exceeded")
+			return util.ErrorResponse(ctx, fiber.StatusTooManyRequests, "Rate limit exceeded")
+		},
+	}))
+	app.Use(requestid.New(requestid.Config{
+		Header:     "x-orchdio-request-id",
+		ContextKey: "orchdio-request-id",
+	}))
+	app.Get("/kanye/info", monitor.New(monitor.Config{Title: "Orchdio-Core health info"}))
 	baseRouter := app.Group("/api/v1")
 	orchRouter := app.Group("/v1")
 
@@ -452,77 +451,56 @@ func main() {
 	orchRouter.Get("/auth/:platform/connect", authController.AppAuthRedirect)
 	// the callback that the auth platform will redirect to and this is where we handle the redirect and generate an auth token for the user, as response
 	orchRouter.Get("/auth/:platform/callback", authController.HandleAppAuthRedirect)
-	orchRouter.Post("/track/convert", authMiddleware.AddDeveloperToContext, middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
+	// this is for the apple music auth. its a POST as it carries a body
+	orchRouter.Post("/auth/:platform/callback", authController.HandleAppAuthRedirect)
+	orchRouter.Post("/entity/convert", authMiddleware.AddDeveloperToContext, middleware.ExtractLinkInfoFromBody, platformsControllers.ConvertEntity)
 
 	orchRouter.Get("/app/:appId", devAppController.FetchApp)
+
+	orchRouter.Get("/task/:taskId", authMiddleware.AddDeveloperToContext, conversionController.GetPlaylistTask)
+	orchRouter.Post("/playlist/:platform/add", platformsControllers.AddPlaylistToAccount)
+
+	orchRouter.Post("/follow", authMiddleware.AddDeveloperToContext, followController.FollowPlaylist)
+	orchRouter.Post("/waitlist/add", authMiddleware.AddDeveloperToContext, userController.AddToWaitlist)
+
+	appRouter := app.Group("/v1/app")
+	appRouter.Use(jwtware.New(jwtware.Config{
+		SigningKey: []byte(os.Getenv("JWT_SECRET")), // TODO: change this to use the .env value
+		Claims:     &blueprint.OrchdioUserToken{},
+		ContextKey: "authToken",
+		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
+			log.Printf("Error validating auth token %v:\n", err)
+			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid or Expired token")
+		},
+	}), middleware.VerifyToken)
+
+	appRouter.Get("/me", userController.FetchProfile)
 	// developer endpoints
-	orchRouter.Use(jwtware.New(jwtware.Config{
-		SigningKey: []byte("qwertyuiopasdfghjklzxcvbnm123456"), // TODO: change this to use the .env value
-		Claims:     &blueprint.OrchdioUserToken{},
-		ContextKey: "authToken",
-	}), middleware.VerifyToken)
+	appRouter.Get("/:appId/keys", devAppController.FetchKeys)
+	appRouter.Post("/new", devAppController.CreateApp)
+	orchRouter.Post("/app/disable", authMiddleware.AddDeveloperToContext, devAppController.DisableApp)
+	orchRouter.Post("/app/enable", authMiddleware.AddDeveloperToContext, devAppController.EnableApp)
+	orchRouter.Delete("/app/delete", authMiddleware.AddDeveloperToContext, devAppController.DeleteApp)
+	orchRouter.Put("/app", authMiddleware.AddDeveloperToContext, devAppController.UpdateApp)
 
-	orchRouter.Post("/app/new", authMiddleware.AddDeveloperToContext, devAppController.CreateApp)
-
-	nextAuthGroup := baseRouter.Group("/next/auth/:platform")
-	// temp routes to map to for the new auth. replace later
-	nextAuthGroup.Get("/connect", authMiddleware.ValidateKey, authMiddleware.AddDeveloperToContext, authController.AppAuthRedirect)
-	nextAuthGroup.Get("/callback", authController.HandleAppAuthRedirect)
-
-	baseRouter.Get("/heartbeat", getInfo)
-	baseRouter.Get("/:platform/connect", userController.RedirectAuth)
-	baseRouter.Get("/orchdio/:platform/connect", userController.RedirectAuth)
-	baseRouter.Get("/spotify/auth", userController.AuthSpotifyUser)
-	baseRouter.Get("/orchdio/spotify/auth", userController.AuthOrchdioSpotifyUser)
-	baseRouter.Get("/deezer/auth", userController.AuthDeezerUser)
-	//baseRouter.Post("/applemusic/auth", userController.AuthAppleMusicUser)
-	baseRouter.Post("/applemusic/auth", userController.AuthAppleMusicUser)
-	baseRouter.Get("/track/convert", authMiddleware.ValidateKey, authMiddleware.AddDeveloperToContext, middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
-	//baseRouter.Get("/track/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
-	baseRouter.Get("/playlist/convert", authMiddleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
-
-	baseRouter.Post("/webhook/add", authMiddleware.ValidateKey, webhookController.CreateWebhookUrl)
-	baseRouter.Patch("/webhook/update", authMiddleware.ValidateKey, webhookController.UpdateUserWebhookUrl)
-	baseRouter.Get("/webhook", authMiddleware.ValidateKey, webhookController.FetchWebhookUrl)
-	baseRouter.Delete("/webhook", authMiddleware.ValidateKey, webhookController.DeleteUserWebhookUrl)
-	baseRouter.Post("/white-tiger", authMiddleware.AddDeveloperToContext, whController.Handle)
-	baseRouter.Post("/redirect-url", authMiddleware.AddDeveloperToContext, userController.CreateOrUpdateRedirectURL)
-	baseRouter.Get("/white-tiger", whController.AuthenticateWebhook)
-
-	userRouter := app.Group("/api/v1/user")
-
-	userRouter.Use(jwtware.New(jwtware.Config{
-		SigningKey: []byte(os.Getenv("JWT_SECRET")),
-		Claims:     &blueprint.OrchdioUserToken{},
-		ContextKey: "authToken",
-	}), middleware.VerifyToken)
-
-	userRouter.Post("/generate-key", userController.GenerateAPIKey)
-	userRouter.Patch("/key/revoke", authMiddleware.ValidateKey, userController.RevokeKey)
-	userRouter.Patch("/key/allow", userController.UnRevokeKey)
-	userRouter.Delete("/key/delete", authMiddleware.ValidateKey, userController.DeleteKey)
-	userRouter.Get("/key", userController.RetrieveKey)
+	//baseRouter.Get("/heartbeat", getInfo)
+	orchRouter.Post("/white-tiger", authMiddleware.AddDeveloperToContext, whController.Handle)
+	orchRouter.Get("/white-tiger", whController.AuthenticateWebhook)
 
 	// ==========================================
 	// NEXT ROUTES
 	nextRouter := baseRouter.Group("/next", authMiddleware.ValidateKey)
 
-	nextRouter.Post("/playlist/convert", middleware.ExtractLinkInfoFromBody, conversionController.ConvertPlaylist)
-	nextRouter.Get("/task/:taskId", conversionController.GetPlaylistTask)
+	//nextRouter.Post("/playlist/convert", middleware.ExtractLinkInfoFromBody, conversionController.ConvertPlaylist)
 	// TODO: implement checking for superuser access in middleware before deleting then remove kanye prefix
 	nextRouter.Delete("/kanye/task/:taskId", conversionController.DeletePlaylistTask)
 
 	// user account action routes
 	//userActionAddRouter := nextRouter.Group("/add")
 	//userActionAddRouter.Post("/playlist/:platform/:playlistId", platformsControllers.AddPlaylistToAccount)
-
 	// FIXME: remove later. this is just for compatibility with the ping api for dev.
-	nextRouter.Post("/job/ping", conversionController.ConvertPlaylist)
-	nextRouter.Post("/follow", followController.FollowPlaylist)
-	nextRouter.Post("/playlist/:platform/add", platformsControllers.AddPlaylistToAccount)
-	nextRouter.Post("/waitlist/add", userController.AddToWaitlist)
+	//nextRouter.Post("/job/ping", conversionController.ConvertPlaylist)
 
-	baseRouter.Get("/me", userController.FetchProfile)
 	// FIXME: move this endpoint thats fetching link info from the `controllers` package
 	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
 
@@ -532,18 +510,6 @@ func main() {
 	app.Get("/portal", ikisocket.New(func(kws *ikisocket.Websocket) {
 		log.Printf("\nClient with ID %v connected\n", kws.UUID)
 	}))
-
-	//app.Use(func(c *fiber.Ctx) error {
-	//	if websocket.IsWebSocketUpgrade(c) {
-	//		c.Locals("allowed", true)
-	//		return c.Next()
-	//	}
-	//	return fiber.ErrUpgradeRequired
-	//})
-
-	/**
-	this is a test to see hpw the keyboard light patterns    are.
-	*/
 
 	/**
 	 ==================================================================
