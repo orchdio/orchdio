@@ -55,13 +55,13 @@ func NewConversionController(db *sqlx.DB, red *redis.Client, queue taskq.Queue, 
 func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 	log.Printf("[controller][conversion][EchoConversion] - echo conversion")
 
-	user := ctx.Locals("user").(*blueprint.User)
+	user := ctx.Locals("developer").(*blueprint.User)
 	linkInfo := ctx.Locals("linkInfo").(*blueprint.LinkInfo)
 	uniqueId := uuid.New().String()
 	const format = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-"
 	sid, err := shortid.New(1, format, 2342)
 	if err != nil {
-		log.Printf("\n[controllers][platforms][ConvertTrack] - could not generate short id %v\n", err)
+		log.Printf("\n[controllers][platforms][ConvertEntity] - could not generate short id %v\n", err)
 		return err
 	}
 
@@ -120,33 +120,18 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 	// THE HANDLER ATTACHED. THIS IS BECAUSE WE'RE TRIGGERING THE HANDLER HERE IN THE
 	// CONVERSION HANDLER. WE SHOULD BE ABLE TO FIX THIS BY HAVING A HANDLER THAT
 	// ALWAYS RUNS AND FETCHES TASKS FROM A STORE AND ATTACH THEM TO A HANDLER.
-	// FIXME: more investigations
+	// ENG-NOTE: after investigating, we're handling errors and queue failures in the queue handler in main.go
+	// this block shouldnt be source of sorrow again but its still needed to keep around as it does indeed handle panics, just in case
 	defer func() error {
 		// handle panic
 		if r := recover(); r != nil {
 			log.Printf("[controller][conversion][EchoConversion] - gracefully ignoring this")
 			log.Printf("[controller][conversion][EchoConversion] - task already queued%v", r)
 			inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
-			// get the task
-			task, err := inspector.GetTaskInfo(queue.PlaylistConversionQueue, enquedTask.ID)
-			if err != nil {
-				log.Printf("[controller][conversion][EchoConversion] - error getting task info: %v", err)
-				return err
-			}
-			log.Printf("[controller][conversion][EchoConversion] - task info:")
-			spew.Dump(task)
+
 			queueInfo, err := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
 			if err != nil {
 				log.Printf("[controller][conversion][EchoConversion] - error getting queue info: %v", err)
-				return err
-			}
-			log.Printf("[controller][conversion][EchoConversion] - dumped task info")
-			spew.Dump(task)
-
-			// get the task from the db
-			//taskRecord, err := database.FetchTask(string(_taskId))
-			if err != nil {
-				log.Printf("[controller][conversion][EchoConversion][error] - could not fetch task record from DB. Fatal error%v", err)
 				return err
 			}
 
@@ -162,14 +147,12 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 				log.Printf("[controller][conversion][EchoConversion] - queue is paused. resuming it")
 				err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
 				if err != nil {
-					log.Printf("[controller][conversion][EchoConversion] - error resuming queue: ")
+					log.Printf("[controller][conversion][EchoConversion] - error resuming queue. Dumping error: ")
 					spew.Dump(err)
+					log.Printf("\n")
 				}
 				log.Printf("[controller][conversion][EchoConversion] - queue resumed")
 			}
-			//
-			//log.Printf("Dumped task info")
-			//spew.Dump(queueInfo)
 
 			log.Printf("[controller][conversion][EchoConversion] - task updated to success")
 			if r.(string) == "asynq: multiple registrations for playlist:conversion" {

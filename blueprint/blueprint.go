@@ -32,6 +32,7 @@ var (
 	EFORBIDDEN       = errors.New("403 Forbidden")
 	EUNAUTHORIZED    = errors.New("401 Unauthorized")
 	EBADREQUEST      = errors.New("400 Bad Request")
+	EINVALIDAUTHCODE = errors.New("INVALID_AUTH_CODE")
 )
 
 var (
@@ -52,6 +53,7 @@ type User struct {
 	UpdatedAt    string      `json:"updated_at" db:"updated_at"`
 	RefreshToken []byte      `json:"refresh_token" db:"refresh_token,omitempty"`
 	PlatformID   string      `json:"platform_id" db:"platform_id"`
+	Authorized   bool        `json:"authorized" db:"authorized,omitempty"`
 }
 
 //type AppleMusicAuthBody struct {
@@ -373,4 +375,56 @@ type AddPlaylistToAccountData struct {
 	// TODO: in the future, perhaps look into the viability of allowing multiple users and also support email and id in api for user id
 	User uuid.UUID `json:"user"`
 	Url  string    `json:"url"`
+}
+
+type DeveloperApp struct {
+	ID          int       `json:"id,omitempty" db:"id"`
+	UID         uuid.UUID `json:"uid,omitempty" db:"uuid"`
+	Name        string    `json:"name,omitempty" db:"name"`
+	Description string    `json:"description,omitempty" db:"description"`
+	Developer   uuid.UUID `json:"developer,omitempty" db:"developer"`
+	SecretKey   []byte    `json:"secret_key,omitempty" db:"secret_key"`
+	PublicKey   uuid.UUID `json:"public_key,omitempty" db:"public_key"`
+	RedirectURL string    `json:"redirect_url,omitempty" db:"redirect_url"`
+	WebhookURL  string    `json:"webhook_url,omitempty" db:"webhook_url"`
+	VerifyToken []byte    `json:"verify_token,omitempty" db:"verify_token"`
+	CreatedAt   string    `json:"created_at,omitempty" db:"created_at"`
+	UpdatedAt   string    `json:"updated_at,omitempty" db:"updated_at"`
+	Authorized  bool      `json:"authorized,omitempty" db:"authorized"`
+}
+
+type UpdateDeveloperAppData struct {
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	RedirectURL string `json:"redirect_url,omitempty"`
+	WebhookURL  string `json:"webhook_url,omitempty"`
+}
+
+type CreateNewDeveloperAppData struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	RedirectURL string `json:"redirect_url"`
+	WebhookURL  string `json:"webhook_url"`
+}
+
+type AppAuthToken struct {
+	jwt.RegisteredClaims
+	App         string `json:"app_id"`
+	RedirectURL string `json:"redirect_url"`
+	Platform    string `json:"platform"`
+	Action      Action `json:"action,omitempty"`
+}
+
+type Action struct {
+	Payload interface{} `json:"payload"`
+	// this is the action the developer was trying to do before auth
+	// for example if its adding a playlist to account, it would be something like
+	// "add_playlist_to_account"
+	// TODO: define a list of actions and their keys.
+	Action string `json:"action"`
+}
+
+type AppKeys struct {
+	PublicKey string `json:"public_key,omitempty" db:"public_key"`
+	SecretKey string `json:"secret_key,omitempty" db:"secret_key"`
 }

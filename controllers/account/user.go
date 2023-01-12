@@ -58,16 +58,8 @@ func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 	// Responses:
 	//  200: redirectAuthResponse
 
-	// a list of valid urls to redirect to
-	// get the special flag that says the auth is from orchdio dev
-	authSrc := ctx.Query("src")
-
 	deezerSecret := os.Getenv("DEEZER_SECRET")
 	deezerRedirectURL := os.Getenv("DEEZER_REDIRECT_URI")
-
-	if authSrc == "orchdio" {
-		deezerRedirectURL = os.Getenv("ORCHDIO_DEEZER_REDIRECT_URI")
-	}
 
 	var uniqueID, _ = uuid.NewUUID()
 	dz := &deezer.Deezer{
@@ -78,9 +70,10 @@ func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 
 	platform := strings.ToLower(ctx.Params("platform"))
 	var url string
+
 	if platform == "spotify" {
 		// now do spotify things here.
-		_url := spotify.FetchAuthURL(uniqueID.String(), authSrc)
+		_url := spotify.FetchAuthURL(uniqueID.String())
 		if _url == nil {
 			log.Printf("[account][auth] error - Could return URL for user")
 			return util.ErrorResponse(ctx, http.StatusOK, "Error creating auth URL")
@@ -90,7 +83,7 @@ func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 	}
 
 	if platform == "deezer" {
-		url = dz.FetchAuthURL()
+		url = dz.FetchAuthURL(uniqueID.String())
 	}
 
 	if platform == "applemusic" {
@@ -152,7 +145,14 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 		}
 	}()
 
-	client, refreshToken := spotify.CompleteUserAuth(context.Background(), r, "zoove")
+	client, refreshToken, err := spotify.CompleteUserAuth(context.Background(), r)
+	if err != nil {
+		log.Printf("[controllers][account][user] Error - error completing user auth - %v\n", err)
+		if err == blueprint.EINVALIDAUTHCODE {
+			return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid auth code")
+		}
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+	}
 	encryptedRefreshToken, encErr := util.Encrypt(refreshToken, []byte(encryptionSecretKey))
 	if encErr != nil {
 		log.Printf("\n[controllers][account][user] Error - could not encrypt refreshToken - %v\n", encErr)
@@ -284,7 +284,16 @@ func (c *UserController) AuthOrchdioSpotifyUser(ctx *fiber.Ctx) error {
 		}
 	}()
 
-	client, refreshToken := spotify.CompleteUserAuth(context.Background(), r, "orchdio")
+	client, refreshToken, err := spotify.CompleteUserAuth(context.Background(), r)
+	if err != nil {
+		log.Printf("[controllers][account][user] Error - error completing user auth - %v\n", err)
+		if err == blueprint.EINVALIDAUTHCODE {
+			log.Printf("[controllers][account][user] Error - invalid auth code - %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusBadRequest, "code has expired")
+		}
+
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+	}
 	encryptedRefreshToken, encErr := util.Encrypt(refreshToken, []byte(encryptionSecretKey))
 	if encErr != nil {
 		log.Printf("\n[controllers][account][user] Error - could not encrypt refreshToken - %v\n", encErr)

@@ -64,9 +64,11 @@ const UpdateFollowLatUpdated = `UPDATE follows SET updated_at = now() where enti
 const UpdateFollowStatus = `UPDATE follows SET updated_at = now(), status = $1 where entity_id = $2;`
 
 // create a new waitlist entry and update updated_at if email already exists
+
 const CreateWaitlistEntry = `INSERT INTO waitlists(uuid, email, created_at, updated_at) VALUES ($1, $2, now(), now()) ON CONFLICT(email) DO UPDATE SET updated_at = now() RETURNING email;`
 
 // update user platform token based on the streaming platform user provides
+
 const UpdateUserPlatformToken = `UPDATE users SET spotify_token = (CASE WHEN $2 ILIKE '%spotify%' THEN $1 ELSE spotify_token END), applemusic_token = (CASE WHEN $2 ILIKE '%applemusic%' THEN $1 ELSE applemusic_token END), deezer_token = (CASE WHEN $2 ILIKE '%deezer%' THEN $1 ELSE deezer_token END) WHERE email = $3;`
 
 const UpdateRedirectURL = `UPDATE users SET redirect_url = $2 WHERE uuid = $1;`

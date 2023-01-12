@@ -11,7 +11,12 @@ import (
 	"github.com/antoniodipinto/ikisocket"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/compress"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/etag"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
+	"github.com/gofiber/fiber/v2/middleware/monitor"
+	"github.com/gofiber/fiber/v2/middleware/requestid"
 	jwtware "github.com/gofiber/jwt/v3"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -30,13 +35,14 @@ import (
 	"orchdio/blueprint"
 	"orchdio/controllers"
 	"orchdio/controllers/account"
+	"orchdio/controllers/auth"
 	"orchdio/controllers/conversion"
+	"orchdio/controllers/developer"
 	"orchdio/controllers/follow"
 	"orchdio/controllers/platforms"
 	"orchdio/controllers/webhook"
 	"orchdio/middleware"
 	"orchdio/queue"
-	"orchdio/universal"
 	"orchdio/util"
 	"os"
 	"os/signal"
@@ -148,9 +154,6 @@ func taskErrorHandler(connOpts asynq.RedisClientOpt, err error) error {
 }
 
 func main() {
-
-	//engine := html.New("layouts", ".html")
-
 	// Database and cache setup things
 	envr := os.Getenv("ORCHDIO_ENV")
 	dbURL := os.Getenv("DATABASE_URL")
@@ -212,6 +215,9 @@ func main() {
 		log.Printf("\n[main] [info] - Running in production mode. Connecting to authenticated redis")
 	}
 
+	// ===========================================================
+	// this is the job queue config shenanigans
+	// ===========================================================
 	asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
 	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
 
@@ -221,8 +227,12 @@ func main() {
 			Queues: map[string]int{
 				"playlist-conversion": 5,
 			},
+			// NB: from the queue ConversionMiddleware, when we handle orphaned task and we return a blueprint.ENORESULT error, the execution
+			// jumps here, so when the middleware runs and we return a blueprint.ENORESULT error, it'll run this block and reprocess the task
+			// if the handler has successfully been attached or do nothing (and let the queue retry later) if there was an error
 			ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
-				log.Printf("[main][QueueErrorHandler] Task error handler issue here%v", err)
+				log.Printf("[main][QueueErrorHandler] Running queue server error handler...")
+				log.Printf("[main][QueueErrorHandler][info] This middleware is called when the queue server encounters an error and rescheduling the queues")
 				// check that the queue isnt paused
 				queueInfo, qErr := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
 				if qErr != nil {
@@ -238,43 +248,51 @@ func main() {
 				}
 				log.Printf("[main] [QueueErrorHandler] Queue info %v", queueInfo)
 				if queueInfo.Paused {
-					log.Printf("Queue is paused")
+					log.Printf("[main][QueueErrorHandler] Queue is paused")
 					err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
 					return
 				}
 
-				asynqMux.Handle(task.Type(), asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
-					log.Printf("[main] [QueueErrorHandler] Custom running handler here%v", err)
-					// create new taskHandler that will then process this job. From the ```queue.LoggerMiddleware``` method,
-					// we check for "orphaned" tasks, these tasks are tasks that were created but were never fully processed,
-					// for example during server restart or shutdown during task processing, even though we detect queue pauses and pause them
-					// when we do this, the next task the queue server picks up the task, we'll attach this handler to it and just process it.
-					taskHandler := queue.NewOrchdioQueue(asyncClient, db, redisClient)
-					err = taskHandler.PlaylistHandler(t.ResultWriter().TaskID(), taskData.ShortURL, taskData.LinkInfo, taskData.User.UUID.String())
-					if err != nil {
-						log.Printf("[main] [QueueErrorHandler] Error processing task %v", err)
-						return err
-					}
-					log.Printf("[main] [QueueErrorHandler] Task processed successfully")
-					return nil
-				}))
-				log.Printf("[main] [QueueErrorHandler] Queue is not paused but an error occured")
+				// check if task has already been scheduled (has an handler), by fetching task from queue
+				notFound := asynq.NotFound(context.Background(), task)
+				if notFound != nil {
+					log.Printf("[main] [QueueErrorHandler][warning] Task not scheduled")
+					asynqMux.Handle(task.Type(), asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
+						log.Printf("[main] [QueueErrorHandler] Custom running handler here%v", err)
+						// create new taskHandler that will then process this job. From the ```queue.LoggerMiddleware``` method,
+						// we check for "orphaned" tasks, these tasks are tasks that were created but were never fully processed,
+						// for example during server restart or shutdown during task processing, even though we detect queue pauses and pause them
+						// when we do this, the next task the queue server picks up the task, we'll attach this handler to it and just process it.
+						taskHandler := queue.NewOrchdioQueue(asyncClient, db, redisClient)
+						err = taskHandler.PlaylistHandler(t.ResultWriter().TaskID(), taskData.ShortURL, taskData.LinkInfo, taskData.User.UUID.String())
+						if err != nil {
+							log.Printf("[main] [QueueErrorHandler] Error processing task %v", err)
+							return err
+						}
+						log.Printf("[main] [QueueErrorHandler] Task processed successfully")
+						return nil
+					}))
+					log.Printf("[main] [QueueErrorHandler][warning] Queue is not paused but an error occured")
+					return
+				}
+
+				taskHandler := queue.NewOrchdioQueue(asyncClient, db, redisClient)
+				err = taskHandler.PlaylistHandler(task.ResultWriter().TaskID(), taskData.ShortURL, taskData.LinkInfo, taskData.User.UUID.String())
+				if err != nil {
+					log.Printf("[main] [QueueErrorHandler] Error processing task %v", err)
+					return
+				}
+
+				log.Printf("[main] [QueueErrorHandler] Task already has a handler")
 			}),
 		})
 
-	asynqMux.Use(queue.LoggingMiddleware)
+	asynqMux.Use(queue.ConversionMiddleware)
 	err = asynqServer.Start(asynqMux)
 	if err != nil {
 		log.Printf("Error starting asynq server")
 		panic(err)
 	}
-
-	//asynqMux.HandleFunc("orchdio-playlist-queue", orchdioQueue.PlaylistTaskHandler)
-
-	// ===========================================================
-	// this is the job queue config shenanigans
-	//conversionContr := conversion.
-	// ===========================================================
 
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: false,
@@ -360,6 +378,7 @@ func main() {
 
 	serverShutdown := make(chan struct{})
 
+	// handles the shutdown of the server
 	go func() {
 		_ = <-serverChan
 		log.Printf("[main] [info] - Shutting down server")
@@ -379,27 +398,13 @@ func main() {
 	}()
 
 	userController = *account.NewUserController(db)
-	webhookController := account.NewAccountWebhookController(db)
+	//webhookController := account.NewAccountWebhookController(db)
 	authMiddleware := middleware.NewAuthMiddleware(db)
 	conversionController := conversion.NewConversionController(db, redisClient, playlistQueue, QueueFactory, asyncClient, asynqServer, asynqMux)
 	followController := follow.NewController(db, redisClient)
-	// ==========================================
-	// Migrate
+	devAppController := developer.NewDeveloperController(db)
 
-	//log.Printf("Here is the db url %s", dbURL)
-	//m, err := migrate.New("file://db/migration", dbURL)
-
-	//if err != nil {
-	//	log.Printf("Error firing up migrate %v", err)
-	//}
-
-	//log.Printf("Here is the migrate stuff")userController
-	//if err := m.Up(); err != nil {
-	//	log.Printf("Error migrating :sadface:")
-	//	panic(err)
-	//}
-
-	platformsControllers := platforms.NewPlatform(redisClient, db)
+	platformsControllers := platforms.NewPlatform(redisClient, db, asyncClient, asynqMux)
 	whController := webhook.NewWebhookController(db, redisClient)
 
 	/**
@@ -413,7 +418,27 @@ func main() {
 	*/
 
 	app.Use(cors.New(), authMiddleware.LogIncomingRequest, authMiddleware.HandleTrolls)
+	app.Use(compress.New(compress.Config{
+		Level: compress.LevelBestSpeed,
+	}))
+	app.Use(etag.New())
+	app.Use(limiter.New(limiter.Config{
+		Max:               100,
+		Expiration:        30 * time.Second,
+		LimiterMiddleware: limiter.SlidingWindow{},
+		LimitReached: func(ctx *fiber.Ctx) error {
+			log.Printf("[main] [info] - Rate limit exceeded")
+			return util.ErrorResponse(ctx, fiber.StatusTooManyRequests, "Rate limit exceeded")
+		},
+	}))
+	app.Use(requestid.New(requestid.Config{
+		Header:     "x-orchdio-request-id",
+		ContextKey: "orchdio-request-id",
+	}))
+	app.Get("/kanye/info", monitor.New(monitor.Config{Title: "Orchdio-Core health info"}))
 	baseRouter := app.Group("/api/v1")
+	orchRouter := app.Group("/v1")
+
 	baseRouter.Get("/", func(ctx *fiber.Ctx) error {
 		return ctx.SendStatus(http.StatusOK)
 	})
@@ -421,60 +446,63 @@ func main() {
 
 	//baseRouter.Use(defaultFiberConfig)
 
-	baseRouter.Get("/heartbeat", getInfo)
-	baseRouter.Get("/:platform/connect", userController.RedirectAuth)
-	baseRouter.Get("/orchdio/:platform/connect", userController.RedirectAuth)
-	baseRouter.Get("/spotify/auth", userController.AuthSpotifyUser)
-	baseRouter.Get("/orchdio/spotify/auth", userController.AuthOrchdioSpotifyUser)
-	baseRouter.Get("/deezer/auth", userController.AuthDeezerUser)
-	//baseRouter.Post("/applemusic/auth", userController.AuthAppleMusicUser)
-	baseRouter.Post("/applemusic/auth", userController.AuthAppleMusicUser)
-	baseRouter.Get("/track/convert", authMiddleware.ValidateKey, authMiddleware.AddAPIDeveloperToContext, middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
-	//baseRouter.Get("/track/convert", middleware.ExtractLinkInfo, platformsControllers.ConvertTrack)
-	baseRouter.Get("/playlist/convert", authMiddleware.ValidateKey, middleware.ExtractLinkInfo, platformsControllers.ConvertPlaylist)
+	authController := auth.NewAuthController(db)
+	// connect endpoints
+	orchRouter.Get("/auth/:platform/connect", authController.AppAuthRedirect)
+	// the callback that the auth platform will redirect to and this is where we handle the redirect and generate an auth token for the user, as response
+	orchRouter.Get("/auth/:platform/callback", authController.HandleAppAuthRedirect)
+	// this is for the apple music auth. its a POST as it carries a body
+	orchRouter.Post("/auth/:platform/callback", authController.HandleAppAuthRedirect)
+	orchRouter.Post("/entity/convert", authMiddleware.AddReadOnlyDeveloperToContext, middleware.ExtractLinkInfoFromBody, platformsControllers.ConvertEntity)
 
-	baseRouter.Post("/webhook/add", authMiddleware.ValidateKey, webhookController.CreateWebhookUrl)
-	baseRouter.Patch("/webhook/update", authMiddleware.ValidateKey, webhookController.UpdateUserWebhookUrl)
-	baseRouter.Get("/webhook", authMiddleware.ValidateKey, webhookController.FetchWebhookUrl)
-	baseRouter.Delete("/webhook", authMiddleware.ValidateKey, webhookController.DeleteUserWebhookUrl)
-	baseRouter.Post("/white-tiger", authMiddleware.AddAPIDeveloperToContext, whController.Handle)
-	baseRouter.Post("/redirect-url", authMiddleware.AddAPIDeveloperToContext, userController.CreateOrUpdateRedirectURL)
-	baseRouter.Get("/white-tiger", whController.AuthenticateWebhook)
+	orchRouter.Get("/app/:appId", devAppController.FetchApp)
 
-	userRouter := app.Group("/api/v1/user")
+	orchRouter.Get("/task/:taskId", authMiddleware.AddReadOnlyDeveloperToContext, conversionController.GetPlaylistTask)
+	orchRouter.Post("/playlist/:platform/add", authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.AddPlaylistToAccount)
 
-	userRouter.Use(jwtware.New(jwtware.Config{
-		SigningKey: []byte(os.Getenv("JWT_SECRET")),
+	orchRouter.Post("/follow", authMiddleware.AddReadWriteDeveloperToContext, followController.FollowPlaylist)
+	orchRouter.Post("/waitlist/add", authMiddleware.AddReadWriteDeveloperToContext, userController.AddToWaitlist)
+
+	appRouter := app.Group("/v1/app")
+	appRouter.Use(jwtware.New(jwtware.Config{
+		SigningKey: []byte(os.Getenv("JWT_SECRET")), // TODO: change this to use the .env value
 		Claims:     &blueprint.OrchdioUserToken{},
 		ContextKey: "authToken",
+		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
+			log.Printf("Error validating auth token %v:\n", err)
+			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid or Expired token")
+		},
 	}), middleware.VerifyToken)
 
-	userRouter.Post("/generate-key", userController.GenerateAPIKey)
-	userRouter.Patch("/key/revoke", authMiddleware.ValidateKey, userController.RevokeKey)
-	userRouter.Patch("/key/allow", userController.UnRevokeKey)
-	userRouter.Delete("/key/delete", authMiddleware.ValidateKey, userController.DeleteKey)
-	userRouter.Get("/key", userController.RetrieveKey)
+	appRouter.Get("/me", userController.FetchProfile)
+	// developer endpoints
+	appRouter.Get("/:appId/keys", devAppController.FetchKeys)
+	appRouter.Get("/:appId", devAppController.FetchApp)
+	appRouter.Get("/all", devAppController.FetchAllDeveloperApps)
+	appRouter.Post("/new", devAppController.CreateApp)
+	orchRouter.Post("/app/disable", devAppController.DisableApp)
+	orchRouter.Post("/app/enable", devAppController.EnableApp)
+	orchRouter.Delete("/app/delete", devAppController.DeleteApp)
+	appRouter.Put("/:appId", devAppController.UpdateApp)
+
+	//baseRouter.Get("/heartbeat", getInfo)
+	orchRouter.Post("/white-tiger", authMiddleware.AddReadWriteDeveloperToContext, whController.Handle)
+	orchRouter.Get("/white-tiger", whController.AuthenticateWebhook)
 
 	// ==========================================
 	// NEXT ROUTES
 	nextRouter := baseRouter.Group("/next", authMiddleware.ValidateKey)
 
-	nextRouter.Post("/playlist/convert", middleware.ExtractLinkInfoFromBody, conversionController.ConvertPlaylist)
-	nextRouter.Get("/task/:taskId", conversionController.GetPlaylistTask)
+	//nextRouter.Post("/playlist/convert", middleware.ExtractLinkInfoFromBody, conversionController.ConvertPlaylist)
 	// TODO: implement checking for superuser access in middleware before deleting then remove kanye prefix
 	nextRouter.Delete("/kanye/task/:taskId", conversionController.DeletePlaylistTask)
 
 	// user account action routes
 	//userActionAddRouter := nextRouter.Group("/add")
 	//userActionAddRouter.Post("/playlist/:platform/:playlistId", platformsControllers.AddPlaylistToAccount)
-
 	// FIXME: remove later. this is just for compatibility with the ping api for dev.
-	nextRouter.Post("/job/ping", conversionController.ConvertPlaylist)
-	nextRouter.Post("/follow", followController.FollowPlaylist)
-	nextRouter.Post("/playlist/:platform/add", platformsControllers.AddPlaylistToAccount)
-	nextRouter.Post("/waitlist/add", userController.AddToWaitlist)
+	//nextRouter.Post("/job/ping", conversionController.ConvertPlaylist)
 
-	baseRouter.Get("/me", userController.FetchProfile)
 	// FIXME: move this endpoint thats fetching link info from the `controllers` package
 	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
 
@@ -485,40 +513,6 @@ func main() {
 		log.Printf("\nClient with ID %v connected\n", kws.UUID)
 	}))
 
-	//app.Use(func(c *fiber.Ctx) error {
-	//	if websocket.IsWebSocketUpgrade(c) {
-	//		c.Locals("allowed", true)
-	//		return c.Next()
-	//	}
-	//	return fiber.ErrUpgradeRequired
-	//})
-
-	/**
-	this is a test to see hpw the keyboard light patterns    are.
-	*/
-
-	// WEBSOCKET EVENT HANDLERS
-	ikisocket.On(ikisocket.EventConnect, func(payload *ikisocket.EventPayload) {
-		log.Printf("\n[main][SocketEvent][EventConnect] - A new client connected\n")
-	})
-
-	ikisocket.On(ikisocket.EventDisconnect, func(payload *ikisocket.EventPayload) {
-		// TODO: incrementally retry to reconnect with the client
-		log.Printf("\nClient has disconnected")
-	})
-
-	ikisocket.On(ikisocket.EventMessage, universal.TrackConversion)
-	ikisocket.On(ikisocket.EventMessage, func(payload *ikisocket.EventPayload) {
-		universal.PlaylistConversion(payload, redisClient)
-	})
-
-	/**
-	 ==================================================================
-	+ some job queue shenanigans here
-	*/
-	// consume all the jobs in the queue
-	//if err :=
-
 	/**
 	 ==================================================================
 	+
@@ -528,22 +522,6 @@ func main() {
 	+
 	 ==================================================================
 	*/
-
-	//if aErr := asynqServer.Run(asynqMux); aErr != nil {
-	//	log.Printf("\n[main] [error] - Could not start asynq server. Are you sure redis is configured correctly? Also, something else might be wrong")
-	//	panic(aErr)
-	//}
-
-	//defer func(s *asynq.Server) {
-	//	s.Stop()
-	//}(asynqServer)
-
-	//go func(DB *sqlx.DB) {
-	//	c := make(chan int)
-	//	log.Printf("\n[main] [info] - Process background tasks")
-	//	<-c
-	//	ProcessFollows(c, DB)
-	//}(db)
 
 	// hERE WE WANT TO SETUP A CRONJOB THAT RUNS EVERY 2 MINS TO PROCESS THE FOLLOWS
 	c := cron.New()
@@ -571,14 +549,3 @@ func main() {
 	<-serverShutdown
 	log.Printf("[main] [info] - Cleaning up tasks: %s", port)
 }
-
-//
-//func ProcessFollows(c chan int, redisClient *redis.Client, DB *sqlx.DB, aClient *asynq.Client, aMux *asynq.ServeMux) {
-//	for {
-//		select {
-//		case <-c:
-//			follow.SyncFollowsHandler(DB, redisClient, aClient, aMux)
-//			log.Printf("\n[main] [info] - Follows processed")
-//		}
-//	}
-//}

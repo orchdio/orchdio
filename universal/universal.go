@@ -54,7 +54,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 
 		apple, err := applemusic.SearchTrackWithTitle(trackTitle, deezerTrack.Artists[0], red)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][deezer][ConvertTrack] error - could not get apple music track")
+			log.Printf("\n[controllers][platforms][deezer][ConvertEntity] error - could not get apple music track")
 			if err == blueprint.ENORESULT {
 				conversion.Platforms.AppleMusic = nil
 			}
@@ -89,18 +89,18 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 	case spotify.IDENTIFIER:
 		spSingleTrack, err := spotify.SearchTrackWithID(info.EntityID, red)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][spotify][ConvertTrack] error - could not search track with ID from spotify: %v\n", err)
+			log.Printf("\n[controllers][platforms][spotify][ConvertEntity] error - could not search track with ID from spotify: %v\n", err)
 			return nil, err
 		}
 
 		dzSingleTrack, err := deezer.SearchTrackWithTitle(spSingleTrack.Title, spSingleTrack.Artists[0], spSingleTrack.Album, red)
 		if err != nil && err != blueprint.ENORESULT {
-			log.Printf("\n[controllers][platforms][spotify][ConvertTrack] error - could not search track with title '%s' on deezer. err %v\n", spSingleTrack.Title, err)
+			log.Printf("\n[controllers][platforms][spotify][ConvertEntity] error - could not search track with title '%s' on deezer. err %v\n", spSingleTrack.Title, err)
 			return nil, err
 		}
 
 		if err != nil && err == blueprint.ENORESULT {
-			log.Printf("\n[controllers][platforms][spotify][ConvertTrack] error - could not search track with title %s on deezer. No result found\n", spSingleTrack.Title)
+			log.Printf("\n[controllers][platforms][spotify][ConvertEntity] error - could not search track with title %s on deezer. No result found\n", spSingleTrack.Title)
 		}
 
 		tidalTrack, err := tidal.SearchTrackWithTitle(spSingleTrack.Title, spSingleTrack.Artists[0], red)
@@ -153,12 +153,12 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 	case tidal.IDENTIFIER:
 		tidalTrack, err := tidal.SearchWithID(info.EntityID, red)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][tidal][ConvertTrack] error - could not fetch track with ID from tidal: %v\n", err)
+			log.Printf("\n[controllers][platforms][tidal][ConvertEntity] error - could not fetch track with ID from tidal: %v\n", err)
 			return nil, err
 		}
 
 		if len(tidalTrack.Artists) == 0 {
-			log.Printf("\n[controllers][platforms][tidal][ConvertTrack] error - could not fetch track with ID from tidal: %v\n", err)
+			log.Printf("\n[controllers][platforms][tidal][ConvertEntity] error - could not fetch track with ID from tidal: %v\n", err)
 			return nil, err
 		}
 		// then search on spotify
@@ -167,12 +167,12 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 
 		spotifyTrack, err := spotify.SearchTrackWithTitle(tidalTrack.Title, tidalArtist, red)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][tidal][ConvertTrack] error - could not search track with ID from spotify: %v\n", err)
+			log.Printf("\n[controllers][platforms][tidal][ConvertEntity] error - could not search track with ID from spotify: %v\n", err)
 			conversion.Platforms.Spotify = nil
 		}
 		deezerSingleTrack, err := deezer.SearchTrackWithTitle(tidalTrack.Title, tidalArtist, tidalAlbum, red)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][tidal][ConvertTrack] error - could not search track with ID from deezer: %v\n", err)
+			log.Printf("\n[controllers][platforms][tidal][ConvertEntity] error - could not search track with ID from deezer: %v\n", err)
 			conversion.Platforms.Deezer = nil
 		}
 
@@ -224,12 +224,12 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 	case ytmusic.IDENTIFIER:
 		ytmusicTrack, err := ytmusic.SearchTrackWithLink(info, red)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][ytmusic][ConvertTrack] error - could not fetch track with ID from ytmusic: %v\n", err)
+			log.Printf("\n[controllers][platforms][ytmusic][ConvertEntity] error - could not fetch track with ID from ytmusic: %v\n", err)
 			return nil, err
 		}
 
 		if len(ytmusicTrack.Artists) == 0 {
-			log.Printf("\n[controllers][platforms][ytmusic][ConvertTrack] error - could not fetch track with ID from ytmusic: %v\n", err)
+			log.Printf("\n[controllers][platforms][ytmusic][ConvertEntity] error - could not fetch track with ID from ytmusic: %v\n", err)
 			return nil, err
 		}
 
@@ -237,12 +237,12 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 		ytmusicAlbum := ytmusicTrack.Album
 		spotifyTrack, err := spotify.SearchTrackWithTitle(ytmusicTrack.Title, ytmusicArtiste, red)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][ytmusic][ConvertTrack] error - could not search track with ID from spotify: %v\n", err)
+			log.Printf("\n[controllers][platforms][ytmusic][ConvertEntity] error - could not search track with ID from spotify: %v\n", err)
 			conversion.Platforms.Spotify = nil
 		}
 		deezerSingleTrack, err := deezer.SearchTrackWithTitle(ytmusicTrack.Title, ytmusicArtiste, ytmusicAlbum, red)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][ytmusic][ConvertTrack] error - could not search track with ID from deezer: %v\n", err)
+			log.Printf("\n[controllers][platforms][ytmusic][ConvertEntity] error - could not search track with ID from deezer: %v\n", err)
 			conversion.Platforms.Deezer = nil
 		}
 		tidalTrack, err := tidal.SearchTrackWithTitle(ytmusicTrack.Title, ytmusicArtiste, red)
@@ -288,7 +288,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 	case applemusic.IDENTIFIER:
 		apple, err := applemusic.SearchTrackWithLink(info, red)
 		if err != nil {
-			log.Printf("\n[controller][platforms][applemusic][ConvertTrack] error - could not get apple music track")
+			log.Printf("\n[controller][platforms][applemusic][ConvertEntity] error - could not get apple music track")
 			return nil, err
 		}
 
@@ -297,12 +297,12 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 		album := apple.Album
 		spotifyTrack, err := spotify.SearchTrackWithTitle(title, artiste, red)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][applemusic][ConvertTrack] error - could not search track with ID from spotify: %v\n", err)
+			log.Printf("\n[controllers][platforms][applemusic][ConvertEntity] error - could not search track with ID from spotify: %v\n", err)
 			conversion.Platforms.Spotify = nil
 		}
 		deezerSingleTrack, err := deezer.SearchTrackWithTitle(title, artiste, album, red)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][applemusic][ConvertTrack] error - could not search track with ID from deezer: %v\n", err)
+			log.Printf("\n[controllers][platforms][applemusic][ConvertEntity] error - could not search track with ID from deezer: %v\n", err)
 			conversion.Platforms.Deezer = nil
 		}
 		tidalTrack, err := tidal.SearchTrackWithTitle(title, artiste, red)
@@ -360,7 +360,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 
 	err := CacheTracksWithID(cacheMap, red)
 	if err != nil {
-		log.Printf("\n[controllers][platforms][spotify][ConvertTrack] warning - could not cache tracks: %v\n", err)
+		log.Printf("\n[controllers][platforms][spotify][ConvertEntity] warning - could not cache tracks: %v\n", err)
 	}
 
 	return &conversion, nil
@@ -573,7 +573,7 @@ func CacheTracksWithID(records map[string]*blueprint.TrackSearchResult, red *red
 			return err
 		}
 		if err := red.Set(context.Background(), cacheKey, string(dataJSON), 0).Err(); err != nil {
-			log.Printf("\n[controllers][platforms][spotify][ConvertTrack] error - could not cache track on %s: %v\n", cacheKey, err)
+			log.Printf("\n[controllers][platforms][spotify][ConvertEntity] error - could not cache track on %s: %v\n", cacheKey, err)
 			return err
 		}
 		log.Printf("\n[controllers][platforms][universal][playlist][CacheTracksWithID] cache - track %s cached on %s\n", data.Title, cacheKey)
@@ -591,10 +591,10 @@ func CachePlaylistTracksWithID(tracks *[]blueprint.TrackSearchResult, red *redis
 			return err
 		}
 		if err := red.Set(context.Background(), "spotify:"+data.ID, string(dataJSON), 0).Err(); err != nil {
-			log.Printf("\n[controllers][platforms][spotify][ConvertTrack] error - could not cache track on %s: %v\n", "spotify:"+data.ID, err)
+			log.Printf("\n[controllers][platforms][spotify][ConvertEntity] error - could not cache track on %s: %v\n", "spotify:"+data.ID, err)
 			return err
 		}
 	}
-	log.Printf("\n[controllers][platforms][spotify][ConvertTrack] cache - track ")
+	log.Printf("\n[controllers][platforms][spotify][ConvertEntity] cache - track ")
 	return nil
 }

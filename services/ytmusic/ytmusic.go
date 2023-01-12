@@ -88,11 +88,13 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 }
 
 func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
-	identifierHash := util.HashIdentifier(fmt.Sprintf("ytmusic-%s-%s", artiste, title))
+	cleanedArtiste := fmt.Sprintf("ytmusic-%s-%s", util.NormalizeString(artiste), title)
 
-	if red.Exists(context.Background(), identifierHash).Val() == 1 {
-		log.Printf("[services][ytmusic][SearchTrackWithTitle] Track found in cache: %v\n", identifierHash)
-		cachedTrack, err := red.Get(context.Background(), identifierHash).Result()
+	log.Printf("Searching with stripped artiste: %s. Original artiste: %s", cleanedArtiste, artiste)
+
+	if red.Exists(context.Background(), cleanedArtiste).Val() == 1 {
+		log.Printf("[services][ytmusic][SearchTrackWithTitle] Track found in cache: %v\n", cleanedArtiste)
+		cachedTrack, err := red.Get(context.Background(), cleanedArtiste).Result()
 		if err != nil {
 			log.Printf("[services][ytmusic][SearchTrackWithTitle] Error fetching track from cache: %v\n", err)
 			return nil, err
@@ -105,8 +107,8 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 		}
 		return &result, nil
 	}
-	log.Printf("[services][ytmusic][SearchTrackWithTitle] Track not found in cache, fetching from YT Music: %v\n", identifierHash)
-	s := ytmusic.Search(fmt.Sprintf("%s %s", artiste, title))
+	log.Printf("[services][ytmusic][SearchTrackWithTitle] Track not found in cache, fetching from YT Music: %v\n", cleanedArtiste)
+	s := ytmusic.Search(fmt.Sprintf("%s %s", cleanedArtiste, title))
 	r, err := s.Next()
 	if err != nil {
 		log.Printf("[services][ytmusic][SearchTrackWithTitle] Error fetching track from YT Music: %v\n", err)

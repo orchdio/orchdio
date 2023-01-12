@@ -17,10 +17,12 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
+	"golang.org/x/text/unicode/norm"
 	"io"
 	"log"
 	"orchdio/blueprint"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -119,6 +121,48 @@ func SignJwt(claims *blueprint.OrchdioUserToken) ([]byte, error) {
 	return []byte(jToken), nil
 }
 
+// SignAuthJwt signs the auth jwt token with the passed params
+func SignAuthJwt(claims *blueprint.AppAuthToken) ([]byte, error) {
+	// this token will expire in 10 mins.
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &blueprint.AppAuthToken{
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute * 10)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ID:        uuid.New().String(),
+		},
+		App:         claims.App,
+		RedirectURL: claims.RedirectURL,
+		Platform:    claims.Platform,
+		Action:      claims.Action,
+	})
+
+	signedToken, err := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+	if err != nil {
+		log.Printf("[util]: [SignAuthJwt] error -  could not sign redirect token %v", err)
+		return nil, err
+	}
+	return []byte(signedToken), nil
+}
+
+// DecodeAuthJwt parses the auth jwt token into a ```blueprint.AppAuthToken```
+func DecodeAuthJwt(token string) (*blueprint.AppAuthToken, error) {
+	// decode jwt
+	decodedToken, err := jwt.ParseWithClaims(token, &blueprint.AppAuthToken{}, func(token *jwt.Token) (interface{}, error) {
+		// TODO: check the alg and signature is intact
+		return []byte(os.Getenv("JWT_SECRET")), nil
+	})
+	if err != nil {
+		log.Printf("[util]: [DecodeAuthJwt] error -  could not decode redirect token %v", err)
+		return nil, err
+	}
+	if claims, ok := decodedToken.Claims.(*blueprint.AppAuthToken); ok && decodedToken.Valid {
+		return claims, nil
+	} else {
+		log.Printf("[util]: [DecodeAuthJwt] error -  could not decode redirect token. Claims may be wrong %v", err)
+		return nil, err
+	}
+}
+
 func Find(s []string, e string) string {
 	for _, a := range s {
 		if a == e {
@@ -153,6 +197,10 @@ func GetFormattedDuration(v int) string {
 		hr := strconv.Itoa(hour)
 		if len(hr) == 1 {
 			hr = "0" + hr
+		}
+
+		if len(strconv.Itoa(min)) == 1 {
+			return fmt.Sprintf("%s:0%s:%s", hr, strconv.Itoa(min), seconds)
 		}
 		return fmt.Sprintf("%s:%d:%s", hr, min, seconds)
 	}
@@ -190,6 +238,19 @@ func ExtractDeezerID(link string) string {
 		return link[firstIndex:]
 	}
 	return link[firstIndex:lastIndex]
+}
+
+func NormalizeString(src string) string {
+	// normalize strings using the norm package
+	bp := norm.NFD.String(src)
+	// remove all non-ascii characters
+	reg, err := regexp.Compile("[^a-zA-Z0-9]+")
+	if err != nil {
+		log.Fatal(err)
+	}
+	// trimout spaces.
+	processedString := strings.ToLower(strings.ReplaceAll(reg.ReplaceAllString(bp, ""), " ", ""))
+	return processedString
 }
 
 // TODO: remove hashing and hashing references and use norm package to normalize the strings instead
