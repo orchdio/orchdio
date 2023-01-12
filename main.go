@@ -345,7 +345,6 @@ func main() {
 			}
 			return nil
 		},
-		//Prefork: true,
 	})
 	serverChan := make(chan os.Signal, 1)
 	signal.Notify(serverChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
@@ -379,6 +378,7 @@ func main() {
 
 	serverShutdown := make(chan struct{})
 
+	// handles the shutdown of the server
 	go func() {
 		_ = <-serverChan
 		log.Printf("[main] [info] - Shutting down server")
@@ -453,15 +453,15 @@ func main() {
 	orchRouter.Get("/auth/:platform/callback", authController.HandleAppAuthRedirect)
 	// this is for the apple music auth. its a POST as it carries a body
 	orchRouter.Post("/auth/:platform/callback", authController.HandleAppAuthRedirect)
-	orchRouter.Post("/entity/convert", authMiddleware.AddDeveloperToContext, middleware.ExtractLinkInfoFromBody, platformsControllers.ConvertEntity)
+	orchRouter.Post("/entity/convert", authMiddleware.AddReadOnlyDeveloperToContext, middleware.ExtractLinkInfoFromBody, platformsControllers.ConvertEntity)
 
 	orchRouter.Get("/app/:appId", devAppController.FetchApp)
 
-	orchRouter.Get("/task/:taskId", authMiddleware.AddDeveloperToContext, conversionController.GetPlaylistTask)
-	orchRouter.Post("/playlist/:platform/add", platformsControllers.AddPlaylistToAccount)
+	orchRouter.Get("/task/:taskId", authMiddleware.AddReadOnlyDeveloperToContext, conversionController.GetPlaylistTask)
+	orchRouter.Post("/playlist/:platform/add", authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.AddPlaylistToAccount)
 
-	orchRouter.Post("/follow", authMiddleware.AddDeveloperToContext, followController.FollowPlaylist)
-	orchRouter.Post("/waitlist/add", authMiddleware.AddDeveloperToContext, userController.AddToWaitlist)
+	orchRouter.Post("/follow", authMiddleware.AddReadWriteDeveloperToContext, followController.FollowPlaylist)
+	orchRouter.Post("/waitlist/add", authMiddleware.AddReadWriteDeveloperToContext, userController.AddToWaitlist)
 
 	appRouter := app.Group("/v1/app")
 	appRouter.Use(jwtware.New(jwtware.Config{
@@ -477,14 +477,16 @@ func main() {
 	appRouter.Get("/me", userController.FetchProfile)
 	// developer endpoints
 	appRouter.Get("/:appId/keys", devAppController.FetchKeys)
+	appRouter.Get("/:appId", devAppController.FetchApp)
+	appRouter.Get("/all", devAppController.FetchAllDeveloperApps)
 	appRouter.Post("/new", devAppController.CreateApp)
-	orchRouter.Post("/app/disable", authMiddleware.AddDeveloperToContext, devAppController.DisableApp)
-	orchRouter.Post("/app/enable", authMiddleware.AddDeveloperToContext, devAppController.EnableApp)
-	orchRouter.Delete("/app/delete", authMiddleware.AddDeveloperToContext, devAppController.DeleteApp)
-	orchRouter.Put("/app", authMiddleware.AddDeveloperToContext, devAppController.UpdateApp)
+	orchRouter.Post("/app/disable", devAppController.DisableApp)
+	orchRouter.Post("/app/enable", devAppController.EnableApp)
+	orchRouter.Delete("/app/delete", devAppController.DeleteApp)
+	appRouter.Put("/:appId", devAppController.UpdateApp)
 
 	//baseRouter.Get("/heartbeat", getInfo)
-	orchRouter.Post("/white-tiger", authMiddleware.AddDeveloperToContext, whController.Handle)
+	orchRouter.Post("/white-tiger", authMiddleware.AddReadWriteDeveloperToContext, whController.Handle)
 	orchRouter.Get("/white-tiger", whController.AuthenticateWebhook)
 
 	// ==========================================

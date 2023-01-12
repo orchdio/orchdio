@@ -60,7 +60,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
 		}
 
-		log.Printf("\n[controllers][platforms][ConvertEntity] - converted %v track with URL %v\n", linkInfo.Entity, linkInfo.TargetLink)
+		log.Printf("\n[controllers][platforms][ConvertEntity] - converted %v with URL %v\n", linkInfo.Entity, linkInfo.TargetLink)
 
 		// HACK: insert a new task in the DB directly and return the ID as part of the
 		// conversion response. We are saving directly because for playlists, we run them in asynq job queue
@@ -168,7 +168,11 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 		orchdioQueue := queue.NewOrchdioQueue(p.AsynqClient, p.DB, p.Redis)
 
 		// Conversion task response to be polled later
-		res := &blueprint.NewTask{ID: string(_taskId)}
+		res := &blueprint.TaskResponse{
+			ID:      string(_taskId),
+			Payload: nil,
+			Status:  "pending",
+		}
 
 		// NB: THE SIDE EFFECT OF THIS IS THAT WHEN WE RESTART THE SERVER FOR EXAMPLE, WE LOSE
 		// THE HANDLER ATTACHED. THIS IS BECAUSE WE'RE TRIGGERING THE HANDLER HERE IN THE

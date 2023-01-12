@@ -412,14 +412,16 @@ type AppAuthToken struct {
 	App         string `json:"app_id"`
 	RedirectURL string `json:"redirect_url"`
 	Platform    string `json:"platform"`
-	Action      struct {
-		Payload interface{} `json:"payload"`
-		// this is the action the developer was trying to do before auth
-		// for example if its adding a playlist to account, it would be something like
-		// "add_playlist_to_account"
-		// TODO: define a list of actions and their keys.
-		Action string `json:"action"`
-	} `json:"action,omitempty"`
+	Action      Action `json:"action,omitempty"`
+}
+
+type Action struct {
+	Payload interface{} `json:"payload"`
+	// this is the action the developer was trying to do before auth
+	// for example if its adding a playlist to account, it would be something like
+	// "add_playlist_to_account"
+	// TODO: define a list of actions and their keys.
+	Action string `json:"action"`
 }
 
 type AppKeys struct {

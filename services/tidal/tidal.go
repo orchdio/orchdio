@@ -115,7 +115,6 @@ func FetchSingleTrack(id string) (*Track, error) {
 		log.Printf("\n[controllers][platforms][tidal][FetchSingleTrack] - error - %v\n", err)
 		return nil, err
 	}
-
 	singleTrack := &Track{}
 	err = json.Unmarshal(response.Data, singleTrack)
 	if err != nil {

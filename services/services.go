@@ -54,7 +54,7 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 		return nil, blueprint.EINVALIDLINK
 	}
 
-	if len([]byte(song)) > 100 {
+	if len([]byte(song)) > 200 {
 		log.Printf("[services][ExtractLinkInfo][warning] link is larger than 100 bytes")
 		return nil, errors.New("too large")
 	}

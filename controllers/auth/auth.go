@@ -76,23 +76,28 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
 	}
 
-	redirectToken := blueprint.AppAuthToken{
+	// create new AppAuthToken action
+	var redirectToken = blueprint.AppAuthToken{
 		App: developerApp.UID.String(),
 		// FIXME (suggestion): maybe not encrypt this in the jwt but just the app id and then fetch app and app info from db using the app id
 		RedirectURL: developerApp.RedirectURL,
-		Action: struct {
-			Payload interface{} `json:"payload"`
-			Action  string      `json:"action"`
-		}(struct {
-			Payload interface{}
-			Action  string
-		}{Payload: nil, Action: "app_auth"}),
+	}
+
+	// create new action
+	action := blueprint.Action{
+		Payload: nil,
+		Action:  "app_auth",
+	}
+
+	response := fiber.Map{
+		"url": "",
 	}
 
 	switch platform {
 	case "spotify":
 
 		redirectToken.Platform = "spotify"
+		redirectToken.Action = action
 		encryptedToken, err := util.SignAuthJwt(&redirectToken)
 		if err != nil {
 			log.Printf("[controllers][AppAuthRedirect] developer -  error: unable to generate auth token: %v\n", err)
@@ -100,7 +105,9 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 		}
 		authURL := spotify.FetchAuthURL(string(encryptedToken))
 		log.Printf("[controllers][AppAuthRedirect] developer -  redirecting to spotify auth url: %s\n", string(authURL))
-		return util.SuccessResponse(ctx, fiber.StatusOK, string(authURL))
+
+		response["url"] = string(authURL)
+		return util.SuccessResponse(ctx, fiber.StatusOK, response)
 
 	case "deezer":
 		log.Printf("[controllers][AppAuthRedirect] developer -  redirecting to deezer auth url\n")
@@ -118,7 +125,8 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 		deezerAuth := deezer.NewDeezerAuth(deezerClientID, deezerSecret, deezerRedirectURL)
 		authURL := deezerAuth.FetchAuthURL(string(encryptedToken))
 		log.Printf("[controllers][AppAuthRedirect] developer -  redirecting to deezer auth url: %s\n", string(encryptedToken))
-		return util.SuccessResponse(ctx, fiber.StatusOK, authURL)
+		response["url"] = authURL
+		return util.SuccessResponse(ctx, fiber.StatusOK, response)
 
 	// TODO: handle apple music auth later. test the flow using zoove as developer and implement flow from there
 	//   in accordance with new auth flow.

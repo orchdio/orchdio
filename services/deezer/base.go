@@ -115,13 +115,15 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) *blueprint
 // This is typically expected to be used when the track we want to fetch is the one we just
 // want to search on. That is, the other platforms that the user is trying to convert to.
 func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
-	cleanedArtiste := fmt.Sprintf("deezer-%s-%s", util.NormalizeString(artiste), title)
+	//searchKey := fmt.Sprintf("deezer-%s-%s", artiste, title)
+	cacheKey := fmt.Sprintf("deezer-%s-%s", util.NormalizeString(artiste), title)
+
 	log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] first artiste and title %s %s\n", artiste, title)
 	// get the cached track
-	if red.Exists(context.Background(), cleanedArtiste).Val() == 1 {
+	if red.Exists(context.Background(), cacheKey).Val() == 1 {
 		log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] Track has been cached\n")
 		// deserialize the result from redis
-		cachedTrack, err := red.Get(context.Background(), cleanedArtiste).Result()
+		cachedTrack, err := red.Get(context.Background(), cacheKey).Result()
 		if err != nil {
 			log.Printf("\n[platforms][base][SearchTrackWithTitle] Could not get cached track. err %v\n", err)
 			return nil, err
@@ -138,7 +140,10 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 	log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] Track has not been cached\n")
 
 	trackTitle := ExtractTitle(title)
-	// DEEZER:LABEL
+	// for deezer we'll not trim the artiste name. this is because it becomes way less accurate.
+	// deezer has second to the lowest accuracy in terms of search results (youtube being the lowest)
+	// however, just like others, we're caching the result under the normalized string, which contains trimmed artiste name
+	// like so: "deezer-artistename-title". For example: "deezer-flatbushzombies-reelgirls
 	_link := fmt.Sprintf("track:\"%s\" artist:\"%s\" album:\"%s\"", strings.Trim(trackTitle, " "), strings.ReplaceAll(strings.Trim(artiste, " "), " ", ""), strings.Trim(album, " "))
 	payload := url.QueryEscape(_link)
 	link := fmt.Sprintf("%s/search?q=%s", os.Getenv("DEEZER_API_BASE"), payload)
@@ -186,8 +191,9 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 		//newHashIdentifier := util.HashIdentifier("deezer-" + out.Artistes[0] + "-" + out.Title)
 		// if the artistes are the same, the track result is most likely the same (except remixes, an artiste doesnt have two tracks with the same name)
 		if lo.Contains(out.Artists, artiste) {
+			log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle][debug] - the result seems to not be exact same track but same track.\n")
 			err = red.MSet(context.Background(), map[string]interface{}{
-				artiste: string(serializedTrack),
+				cacheKey: string(serializedTrack),
 			}).Err()
 			if err != nil {
 				log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error caching track - %v\n", err)
@@ -211,6 +217,8 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 		//}
 		return &out, nil
 	}
+
+	log.Printf("\n[services][deezer][base][SearchTrackWithTitle] Deezer search for track done but no results. Searched with %s \n")
 	return nil, nil
 }
 

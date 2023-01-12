@@ -133,6 +133,7 @@ func SignAuthJwt(claims *blueprint.AppAuthToken) ([]byte, error) {
 		App:         claims.App,
 		RedirectURL: claims.RedirectURL,
 		Platform:    claims.Platform,
+		Action:      claims.Action,
 	})
 
 	signedToken, err := token.SignedString([]byte(os.Getenv("JWT_SECRET")))

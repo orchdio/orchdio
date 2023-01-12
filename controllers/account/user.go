@@ -58,16 +58,8 @@ func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 	// Responses:
 	//  200: redirectAuthResponse
 
-	// a list of valid urls to redirect to
-	// get the special flag that says the auth is from orchdio dev
-	//authSrc := ctx.Query("src")
-
 	deezerSecret := os.Getenv("DEEZER_SECRET")
 	deezerRedirectURL := os.Getenv("DEEZER_REDIRECT_URI")
-
-	//if authSrc == "orchdio" {
-	//	deezerRedirectURL = os.Getenv("ORCHDIO_DEEZER_REDIRECT_URI")
-	//}
 
 	var uniqueID, _ = uuid.NewUUID()
 	dz := &deezer.Deezer{
@@ -78,6 +70,7 @@ func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 
 	platform := strings.ToLower(ctx.Params("platform"))
 	var url string
+
 	if platform == "spotify" {
 		// now do spotify things here.
 		_url := spotify.FetchAuthURL(uniqueID.String())

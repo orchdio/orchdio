@@ -65,7 +65,36 @@ func (a *AuthMiddleware) LogIncomingRequest(ctx *fiber.Ctx) error {
 	return ctx.Next()
 }
 
-func (a *AuthMiddleware) AddDeveloperToContext(ctx *fiber.Ctx) error {
+// AddReadOnlyDeveloperToContext gets the developer using the public key which is read only and attach the developer to context.
+func (a *AuthMiddleware) AddReadOnlyDeveloperToContext(ctx *fiber.Ctx) error {
+	log.Printf("[db][middleware][AddReadOnlyDevAccessToContext] developer -  fetching app developer with public key\n")
+	pubKey := ctx.Get("x-orchdio-public-key")
+	if pubKey == "" {
+		log.Printf("[db][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app developer with public key")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "missing x-orchdio-public-key header")
+	}
+
+	// check if the key is valid
+	isValid := util.IsValidUUID(pubKey)
+	if !isValid {
+		log.Printf("[db][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app developer with public key")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "invalid x-orchdio-public-key header")
+	}
+
+	// fetch the developer from the database
+	database := db.NewDB{DB: a.DB}
+	developer, err := database.FetchDeveloperAppWithPublicKey(pubKey)
+	if err != nil {
+		log.Printf("[db][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app developer with public key")
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+	}
+	log.Printf("[db][AddReadOnlyDevAccessToContext] developer - making read only request")
+	ctx.Locals("developer", developer)
+	return ctx.Next()
+}
+
+// AddReadWriteDeveloperToContext gets the developer using the secret key which is read and write and attach the developer to context.
+func (a *AuthMiddleware) AddReadWriteDeveloperToContext(ctx *fiber.Ctx) error {
 	log.Printf("[db][middleware][FetchAppDeveloperWithSecretKey] developer -  fetching app developer with secret key\n")
 	key := ctx.Get("x-orchdio-key")
 	if key == "" {
@@ -73,19 +102,17 @@ func (a *AuthMiddleware) AddDeveloperToContext(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "missing x-orchdio-key header")
 	}
 
-	//encryptedKey, err := util.Encrypt([]byte(key), []byte(os.Getenv("ENCRYPTION_SECRET")))
-	//if err != nil {
-	//	log.Printf("[db][FetchAppDeveloperWithSecretKey] developer - error: Key could not be encrypted %v\n", err)
-	//	return util.ErrorResponse(ctx, fiber.StatusBadRequest, "invalid x-orchdio-key header")
-	//}
-	//
-	//encodedKey := base64.StdEncoding.EncodeToString(encryptedKey)
-	//log.Printf("[db][FetchAppDeveloperWithSecretKey] developer -  encoded key: %s\n", encodedKey)
+	// check if the key is valid
+	isValid := util.IsValidUUID(key)
+	if !isValid {
+		log.Printf("[db][FetchAppDeveloperWithSecretKey] developer -  error: could not fetch app developer with secret")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "invalid x-orchdio-key header")
+	}
 
 	var developer blueprint.User
 	err := a.DB.QueryRowx(queries.FetchAuthorizedAppDeveloperBySecretKey, key).StructScan(&developer)
 	if err != nil {
-		log.Printf("[db][FetchAppDeveloperWithSecretKey] developer -  error: could not fetch app developer with secret %v\n", err)
+		log.Printf("[db][FetchAppDeveloperWithSecretKey] developer -  error: could not fetch app developer with the secret: %s. Error is %v\n", key, err)
 		if errors.Is(err, sql.ErrNoRows) {
 			return util.ErrorResponse(ctx, fiber.StatusNotFound, "app not found")
 		}
@@ -110,7 +137,7 @@ func (a *AuthMiddleware) HandleTrolls(ctx *fiber.Ctx) error {
 // continue to the next handler in line by proceeding to next but if the user is not authenticated then we
 // will return a redirect auth for the platform the user is trying to perform an action and or auth on.
 func (a *AuthMiddleware) CheckOrInitiateUserAuthStatus(ctx *fiber.Ctx) error {
-	// extract the user id from the path. tbhe assumotion here is that the user id would be passed in the endpoints path
+	// extract the user id from the path. the assumption here is that the user id would be passed in the endpoints path
 	userId := ctx.Params("userId")
 	// attach appId as query params. if we change the verb to POST, we can simply attach the appId to the header as
 	// x-orchdio-app-id

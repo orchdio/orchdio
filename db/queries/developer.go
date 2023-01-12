@@ -7,7 +7,7 @@ const FetchAppByAppID = `SELECT * FROM apps WHERE uuid = $1`
 const FetchAppByPubKey = `SELECT * FROM apps WHERE public_key = $1`
 const FetchAppBySecretKey = `SELECT * FROM apps WHERE secret_key = $1`
 
-const FetchAppDeveloperBySecretKey = `SELECT u.email, u.usernames, u.username, u.id, u.uuid, u.created_at, u.updated_at, u.refresh_token, u.platform_id FROM apps a JOIN users u on a.developer = u.uuid WHERE a.secret_key = $1`
+const FetchAuthorizedAppDeveloperByPublicKey = `SELECT u.email, u.usernames, u.username, u.id, u.uuid, u.created_at, u.updated_at, u.refresh_token, u.platform_id FROM apps a JOIN users u on a.developer = u.uuid WHERE a.public_key = $1 AND a.authorized = true`
 const FetchAuthorizedAppDeveloperBySecretKey = `SELECT u.email, u.usernames, u.username, u.id, u.uuid, u.created_at, u.updated_at, u.refresh_token, u.platform_id FROM apps a JOIN users u on a.developer = u.uuid WHERE a.secret_key = $1 AND a.authorized = true`
 
 // UpdateApp updates the developer app with data passed. If the values are empty, it falls back to what the original value of the column is

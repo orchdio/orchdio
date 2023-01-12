@@ -22,7 +22,9 @@ func NewDeveloperController(db *sqlx.DB) *DeveloperController {
 // CreateApp creates a new app for the developer. An app is a way to access the API, there can be multiple apps per developer.
 func (d *DeveloperController) CreateApp(ctx *fiber.Ctx) error {
 	log.Printf("[controllers][CreateApp] developer -  creating new app\n")
+
 	// get the claims from the context
+	// FIXME: perhaps use reflection to check type and gracefully handle
 	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken) // THIS WILL MOST LIKELY CRASH
 	// deserialize the request body
 	var body blueprint.CreateNewDeveloperAppData
@@ -33,7 +35,7 @@ func (d *DeveloperController) CreateApp(ctx *fiber.Ctx) error {
 	pubKey := uuid.NewString()
 	secretKey := uuid.NewString()
 
-	// create new developer
+	// create new developer app
 	database := db.NewDB{DB: d.DB}
 	uid, err := database.CreateNewApp(body.Name, body.Description, body.RedirectURL, body.WebhookURL, pubKey, claims.UUID.String(), secretKey)
 	if err != nil {
@@ -45,12 +47,13 @@ func (d *DeveloperController) CreateApp(ctx *fiber.Ctx) error {
 	return util.SuccessResponse(ctx, fiber.StatusCreated, string(uid))
 }
 
+// UpdateApp updates an existing app for the developer.
 func (d *DeveloperController) UpdateApp(ctx *fiber.Ctx) error {
 	log.Printf("[controllers][UpdateApp] developer -  updating app\n")
 
 	if ctx.Params("appId") == "" {
-		log.Printf("[controllers][UpdateApp] developer -  error: appId is empty\n")
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "appId is empty")
+		log.Printf("[controllers][UpdateApp] developer -  error: App ID is empty\n")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "App ID is empty. Please pass a valid App ID")
 	}
 
 	// deserialize the request body into blueprint.DeveloperApp
@@ -189,4 +192,21 @@ func (d *DeveloperController) FetchKeys(ctx *fiber.Ctx) error {
 
 	log.Printf("[controllers][FetchKeys] developer -  app keys fetched: %s\n", appId)
 	return util.SuccessResponse(ctx, fiber.StatusOK, keys)
+}
+
+func (d *DeveloperController) FetchAllDeveloperApps(ctx *fiber.Ctx) error {
+	log.Printf("[controllers][FetchAllDeveloperApps] developer -  fetching all apps\n")
+
+	// get the developer from the context
+	claims := ctx.Locals("claims").(blueprint.OrchdioUserToken)
+	// fetch the apps
+	database := db.NewDB{DB: d.DB}
+	apps, err := database.FetchApps(claims.UUID.String())
+	if err != nil {
+		log.Printf("[controllers][FetchAllDeveloperApps] developer -  error: could not fetch apps in Database: %v\n", err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+	}
+
+	log.Printf("[controllers][FetchAllDeveloperApps] developer -  apps fetched: %s\n", claims.UUID.String())
+	return util.SuccessResponse(ctx, fiber.StatusOK, apps)
 }
