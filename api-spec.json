@@ -1,144 +1,704 @@
 {
-  "swagger": "2.0",
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Orchdio API",
+    "description": "Orchdio API",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://api.orchdio.dev"
+    }
+  ],
   "paths": {
-    "/:platform/connect": {
+    "/v1/{platform}/connect": {
       "get": {
-        "consumes": [
-          "application/json"
-        ],
-        "produces": [
-          "application/json"
-        ],
-        "schemes": [
-          "https"
-        ],
-        "summary": "Redirects the user to the authorization URL for the platform.",
-        "operationId": "RedirectAuth",
+        "description": "Returns the redirect URL for the platform in order to authenticate the user on the target platform",
         "parameters": [
           {
-            "type": "string",
-            "description": "The platform to connect to.",
             "name": "platform",
             "in": "path",
-            "required": true
+            "description": "The platform to connect to",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "spotify",
+                "deezer"
+              ]
+            }
           }
         ],
         "responses": {
           "200": {
-            "$ref": "#/responses/redirectAuthResponse"
-          }
-        }
-      }
-    },
-    "/deezer/auth": {
-      "get": {
-        "consumes": [
-          "application/json"
-        ],
-        "produces": [
-          "application/json"
-        ],
-        "schemes": [
-          "https"
-        ],
-        "summary": "Authorizes a user with spotify account. This is connects a user with a deezer account, with Orchdio.",
-        "operationId": "AuthSpotifyUser",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/deezerAuthResponse"
-          }
-        }
-      }
-    },
-    "/key": {
-      "get": {
-        "security": [
-          {
-            "api_key": []
+            "description": "Successful response",
+            "headers": {
+              "x-orchdio-public-key": {
+                "description": "The public key of the Orchdio server",
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "format": "uuid",
+                  "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/ConnectResponse"
+                }
+              }
+            }
           },
-          {
-            "[x-orchdio-key]": []
-          }
-        ],
-        "description": "Retrieves an API key associated with the user. The user is known by examining the request header and as such, the user must be authenticated",
-        "consumes": [
-          "application/json"
-        ],
-        "produces": [
-          "application/json"
-        ],
-        "schemes": [
-          "https"
-        ],
-        "operationId": "RetrieveKey",
-        "responses": {
-          "200": {
-            "$ref": "#/responses/retrieveApiKeyResponse"
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
     },
-    "/spotify/auth": {
-      "get": {
-        "consumes": [
-          "application/json"
-        ],
-        "produces": [
-          "application/json"
-        ],
-        "schemes": [
-          "https"
-        ],
-        "summary": "Authorizes a user with spotify account. This is connects a user with a spotify account, with Orchdio.",
-        "operationId": "AuthSpotifyUser",
+    "/v1/entity/convert": {
+      "description": "Converts an entity from one platform to another. An entity can be a track or a playlist.",
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "description": "The URL of the entity to convert",
+                    "example": "https://open.spotify.com/track/3Qm86XLflmIXVm1wcwkgDK?si=6a6e6f6d6e6f6f6d"
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "$ref": "#/responses/redirectAuthResponse"
+            "description": "Successful response",
+            "headers": {
+              "x-orchdio-public-key": {
+                "description": "The public key of the Orchdio server",
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "format": "uuid",
+                  "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/ConvertEntityResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/task/{task_id}": {
+      "description": "Returns the status of a task",
+      "get": {
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "description": "The ID of the task",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "headers": {
+              "x-orchdio-public-key": {
+                "description": "The public key of the Orchdio server",
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "format": "uuid",
+                  "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/TaskResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
     }
   },
-  "responses": {
-    "redirectAuthResponse": {
-      "description": "",
-      "schema": {
-        "type": "object"
-      },
-      "headers": {
-        "error": {},
-        "message": {
-          "type": "string",
-          "example": "\"This is a message about whatever i can tell you about the error\"",
-          "description": "Description: The message attached to the response.\n\nRequired: true"
-        },
-        "status": {
-          "type": "integer",
-          "format": "int64",
-          "example": 201,
-          "description": "Description: The error code attached to the response. This will return 200 (or 201), depending on the endpoint. It returns 4xx - 5xx as suitable, otherwise.\n\nRequired: true"
+  "components": {
+    "responses": {
+      "ConnectResponse": {
+        "description": "The redirect URL for the platform in order to authenticate the user on the target platform",
+        "content": {
+          "application/json": {
+            "schema": {
+              "description": "The redirect URL for the platform in order to authenticate the user on the target platform",
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "format": "uri",
+                      "example": "https://accounts.spotify.com/authorize?client_id=1901737ea993417b98959fefb66c98be&redirect_uri=https%3A%2F%2Fweb-production-2629.up.railway.app%2Fapi%2Fv1%2Fspotify%2Fauth&response_type=code&scope=user-read-private+user-library-read+playlist-read-private+playlist-read-collaborative+user-follow-read+playlist-modify-private+playlist-modify-public+user-read-email&state=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2NzM1NjAyMjIsImlhdCI6MTY3MzU1OTYyMiwianRpIjoiMWZlODc2ZTItNjgzMS00OTFiLTk0NDAtYTM5NWZiYjg5OTIwIiwiYXBwX2lkIjoiOWNjMDM0NjQtY2YyOS00MDUwLWE1MjItYzI4NzJmMmE0MGFhIiwicmVkaXJlY3RfdXJsIjoiaHR0cHM6Ly96b292ZS54eXoiLCJwbGF0Zm9ybSI6InNwb3RpZnkiLCJhY3Rpb24iOnsicGF5bG9hZCI6bnVsbCwiYWN0aW9uIjoiYXBwX2F1dGgifX0.WWDwKmXMqZ8n039yTzgaQk0PxnM8Y_q3HozVGwlWTX0"
+                    }
+                  }
+                },
+                "message": {
+                  "type": "string",
+                  "example": "Redirect URL"
+                },
+                "status": {
+                  "type": "integer",
+                  "example": 200,
+                  "description": "The HTTP status code"
+                }
+              }
+            }
+          }
         }
-      }
-    },
-    "retrieveApiKeyResponse": {
-      "description": "",
-      "schema": {
-        "type": "object"
       },
-      "headers": {
-        "data": {
-          "example": "c8e51d6c-4d6f-42f6-bcb6-9da19fc5b848",
-          "description": "The key attached to the response."
-        },
-        "message": {
-          "type": "string",
-          "example": "\"This is a message about whatever i can tell you about the error\"",
-          "description": "The message attached to the response.\n\nRequired: true"
-        },
-        "status": {
-          "type": "string",
-          "example": "201",
-          "description": "Description: The error code attached to the response. This will return 200 (or 201), depending on the endpoint. It returns 4xx - 5xx as suitable, otherwise.\n\nRequired: true"
+      "ErrorResponse": {
+        "description": "The error response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string",
+                  "example": "Internal server error"
+                },
+                "status": {
+                  "type": "integer",
+                  "example": 500,
+                  "description": "The HTTP status code"
+                },
+                "error": {
+                  "type": "string",
+                  "example": "Internal server error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ConvertEntityResponse": {
+        "description": "The converted entity",
+        "content": {
+          "application/json": {
+            "schema": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "description": "The converted track. This is returned if the entity is a track",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "payload": {
+                          "$ref": "#/components/responses/PlatformsPayload"
+                        },
+                        "entity": {
+                          "type": "string",
+                          "description": "The type of entity. For a track, it would be track and playlist for a playlist",
+                          "example": "track"
+                        },
+                        "short_url": {
+                          "type": "string",
+                          "example": "7ghZ7dFtp",
+                          "maxLength": 10
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "description": "A playlist conversion response",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "task_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "example": "12345678-1234-1234-1234-123456789012",
+                          "description": "The ID of the playlist conversion task"
+                        }
+                      }
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "success",
+                      "description": "The status of the request"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Playlist conversion task created",
+                      "description": "A message describing the status of the request"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "TaskResponse": {
+        "description": "A playlist conversion task response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "task_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "example": "12345678-1234-1234-1234-123456789012"
+                    },
+                    "payload": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/responses/TrackPayload"
+                        },
+                        {
+                          "$ref": "#/components/responses/PlatformsPayload"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "PlatformsPayload": {
+        "description": "A payload containing a list of platforms",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "deezer": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "example": "123456789"
+                    },
+                    "title": {
+                      "type": "string",
+                      "example": "The Less I Know The Better"
+                    },
+                    "artists": {
+                      "type": "array",
+                      "example": [
+                        "Tame Impala"
+                      ]
+                    },
+                    "album": {
+                      "type": "string",
+                      "example": "Currents"
+                    },
+                    "duration": {
+                      "type": "string",
+                      "description": "The duration of the track, formatted as HH:MM:SS",
+                      "example": "4:32"
+                    },
+                    "url": {
+                      "type": "string",
+                      "example": "https://www.deezer.com/track/123456789"
+                    },
+                    "cover": {
+                      "type": "string",
+                      "example": "https://api.deezer.com/album/123456789/image"
+                    }
+                  }
+                },
+                "spotify": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "example": "123456789"
+                    },
+                    "title": {
+                      "type": "string",
+                      "example": "The Less I Know The Better"
+                    },
+                    "artists": {
+                      "type": "array",
+                      "example": [
+                        "Tame Impala"
+                      ]
+                    },
+                    "album": {
+                      "type": "string",
+                      "example": "Currents"
+                    },
+                    "duration": {
+                      "type": "string",
+                      "description": "The duration of the track, formatted as HH:MM:SS",
+                      "example": "4:32"
+                    },
+                    "url": {
+                      "type": "string",
+                      "example": "https://open.spotify.com/track/123456789"
+                    },
+                    "cover": {
+                      "type": "string",
+                      "example": "https://i.scdn.co/image/123456789"
+                    }
+                  }
+                },
+                "tidal": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "example": "123456789"
+                    },
+                    "title": {
+                      "type": "string",
+                      "example": "The Less I Know The Better"
+                    },
+                    "artists": {
+                      "type": "array",
+                      "example": [
+                        "Tame Impala"
+                      ]
+                    },
+                    "album": {
+                      "type": "string",
+                      "example": "Currents"
+                    },
+                    "duration": {
+                      "type": "string",
+                      "description": "The duration of the track, formatted as HH:MM:SS",
+                      "example": "4:32"
+                    },
+                    "url": {
+                      "type": "string",
+                      "example": "https://tidal.com/browse/track/123456789"
+                    },
+                    "cover": {
+                      "type": "string",
+                      "example": "https://resources.tidal.com/images/123456789/640x640.jpg"
+                    }
+                  }
+                },
+                "ytmusic": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "example": "123456789"
+                    },
+                    "title": {
+                      "type": "string",
+                      "example": "The Less I Know The Better"
+                    },
+                    "artists": {
+                      "type": "array",
+                      "example": [
+                        "Tame Impala"
+                      ]
+                    },
+                    "album": {
+                      "type": "string",
+                      "example": "Currents"
+                    },
+                    "duration": {
+                      "type": "string",
+                      "description": "The duration of the track, formatted as HH:MM:SS",
+                      "example": "4:32"
+                    },
+                    "url": {
+                      "type": "string",
+                      "example": "https://music.youtube.com/watch?v=123456789"
+                    },
+                    "cover": {
+                      "type": "string",
+                      "example": "https://i.ytimg.com/vi/123456789/maxresdefault.jpg"
+                    }
+                  }
+                },
+                "applemusic": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "example": "123456789"
+                    },
+                    "title": {
+                      "type": "string",
+                      "example": "The Less I Know The Better"
+                    },
+                    "artists": {
+                      "type": "array",
+                      "example": [
+                        "Tame Impala"
+                      ]
+                    },
+                    "album": {
+                      "type": "string",
+                      "example": "Currents"
+                    },
+                    "duration": {
+                      "type": "string",
+                      "description": "The duration of the track, formatted as HH:MM:SS",
+                      "example": "4:32"
+                    },
+                    "url": {
+                      "type": "string",
+                      "example": "https://music.apple.com/us/album/the-less-i-know-the-better/123456789"
+                    },
+                    "cover": {
+                      "type": "string",
+                      "example": "https://is2-ssl.mzstatic.com/image/thumb/Music123456789/123456789/123456789.jpg/200x200bb.png"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "TrackPayload": {
+        "description": "A track payload",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "platforms": {
+                  "$ref": "#/components/responses/PlatformsPayload"
+                },
+                "entity": {
+                  "type": "string",
+                  "example": "track"
+                },
+                "short_url": {
+                  "type": "string",
+                  "example": "TzrWfvoQ"
+                }
+              }
+            }
+          }
+        }
+      },
+      "PlaylistPayload": {
+        "description": "The payload for a playlist",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "meta": {
+                  "type": "object",
+                  "properties": {
+                    "length": {
+                      "type": "string",
+                      "description": "Duration of the playlist, formatted as HH:MM:SS",
+                      "example": "01:23:45"
+                    },
+                    "title": {
+                      "type": "string",
+                      "example": "My Playlist"
+                    },
+                    "owner": {
+                      "type": "string",
+                      "example": "Obsidian Lover"
+                    },
+                    "url": {
+                      "type": "string",
+                      "example": "https://open.spotify.com/playlist/123456789"
+                    },
+                    "cover": {
+                      "type": "string",
+                      "example": "https://i.scdn.co/image/123456789"
+                    },
+                    "short_url": {
+                      "type": "string",
+                      "example": "TzrWfvoQ"
+                    }
+                  }
+                },
+                "platforms": {
+                  "$ref": "#/components/responses/PlatformsPayload"
+                },
+                "task_id": {
+                  "type": "string",
+                  "example": "123456789"
+                },
+                "entity": {
+                  "type": "string",
+                  "example": "playlist"
+                }
+              }
+            }
+          }
+        }
+      },
+
+      "CreateNewAppResponse": {
+        "description": "The response for creating a new app",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "string",
+                  "format": "uuid",
+                    "example": "12345678-1234-1234-1234-123456789012"
+                },
+                "message": {
+                  "type": "string",
+                  "example": "App created successfully"
+                },
+                "success": {
+                  "type": "integer",
+                  "example": 201,
+                  "description": "The HTTP status code"
+                }
+              }
+            }
+          }
+        }
+      },
+      "GetAppResponse": {
+        "description": "Response for getting an app",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "app_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "example": "12345678-1234-1234-1234-123456789012"
+                    },
+                    "authorized": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "description": {
+                      "type": "string",
+                      "example": "The coolest app in the world."
+                    },
+                    "name": {
+                      "type": "string",
+                      "example": "My App"
+                    },
+                    "redirect_url": {
+                      "type": "string",
+                      "description": "The URL to redirect to after authentication",
+                      "example": "https://myapp.com/callback"
+                    },
+                    "webhook_url": {
+                      "type": "string",
+                      "description": "The URL to which the webhook will be sent",
+                      "example": "https://myapp.com/webhook"
+                    }
+                  }
+                },
+                "message": {
+                  "type": "string",
+                  "example": "App retrieved successfully"
+                },
+                "success": {
+                  "type": "integer",
+                  "example": 200,
+                  "description": "The HTTP status code"
+                }
+              }
+            }
+          }
         }
       }
     }
