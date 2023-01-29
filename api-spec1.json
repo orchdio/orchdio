@@ -1,0 +1,146 @@
+{
+  "swagger": "2.0",
+  "paths": {
+    "/:platform/connect": {
+      "get": {
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "schemes": [
+          "https"
+        ],
+        "summary": "Redirects the user to the authorization URL for the platform.",
+        "operationId": "RedirectAuth",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "The platform to connect to.",
+            "name": "platform",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/responses/redirectAuthResponse"
+          }
+        }
+      }
+    },
+    "/deezer/auth": {
+      "get": {
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "schemes": [
+          "https"
+        ],
+        "summary": "Authorizes a user with spotify account. This is connects a user with a deezer account, with Orchdio.",
+        "operationId": "AuthSpotifyUser",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/deezerAuthResponse"
+          }
+        }
+      }
+    },
+    "/key": {
+      "get": {
+        "security": [
+          {
+            "api_key": []
+          },
+          {
+            "[x-orchdio-key]": []
+          }
+        ],
+        "description": "Retrieves an API key associated with the user. The user is known by examining the request header and as such, the user must be authenticated",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "schemes": [
+          "https"
+        ],
+        "operationId": "RetrieveKey",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/retrieveApiKeyResponse"
+          }
+        }
+      }
+    },
+    "/spotify/auth": {
+      "get": {
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "schemes": [
+          "https"
+        ],
+        "summary": "Authorizes a user with spotify account. This is connects a user with a spotify account, with Orchdio.",
+        "operationId": "AuthSpotifyUser",
+        "responses": {
+          "200": {
+            "$ref": "#/responses/redirectAuthResponse"
+          }
+        }
+      }
+    }
+  },
+  "responses": {
+    "redirectAuthResponse": {
+      "description": "",
+      "schema": {
+        "type": "object"
+      },
+      "headers": {
+        "error": {},
+        "message": {
+          "type": "string",
+          "example": "\"This is a message about whatever i can tell you about the error\"",
+          "description": "Description: The message attached to the response.\n\nRequired: true"
+        },
+        "status": {
+          "type": "integer",
+          "format": "int64",
+          "example": 201,
+          "description": "Description: The error code attached to the response. This will return 200 (or 201), depending on the endpoint. It returns 4xx - 5xx as suitable, otherwise.\n\nRequired: true"
+        }
+      }
+    },
+    "retrieveApiKeyResponse": {
+      "description": "",
+      "schema": {
+        "type": "object"
+      },
+      "headers": {
+        "data": {
+          "example": "c8e51d6c-4d6f-42f6-bcb6-9da19fc5b848",
+          "description": "The key attached to the response."
+        },
+        "message": {
+          "type": "string",
+          "example": "\"This is a message about whatever i can tell you about the error\"",
+          "description": "The message attached to the response.\n\nRequired: true"
+        },
+        "status": {
+          "type": "string",
+          "example": "201",
+          "description": "Description: The error code attached to the response. This will return 200 (or 201), depending on the endpoint. It returns 4xx - 5xx as suitable, otherwise.\n\nRequired: true"
+        }
+      }
+    }
+  }
+}

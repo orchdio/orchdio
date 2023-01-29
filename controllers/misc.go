@@ -11,7 +11,7 @@ import (
 func LinkInfo(ctx *fiber.Ctx) error {
 	local := ctx.Locals("linkInfo")
 	if local == nil {
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Link not passed.")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "ctx error", "Link not passed.")
 	}
 	info := local.(*blueprint.LinkInfo)
 	return util.SuccessResponse(ctx, http.StatusOK, info)

@@ -31,14 +31,14 @@ func (a *AuthMiddleware) ValidateKey(ctx *fiber.Ctx) error {
 
 	if len([]byte(apiKey)) > 36 {
 		log.Printf("[middleware][ValidateKey] key is too long. %s\n", apiKey)
-		return util.ErrorResponse(ctx, http.StatusUnauthorized, "Key too long")
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "unauthorized", "Key too long")
 	}
 
 	isValid := util.IsValidUUID(apiKey)
 
 	if !isValid {
 		log.Printf("[controller][user][Revoke] invalid key. Bad request %s\n", apiKey)
-		return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid apikey")
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "unauthorized", "Invalid apikey")
 	}
 
 	// fetch the user from the database
@@ -49,11 +49,11 @@ func (a *AuthMiddleware) ValidateKey(ctx *fiber.Ctx) error {
 
 		if err == sql.ErrNoRows {
 			log.Printf("[middleware][ValidateKey] key not found. %s\n", apiKey)
-			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid apikey")
+			return util.ErrorResponse(ctx, http.StatusUnauthorized, "unauthorized", "Invalid apikey")
 		}
 
 		log.Printf("[middleware][ValidateKey] error - Could not fetch user with api key: %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An internal error occurred")
 	}
 	ctx.Locals("user", user)
 	log.Printf("[middleware][ValidateKey] API key is valid")
@@ -71,14 +71,14 @@ func (a *AuthMiddleware) AddReadOnlyDeveloperToContext(ctx *fiber.Ctx) error {
 	pubKey := ctx.Get("x-orchdio-public-key")
 	if pubKey == "" {
 		log.Printf("[db][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app developer with public key")
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "missing x-orchdio-public-key header")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "missing x-orchdio-public-key header")
 	}
 
 	// check if the key is valid
 	isValid := util.IsValidUUID(pubKey)
 	if !isValid {
 		log.Printf("[db][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app developer with public key")
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "invalid x-orchdio-public-key header")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "invalid x-orchdio-public-key header")
 	}
 
 	// fetch the developer from the database
@@ -86,7 +86,7 @@ func (a *AuthMiddleware) AddReadOnlyDeveloperToContext(ctx *fiber.Ctx) error {
 	developer, err := database.FetchDeveloperAppWithPublicKey(pubKey)
 	if err != nil {
 		log.Printf("[db][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app developer with public key")
-		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred")
 	}
 	log.Printf("[db][AddReadOnlyDevAccessToContext] developer - making read only request")
 	ctx.Locals("developer", developer)
@@ -99,14 +99,14 @@ func (a *AuthMiddleware) AddReadWriteDeveloperToContext(ctx *fiber.Ctx) error {
 	key := ctx.Get("x-orchdio-key")
 	if key == "" {
 		log.Printf("[db][FetchAppDeveloperWithSecretKey] developer -  error: could not fetch app developer with secret")
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "missing x-orchdio-key header")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "missing x-orchdio-key header")
 	}
 
 	// check if the key is valid
 	isValid := util.IsValidUUID(key)
 	if !isValid {
 		log.Printf("[db][FetchAppDeveloperWithSecretKey] developer -  error: could not fetch app developer with secret")
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "invalid x-orchdio-key header")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "invalid x-orchdio-key header")
 	}
 
 	var developer blueprint.User
@@ -114,9 +114,9 @@ func (a *AuthMiddleware) AddReadWriteDeveloperToContext(ctx *fiber.Ctx) error {
 	if err != nil {
 		log.Printf("[db][FetchAppDeveloperWithSecretKey] developer -  error: could not fetch app developer with the secret: %s. Error is %v\n", key, err)
 		if errors.Is(err, sql.ErrNoRows) {
-			return util.ErrorResponse(ctx, fiber.StatusNotFound, "app not found")
+			return util.ErrorResponse(ctx, fiber.StatusNotFound, "not found", "app not found")
 		}
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "invalid x-orchdio-key header")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "invalid x-orchdio-key header")
 	}
 	ctx.Locals("developer", &developer)
 	return ctx.Next()
@@ -127,7 +127,7 @@ func (a *AuthMiddleware) HandleTrolls(ctx *fiber.Ctx) error {
 	for _, blacklist := range blacklists {
 		if strings.Contains(ctx.Path(), blacklist) {
 			log.Printf("[middleware][HandleTrolls] warning - Trolling attempt from IP: %s at path: %s at time: %s\n", ctx.IP(), ctx.Path(), time.Now().String())
-			return util.ErrorResponse(ctx, http.StatusExpectationFailed, "lol 🖕🏾")
+			return util.ErrorResponse(ctx, http.StatusExpectationFailed, "zilch", "lol 🖕🏾")
 		}
 	}
 	return ctx.Next()
@@ -143,25 +143,25 @@ func (a *AuthMiddleware) CheckOrInitiateUserAuthStatus(ctx *fiber.Ctx) error {
 	// x-orchdio-app-id
 	appId := ctx.Query("app_id")
 	if userId == "" {
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Missing user id")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing user id")
 	}
 
 	if appId == "" {
 		log.Printf("[middleware][CheckUserAuthStatus] missing app id")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Missing app id")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing app id")
 	}
 
 	isValidUserId := util.IsValidUUID(userId)
 	if !isValidUserId {
 		log.Printf("[middleware][CheckUserAuthStatus] invalid user id")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid user id")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid user id")
 	}
 
 	// extract the platform to auth for
 	platform := ctx.Query("platform")
 	if platform == "" {
 		log.Printf("[middleare][auth][CheckUserAuthStatus] - platform not present. Please specify platform to auth user on")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid Auth platform")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid Auth platform")
 	}
 
 	// find the user in the db with the id
@@ -169,9 +169,9 @@ func (a *AuthMiddleware) CheckOrInitiateUserAuthStatus(ctx *fiber.Ctx) error {
 	user, err := database.FindUserByUUID(userId)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return util.ErrorResponse(ctx, http.StatusNotFound, "User not found")
+			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User not found")
 		}
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "User not found")
 	}
 
 	// check if the user is authenticated on orchdio
@@ -181,7 +181,7 @@ func (a *AuthMiddleware) CheckOrInitiateUserAuthStatus(ctx *fiber.Ctx) error {
 		developerApp, err := database.FetchAppByAppId(appId)
 		if err != nil {
 			log.Printf("[middleware][CheckUserAuthStatus] could not retrieve developer app")
-			return util.ErrorResponse(ctx, http.StatusNotFound, "Invalid App ID")
+			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "Invalid App ID")
 		}
 
 		redirectToken := blueprint.AppAuthToken{
@@ -202,7 +202,7 @@ func (a *AuthMiddleware) CheckOrInitiateUserAuthStatus(ctx *fiber.Ctx) error {
 			encryptedAuthToken, err := util.SignAuthJwt(&redirectToken)
 			if err != nil {
 				log.Printf("[middleware][auth][CheckUserAuthStatus] - could not sign auth token. This is a serious error - %v\n", err)
-				return util.ErrorResponse(ctx, http.StatusInternalServerError, "Could not sign JWT token")
+				return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not sign JWT token")
 			}
 
 			authURL := spotify.FetchAuthURL(string(encryptedAuthToken))
@@ -214,7 +214,7 @@ func (a *AuthMiddleware) CheckOrInitiateUserAuthStatus(ctx *fiber.Ctx) error {
 			encryptedToken, err := util.SignAuthJwt(&redirectToken)
 			if err != nil {
 				log.Printf("[middleare][auth][CheckUserAuthStatus] - could not sign auth token. This is a serious error: %v\n", err)
-				return util.ErrorResponse(ctx, http.StatusInternalServerError, "Could not sign redirect token")
+				return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not sign redirect token")
 			}
 			return util.SuccessResponse(ctx, http.StatusOK, string(encryptedToken))
 

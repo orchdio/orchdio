@@ -65,7 +65,7 @@ const UpdateFollowStatus = `UPDATE follows SET updated_at = now(), status = $1 w
 
 // create a new waitlist entry and update updated_at if email already exists
 
-const CreateWaitlistEntry = `INSERT INTO waitlists(uuid, email, created_at, updated_at) VALUES ($1, $2, now(), now()) ON CONFLICT(email) DO UPDATE SET updated_at = now() RETURNING email;`
+const CreateWaitlistEntry = `INSERT INTO waitlists(uuid, email, platform, created_at,  updated_at) VALUES ($1, $2, $3, now(), now()) ON CONFLICT(email) DO UPDATE SET updated_at = now() RETURNING email;`
 
 // update user platform token based on the streaming platform user provides
 

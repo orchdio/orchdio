@@ -123,26 +123,28 @@ type OrchdioUserToken struct {
 
 // LinkInfo represents the metadata about a link user wants to convert
 type LinkInfo struct {
-	Platform   string `json:"platform"`
-	TargetLink string `json:"target_link"`
-	Entity     string `json:"entity"`
-	EntityID   string `json:"entity_id"`
+	Platform       string `json:"platform"`
+	TargetLink     string `json:"target_link"`
+	Entity         string `json:"entity"`
+	EntityID       string `json:"entity_id"`
+	TargetPlatform string `json:"target_platform,omitempty"`
 }
 
 // TrackSearchResult represents a single search result for a platform.
 // It represents what a single platform should return when trying to
 // convert a link.
 type TrackSearchResult struct {
-	URL      string   `json:"url"`
-	Artists  []string `json:"artists"`
-	Released string   `json:"released"`
-	Duration string   `json:"duration"`
-	Explicit bool     `json:"explicit"`
-	Title    string   `json:"title"`
-	Preview  string   `json:"preview"`
-	Album    string   `json:"album,omitempty"`
-	ID       string   `json:"id"`
-	Cover    string   `json:"cover"`
+	URL           string   `json:"url"`
+	Artists       []string `json:"artists"`
+	Released      string   `json:"released"`
+	Duration      string   `json:"duration"`
+	DurationMilli int      `json:"duration_milli,omitempty"`
+	Explicit      bool     `json:"explicit"`
+	Title         string   `json:"title"`
+	Preview       string   `json:"preview"`
+	Album         string   `json:"album,omitempty"`
+	ID            string   `json:"id"`
+	Cover         string   `json:"cover"`
 }
 
 type Pagination struct {
@@ -185,24 +187,29 @@ type Conversion struct {
 	ShortURL string `json:"short_url,omitempty"`
 }
 
+type PlatformPlaylistTrackResult struct {
+	Tracks        *[]TrackSearchResult `json:"tracks"`
+	Length        int                  `json:"length"`
+	OmittedTracks []OmittedTracks      `json:"empty_tracks,omitempty"`
+}
+
 // PlaylistConversion represents the final response for a typical playlist conversion
 type PlaylistConversion struct {
 	Platforms struct {
-		Deezer     *[]TrackSearchResult `json:"deezer"`
-		Spotify    *[]TrackSearchResult `json:"spotify"`
-		Tidal      *[]TrackSearchResult `json:"tidal"`
-		AppleMusic *[]TrackSearchResult `json:"applemusic"`
+		Deezer     *PlatformPlaylistTrackResult `json:"deezer,omitempty"`
+		Spotify    *PlatformPlaylistTrackResult `json:"spotify,omitempty"`
+		Tidal      *PlatformPlaylistTrackResult `json:"tidal,omitempty"`
+		AppleMusic *PlatformPlaylistTrackResult `json:"applemusic,omitempty"`
 	} `json:"platforms,omitempty"`
 	Meta struct {
-		Length        string                     `json:"length"`
-		Title         string                     `json:"title"`
-		Preview       string                     `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
-		OmittedTracks map[string][]OmittedTracks `json:"omitted_tracks"`
-		Owner         string                     `json:"owner"`
-		Cover         string                     `json:"cover"`
-		Entity        string                     `json:"entity"`
-		URL           string                     `json:"url"`
-		ShortURL      string                     `json:"short_url,omitempty"`
+		Length   string `json:"length"`
+		Title    string `json:"title"`
+		Preview  string `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
+		Owner    string `json:"owner"`
+		Cover    string `json:"cover"`
+		Entity   string `json:"entity"`
+		URL      string `json:"url"`
+		ShortURL string `json:"short_url,omitempty"`
 	} `json:"meta,omitempty"`
 }
 
@@ -427,4 +434,9 @@ type Action struct {
 type AppKeys struct {
 	PublicKey string `json:"public_key,omitempty" db:"public_key"`
 	SecretKey string `json:"secret_key,omitempty" db:"secret_key"`
+}
+
+type AddToWaitlistBody struct {
+	Email    string `json:"email"`
+	Platform string `json:"platform"`
 }

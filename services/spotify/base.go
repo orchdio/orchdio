@@ -17,6 +17,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 // createNewSpotifyUInstance creates a new spotify client to make API request that doesn't need user auth
@@ -179,21 +180,22 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	}
 
 	fetchedSpotifyTrack := blueprint.TrackSearchResult{
-		Released: spSingleTrack.Album.ReleaseDate,
-		URL:      spSingleTrack.SimpleTrack.ExternalURLs["spotify"],
-		Artists:  spTrackContributors,
-		Duration: util.GetFormattedDuration(spSingleTrack.Duration / 1000),
-		Explicit: spSingleTrack.Explicit,
-		Title:    spSingleTrack.Name,
-		Preview:  spSingleTrack.PreviewURL,
-		Album:    spSingleTrack.Album.Name,
-		ID:       spSingleTrack.SimpleTrack.ID.String(),
-		Cover:    cover,
+		Released:      spSingleTrack.Album.ReleaseDate,
+		URL:           spSingleTrack.SimpleTrack.ExternalURLs["spotify"],
+		Artists:       spTrackContributors,
+		Duration:      util.GetFormattedDuration(spSingleTrack.Duration / 1000),
+		DurationMilli: spSingleTrack.Duration,
+		Explicit:      spSingleTrack.Explicit,
+		Title:         spSingleTrack.Name,
+		Preview:       spSingleTrack.PreviewURL,
+		Album:         spSingleTrack.Album.Name,
+		ID:            spSingleTrack.SimpleTrack.ID.String(),
+		Cover:         cover,
 	}
 
 	// serialize the track
 	serializedTrack, err := json.Marshal(fetchedSpotifyTrack)
-	trackCacheKey := "spotify:" + fetchedSpotifyTrack.ID
+	trackCacheKey := "spotify:track:" + fetchedSpotifyTrack.ID
 
 	if lo.Contains(fetchedSpotifyTrack.Artists, artiste) {
 		err = red.MSet(context.Background(), map[string]interface{}{
@@ -212,17 +214,17 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	//	log.Printf("\n[services][spotify][base][SearchTrackWithTitle] error - could not marshal track: %v\n", err)
 	//	return nil, err
 	//}
-	err = red.Set(context.Background(), trackCacheKey, serializedTrack, 0).Err()
+	err = red.Set(context.Background(), trackCacheKey, serializedTrack, time.Hour*24).Err()
 	// cache in redis. since this is for a track that we're just searching by the title and artiste,
 	// we're saving the hash with a scheme of: "spotify-artist-title". e.g "spotify-taylor-swift-blink-182"
 	// so we save the fetched track under that hash and assumed that was what the user searched for and wanted.
 	//err = red.Set(context.Background(), newIdentifier, serializedTrack, 0).Err()
 
-	//if err != nil {
-	//	log.Printf("\n[services][spotify][base][SearchTrackWithTitle] error - could not cache track: %v\n", err)
-	//} else {
-	//	log.Printf("\n[services][spotify][base][SearchTrackWithTitle] success - cached track: %v\n", fetchedSpotifyTrack.Title)
-	//}
+	if err != nil {
+		log.Printf("\n[services][spotify][base][SearchTrackWithTitle] error - could not cache spotify track: %v\n", err)
+	} else {
+		log.Printf("\n[services][spotify][base][SearchTrackWithTitle] success - cached track: %v\n", fetchedSpotifyTrack.Title)
+	}
 
 	return &fetchedSpotifyTrack, nil
 }
@@ -234,7 +236,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 // Basically, the platform the user is trying to convert from.
 func SearchTrackWithID(id string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
 	// the cacheKey. scheme is "spotify:track_id"
-	cacheKey := "spotify:" + id
+	cacheKey := "spotify:track:" + id
 	cachedTrack, err := red.Get(context.Background(), cacheKey).Result()
 
 	if err != nil && err != redis.Nil {
@@ -272,16 +274,17 @@ func SearchTrackWithID(id string, red *redis.Client) (*blueprint.TrackSearchResu
 		}
 
 		out := blueprint.TrackSearchResult{
-			URL:      results.ExternalURLs["spotify"],
-			Artists:  artistes,
-			Released: results.Album.ReleaseDate,
-			Duration: util.GetFormattedDuration(results.Duration / 1000),
-			Explicit: results.Explicit,
-			Title:    results.Name,
-			Preview:  results.PreviewURL,
-			Album:    results.Album.Name,
-			ID:       results.ID.String(),
-			Cover:    results.Album.Images[0].URL,
+			URL:           results.ExternalURLs["spotify"],
+			Artists:       artistes,
+			Released:      results.Album.ReleaseDate,
+			Duration:      util.GetFormattedDuration(results.Duration / 1000),
+			DurationMilli: results.Duration,
+			Explicit:      results.Explicit,
+			Title:         results.Name,
+			Preview:       results.PreviewURL,
+			Album:         results.Album.Name,
+			ID:            results.ID.String(),
+			Cover:         results.Album.Images[0].URL,
 		}
 
 		serialized, err := json.Marshal(out)
@@ -289,7 +292,7 @@ func SearchTrackWithID(id string, red *redis.Client) (*blueprint.TrackSearchResu
 			log.Printf("\n[services][spotify][base][FetchSingleTrack] error - could not serialize track: %v\n", err)
 		}
 
-		err = red.Set(context.Background(), cacheKey, serialized, 0).Err()
+		err = red.Set(context.Background(), cacheKey, serialized, time.Hour*24).Err()
 		if err != nil {
 			log.Printf("\n[services][spotify][base][FetchSingleTrack] error - could not cache track: %v\n", err)
 		} else {
@@ -387,25 +390,26 @@ func FetchPlaylistTracksAndInfo(id string, red *redis.Client) (*blueprint.Playli
 			}
 
 			trackCopy := blueprint.TrackSearchResult{
-				URL:      track.Track.ExternalURLs["spotify"],
-				Artists:  artistes,
-				Released: track.Track.Album.ReleaseDate,
-				Duration: util.GetFormattedDuration(track.Track.Duration / 1000),
-				Explicit: track.Track.Explicit,
-				Title:    track.Track.Name,
-				Preview:  track.Track.PreviewURL,
-				Album:    track.Track.Album.Name,
-				ID:       track.Track.ID.String(),
-				Cover:    cover,
+				URL:           track.Track.ExternalURLs["spotify"],
+				Artists:       artistes,
+				Released:      track.Track.Album.ReleaseDate,
+				Duration:      util.GetFormattedDuration(track.Track.Duration / 1000),
+				DurationMilli: track.Track.Duration,
+				Explicit:      track.Track.Explicit,
+				Title:         track.Track.Name,
+				Preview:       track.Track.PreviewURL,
+				Album:         track.Track.Album.Name,
+				ID:            track.Track.ID.String(),
+				Cover:         cover,
 			}
 			tracks = append(tracks, trackCopy)
 			// cache the track. the scheme is: "spotify:track_id"
-			cacheKey := "spotify:" + track.Track.ID.String()
+			cacheKey := "spotify:track:" + track.Track.ID.String()
 			serialized, err := json.Marshal(trackCopy)
 			if err != nil {
 				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not serialize track: %v\n", err)
 			}
-			err = red.Set(context.Background(), cacheKey, string(serialized), 0).Err()
+			err = red.Set(context.Background(), cacheKey, string(serialized), time.Hour*24).Err()
 			if err != nil {
 				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not cache track: %v\n", err)
 			} else {
