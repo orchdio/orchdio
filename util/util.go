@@ -93,9 +93,9 @@ func SuccessResponse(ctx *fiber.Ctx, statusCode int, data interface{}) error {
 }
 
 // ErrorResponse sends back an error http response to the client.
-func ErrorResponse(ctx *fiber.Ctx, statusCode int, err interface{}) error {
+func ErrorResponse(ctx *fiber.Ctx, statusCode int, err interface{}, message string) error {
 	return ctx.Status(statusCode).JSON(&blueprint.ErrorResponse{
-		Message: "Error with response",
+		Message: message,
 		Status:  statusCode,
 		Error:   err,
 	})

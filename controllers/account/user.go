@@ -59,7 +59,7 @@ func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 	//  200: redirectAuthResponse
 
 	deezerSecret := os.Getenv("DEEZER_SECRET")
-	deezerRedirectURL := os.Getenv("DEEZER_REDIRECT_URI")
+	deezerRedirectURL := os.Getenv("DEEZER_REDIRECT_URL")
 
 	var uniqueID, _ = uuid.NewUUID()
 	dz := &deezer.Deezer{
@@ -76,7 +76,7 @@ func (c *UserController) RedirectAuth(ctx *fiber.Ctx) error {
 		_url := spotify.FetchAuthURL(uniqueID.String())
 		if _url == nil {
 			log.Printf("[account][auth] error - Could return URL for user")
-			return util.ErrorResponse(ctx, http.StatusOK, "Error creating auth URL")
+			return util.ErrorResponse(ctx, http.StatusOK, "auth error", "Error creating auth URL")
 		}
 
 		url = string(_url)
@@ -123,12 +123,12 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	errorCode := ctx.Query("error")
 
 	if errorCode == "access_denied" {
-		return util.ErrorResponse(ctx, http.StatusUnauthorized, "User denied access")
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "access denied", "User denied access")
 	}
 
 	encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
 	if state == "" {
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "State is not present")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "State is not present")
 	}
 
 	// create a new net/http instance since *fasthttp.Request() cannot be passed
@@ -136,7 +136,7 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 
 	if err != nil {
 		log.Printf("[controllers][account][user] Error - error creating a new http request - %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An unexpected error occured")
 	}
 	// recover from panic
 	defer func() {
@@ -149,17 +149,15 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	if err != nil {
 		log.Printf("[controllers][account][user] Error - error completing user auth - %v\n", err)
 		if err == blueprint.EINVALIDAUTHCODE {
-			return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid auth code")
+			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid auth code")
 		}
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An unexpected error occured")
 	}
 	encryptedRefreshToken, encErr := util.Encrypt(refreshToken, []byte(encryptionSecretKey))
 	if encErr != nil {
 		log.Printf("\n[controllers][account][user] Error - could not encrypt refreshToken - %v\n", encErr)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, encErr)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, encErr.Error(), "An unexpected error occurred")
 	}
-
-	log.Printf("[account][auth] encrypted refresh token: %v\n", encryptedRefreshToken)
 
 	user, err := client.CurrentUser(context.Background())
 	if err != nil {
@@ -170,7 +168,7 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 		// AQB7csFtf_58P-Rq-jqrfFMhBXDJnC2xwFjLMwXr439vxbXCZdFxKpwTrnDLzJvFrY3nc2B4YeCRLOs5zgrMA4zwWZROc4P7qPt_ySlTi-qHM5w5y_eQ27PUJzLKQae5SJs
 		// when the user just auths for the first time, it seems that the refresh token is gotten (for some reason, during dev)
 
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An unexpected error occurred.")
 	}
 	log.Printf("%v", user)
 
@@ -190,7 +188,7 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 
 	if dbErr != nil {
 		log.Printf("\n[controller][account][user][spotify]: [AuthUser] Error executing query: %v\n", dbErr)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, dbErr)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
 	}
 
 	serialized, err := json.Marshal(map[string]string{
@@ -262,12 +260,12 @@ func (c *UserController) AuthOrchdioSpotifyUser(ctx *fiber.Ctx) error {
 	errorCode := ctx.Query("error")
 
 	if errorCode == "access_denied" {
-		return util.ErrorResponse(ctx, http.StatusUnauthorized, "User denied access")
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "unauthorized", "User denied access")
 	}
 
 	encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
 	if state == "" {
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "State is not present")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "State is not present")
 	}
 
 	// create a new net/http instance since *fasthttp.Request() cannot be passed
@@ -275,7 +273,7 @@ func (c *UserController) AuthOrchdioSpotifyUser(ctx *fiber.Ctx) error {
 
 	if err != nil {
 		log.Printf("[controllers][account][user] Error - error creating a new http request - %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An unexpected error occurred.")
 	}
 	// recover from panic
 	defer func() {
@@ -289,15 +287,15 @@ func (c *UserController) AuthOrchdioSpotifyUser(ctx *fiber.Ctx) error {
 		log.Printf("[controllers][account][user] Error - error completing user auth - %v\n", err)
 		if err == blueprint.EINVALIDAUTHCODE {
 			log.Printf("[controllers][account][user] Error - invalid auth code - %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusBadRequest, "code has expired")
+			return util.ErrorResponse(ctx, http.StatusBadRequest, err.Error(), "code has expired")
 		}
 
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An unexpected error")
 	}
 	encryptedRefreshToken, encErr := util.Encrypt(refreshToken, []byte(encryptionSecretKey))
 	if encErr != nil {
 		log.Printf("\n[controllers][account][user] Error - could not encrypt refreshToken - %v\n", encErr)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, encErr)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not encrypt refresh token")
 	}
 
 	log.Printf("[account][auth] encrypted refresh token: %v\n", encryptedRefreshToken)
@@ -311,7 +309,7 @@ func (c *UserController) AuthOrchdioSpotifyUser(ctx *fiber.Ctx) error {
 		// AQB7csFtf_58P-Rq-jqrfFMhBXDJnC2xwFjLMwXr439vxbXCZdFxKpwTrnDLzJvFrY3nc2B4YeCRLOs5zgrMA4zwWZROc4P7qPt_ySlTi-qHM5w5y_eQ27PUJzLKQae5SJs
 		// when the user just auths for the first time, it seems that the refresh token is gotten (for some reason, during dev)
 
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An unexpected error occurred")
 	}
 	log.Printf("%v", user)
 
@@ -331,7 +329,7 @@ func (c *UserController) AuthOrchdioSpotifyUser(ctx *fiber.Ctx) error {
 
 	if dbErr != nil {
 		log.Printf("\n[controller][account][user][spotify]: [AuthUser] Error executing query: %v\n", dbErr)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, dbErr)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred and could not updated user profile in database")
 	}
 
 	serialized, err := json.Marshal(map[string]string{
@@ -339,8 +337,8 @@ func (c *UserController) AuthOrchdioSpotifyUser(ctx *fiber.Ctx) error {
 	})
 
 	// update the usernames the user has on various playlist.
-	// NB: I wasn't sure how to really handle this, if its better to do it in the createUserQuery above or split here
-	// decided to split here because its just easier for me to bother with right now.
+	// NB: I wasn't sure how to really handle this, if it's better to do it in the createUserQuery above or split here
+	// decided to split here because it's just easier for me to bother with right now.
 	_, err = c.DB.Exec(queries.UpdatePlatformUsernames, user.Email, string(serialized))
 
 	// update user platform token
@@ -398,34 +396,34 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 	state := ctx.Query("state")
 	encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
 	if state == "" {
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "State is not present")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "State is not present")
 	}
 
 	if code == "" {
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Code wasn't passed")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Code wasn't passed")
 	}
 
 	dz := deezer.Deezer{
 		ClientID:     os.Getenv("DEEZER_ID"),
 		ClientSecret: os.Getenv("DEEZER_SECRET"),
-		RedirectURI:  os.Getenv("DEEZER_REDIRECT_URI"),
+		RedirectURI:  os.Getenv("DEEZER_REDIRECT_URL"),
 	}
 
 	token := dz.FetchAccessToken(code)
 	if token == nil {
 		log.Printf("[user][controller][AuthDeezerUser] Method - Error fetching token: No deezer token fetched")
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "Could not fetch deezer token")
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not fetch deezer token")
 	}
 
 	encryptedRefreshToken, err := util.Encrypt(token, []byte(encryptionSecretKey))
 	if err != nil {
 		log.Printf("\n[controllers][account][users][AuthDeezerUser] Method - Error encrypting deezer token: %v", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not encrypt refresh token")
 	}
 	user, err := dz.CompleteUserAuth(token)
 	if err != nil {
 		log.Printf("[user][controller][AuthDeezerUser] Method - Error fetching deezer user: %v", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "could not fetch user token")
 	}
 
 	userProfile := &blueprint.User{}
@@ -445,7 +443,7 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 
 	if scanErr != nil {
 		log.Printf("[user][controller][AuthDeezerUser] could not upsert createUserQuery. %v\n", scanErr)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error occurred")
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 	}
 
 	serialized, err := json.Marshal(map[string]string{
@@ -455,7 +453,7 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 	_, err = c.DB.Exec(queries.UpdatePlatformUsernames, user.Email, string(serialized))
 	if err != nil {
 		log.Printf("[user][controller][AuthDeezerUser] could not upsert createUserQuery. %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error occurred")
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 	}
 
 	// update user platform token
@@ -476,7 +474,7 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 	jToken, err := util.SignJwt(claims)
 	if err != nil {
 		log.Printf("[user][controller][AuthDeezerUser] Method - Error signing token: %v", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "could not sign token")
 	}
 
 	log.Printf("[user][controller][AuthDeezerUser] new user login/signup. Created new login.")
@@ -492,13 +490,13 @@ func (c *UserController) AuthAppleMusicUser(ctx *fiber.Ctx) error {
 	err := ctx.BodyParser(&bod)
 	if err != nil {
 		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error parsing body: %v", err)
-		return util.ErrorResponse(ctx, http.StatusBadRequest, err)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, err, "Invalid request body. please check the body and try again.")
 	}
 
 	uniqueID, _ := uuid.NewUUID()
 	state := bod.State
 	if state == "" {
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "state is required")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "state is required")
 	}
 	var displayname = "-"
 	// if firstnasme isnt null, then we last name is not null either.
@@ -509,7 +507,7 @@ func (c *UserController) AuthAppleMusicUser(ctx *fiber.Ctx) error {
 	encryptedRefreshToken, err := util.Encrypt([]byte(bod.Token), []byte(os.Getenv("ENCRYPTION_SECRET")))
 	if err != nil {
 		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error encrypting refresh token: %v", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not encrypt refresh token")
 	}
 
 	// apple doesnt (seem to) have a context of user ID here, in the API, we're using the music user token and
@@ -520,7 +518,7 @@ func (c *UserController) AuthAppleMusicUser(ctx *fiber.Ctx) error {
 	_, err = hash.Write([]byte(bod.Email))
 	if err != nil {
 		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error hashing email: %v", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "could not hash email.")
 	}
 	// get the hash as a string
 	hashedEmail := hex.EncodeToString(hash.Sum(nil))
@@ -529,7 +527,7 @@ func (c *UserController) AuthAppleMusicUser(ctx *fiber.Ctx) error {
 	err = newUser.StructScan(userProfile)
 	if err != nil {
 		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error creating user: %v", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not create user")
 	}
 
 	serialized, err := json.Marshal(map[string]string{
@@ -542,7 +540,7 @@ func (c *UserController) AuthAppleMusicUser(ctx *fiber.Ctx) error {
 	_, err = c.DB.Exec(queries.UpdatePlatformUsernames, bod.Email, string(serialized))
 	if err != nil {
 		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error updating platform usernames: %v", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not update platform usernames")
 	}
 
 	// update user platform token
@@ -562,7 +560,7 @@ func (c *UserController) AuthAppleMusicUser(ctx *fiber.Ctx) error {
 	token, err := util.SignJwt(claim)
 	if err != nil {
 		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error signing JWT: %v", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not sign token.")
 	}
 
 	// redirect to the frontend with the token
@@ -579,7 +577,7 @@ func (c *UserController) FetchProfile(ctx *fiber.Ctx) error {
 
 	user, err := database.FindUserByEmail(claims.Email, claims.Platform)
 	if err != nil {
-		return util.ErrorResponse(ctx, http.StatusBadRequest, err)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, err, "Could not fetch user profile")
 	}
 
 	return util.SuccessResponse(ctx, http.StatusOK, user)
@@ -630,7 +628,7 @@ func (c *UserController) GenerateAPIKey(ctx *fiber.Ctx) error {
 		if err != sql.ErrNoRows {
 
 			log.Printf("[controller][user][GenerateApiKey] could not fetch api key from db. %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not fetch key from database")
 		}
 	}
 
@@ -639,7 +637,7 @@ func (c *UserController) GenerateAPIKey(ctx *fiber.Ctx) error {
 	if existingKey != nil {
 		log.Printf("[controller][user][Generate] warning - user already has key")
 		errResponse := "You already have a key"
-		return util.ErrorResponse(ctx, http.StatusConflict, errResponse)
+		return util.ErrorResponse(ctx, http.StatusConflict, "record conflict", errResponse)
 	}
 
 	// save into db
@@ -651,7 +649,7 @@ func (c *UserController) GenerateAPIKey(ctx *fiber.Ctx) error {
 
 	if dbErr != nil {
 		log.Printf("\n[controller][account][user][AuthUser] Error executing query: %v\n. Could not create new key", dbErr)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not create new key")
 	}
 
 	response := map[string]string{
@@ -672,7 +670,7 @@ func (c *UserController) RevokeKey(ctx *fiber.Ctx) error {
 	err := database.RevokeApiKey(apiKey)
 	if err != nil {
 		log.Printf("[controller][user][RevokeKey] error revoking key. %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error occured")
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
 	}
 
 	return util.SuccessResponse(ctx, http.StatusOK, nil)
@@ -688,7 +686,7 @@ func (c *UserController) UnRevokeKey(ctx *fiber.Ctx) error {
 	err := database.UnRevokeApiKey(apiKey)
 	if err != nil {
 		log.Printf("[controller][user][RevokeKey] error revoking key. %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error occured")
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
 	}
 	log.Printf("[controller][user][UnRevokeKey] UnRevoked key")
 	return util.SuccessResponse(ctx, http.StatusOK, nil)
@@ -748,11 +746,11 @@ func (c *UserController) RetrieveKey(ctx *fiber.Ctx) error {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("[controller][user][RetrieveKey] - User does not have a key")
-			return util.ErrorResponse(ctx, http.StatusNotFound, "You do not have a key")
+			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "You do not have a key")
 		}
 
 		log.Printf("[controller][user][RetrieveKey] - Could not retrieve user key. %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error")
 	}
 	log.Printf("[controller][user][RetrieveKey] - Retrieved apikey for user %+v\n", key)
 	return util.SuccessResponse(ctx, http.StatusOK, key.Key)
@@ -768,12 +766,12 @@ func (c *UserController) DeleteKey(ctx *fiber.Ctx) error {
 	deletedKey, err := database.DeleteApiKey(apiKey, claims.UUID.String())
 	if err != nil {
 		log.Printf("[controller][user][DeleteKey] - error deleting Key from database %s\n", err.Error())
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error")
 	}
 
 	if len(deletedKey) == 0 {
 		log.Printf("[controller][user][DeleteKey] - key already deleted")
-		return util.ErrorResponse(ctx, http.StatusNotFound, "Key not found. You already deleted this key")
+		return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "Key not found. You already deleted this key")
 	}
 
 	log.Printf("[controller][user][DeleteKey] - deleted key for user %v\n", claims)
@@ -785,19 +783,17 @@ func (c *UserController) AddToWaitlist(ctx *fiber.Ctx) error {
 	// we check if the user already has been added to waitlist, if so we tell them we'll onboard them soon, if not, we add them to waitlist
 
 	// get the email from the request body
-	body := struct {
-		Email string `json:"email"`
-	}{}
+	body := blueprint.AddToWaitlistBody{}
 	err := json.Unmarshal(ctx.Body(), &body)
 	if err != nil {
 		log.Printf("[controller][user][AddToWaitlist] - error unmarshalling body %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid request body")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid request body")
 	}
 
 	_, err = mail.ParseAddress(body.Email)
 	if err != nil {
 		log.Printf("[controller][user][AddToWaitlist] - invalid email %v\n", body)
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid email")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid email")
 	}
 
 	// generate a uuid
@@ -809,16 +805,16 @@ func (c *UserController) AddToWaitlist(ctx *fiber.Ctx) error {
 
 	if alreadyAdded {
 		log.Printf("[controller][user][AddToWaitlist] - user already in waitlist %v\n", body)
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "You are already in the wait list")
+		return util.ErrorResponse(ctx, http.StatusConflict, "already exists", "You are already on the wait list")
 	}
 
-	// then insert the email into the waitlist table. it returns an email and updates the updated_at field if email is already in the table
-	result := c.DB.QueryRowx(queries.CreateWaitlistEntry, uniqueID, body.Email)
+	// then insert the email into the waitlist table. it returns an email and updates the updated_at field if email is already in the table.
+	result := c.DB.QueryRowx(queries.CreateWaitlistEntry, uniqueID, body.Email, body.Platform)
 	var emailFromDB string
 	err = result.Scan(&emailFromDB)
 	if err != nil {
 		log.Printf("[controller][user][AddToWaitlist] - error inserting email into waitlist table %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error occured")
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
 	}
 	return util.SuccessResponse(ctx, http.StatusOK, emailFromDB)
 }
@@ -836,12 +832,12 @@ func (c *UserController) CreateOrUpdateRedirectURL(ctx *fiber.Ctx) error {
 	err := json.Unmarshal(body, &redirectURL)
 	if err != nil {
 		log.Printf("[controller][user][CreateOrUpdateRedirectURL] - error unmarshalling body %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid request body")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid request body")
 	}
 
 	if redirectURL.Url == "" {
 		log.Printf("[controller][user][CreateOrUpdateRedirectURL] - redirect url is empty %v\n", redirectURL)
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid request body")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid request body")
 	}
 
 	// TODO: validate redirectURL, perform network check to see if it's reachable
@@ -850,10 +846,10 @@ func (c *UserController) CreateOrUpdateRedirectURL(ctx *fiber.Ctx) error {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("[controller][user][CreateOrUpdateRedirectURL] - user not found %v\n", claims)
-			return util.ErrorResponse(ctx, http.StatusNotFound, "User not found")
+			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User not found")
 		}
 		log.Printf("[controller][user][CreateOrUpdateRedirectURL] - error updating redirect url %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error occured")
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
 	}
 	log.Printf("[controller][user][CreateOrUpdateRedirectURL] - updated redirect url for user %v\n", claims.UUID.String())
 	return util.SuccessResponse(ctx, http.StatusOK, nil)

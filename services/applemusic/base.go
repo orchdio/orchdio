@@ -16,11 +16,12 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 // SearchTrackWithLink fetches a track from the ID using the link.
 func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.TrackSearchResult, error) {
-	cacheKey := "applemusic:" + info.EntityID
+	cacheKey := "applemusic:track:" + info.EntityID
 	_, err := red.Get(context.Background(), cacheKey).Result()
 	if err != nil && err != redis.Nil {
 		log.Printf("[services][applemusic][SearchTrackWithLink] Error fetching track from cache: %v\n", err)
@@ -60,16 +61,17 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 	coverURL := strings.ReplaceAll(t.Attributes.Artwork.URL, "{w}x{h}bb.jpg", "150x150bb.jpg")
 
 	track := &blueprint.TrackSearchResult{
-		URL:      info.TargetLink,
-		Artists:  []string{t.Attributes.ArtistName},
-		Released: t.Attributes.ReleaseDate,
-		Duration: util.GetFormattedDuration(int(t.Attributes.DurationInMillis / 1000)),
-		Explicit: false,
-		Title:    t.Attributes.Name,
-		Preview:  previewURL,
-		Album:    t.Attributes.AlbumName,
-		ID:       t.Id,
-		Cover:    coverURL,
+		URL:           info.TargetLink,
+		Artists:       []string{t.Attributes.ArtistName},
+		Released:      t.Attributes.ReleaseDate,
+		Duration:      util.GetFormattedDuration(int(t.Attributes.DurationInMillis / 1000)),
+		DurationMilli: int(t.Attributes.DurationInMillis),
+		Explicit:      false,
+		Title:         t.Attributes.Name,
+		Preview:       previewURL,
+		Album:         t.Attributes.AlbumName,
+		ID:            t.Id,
+		Cover:         coverURL,
 	}
 
 	serializeTrack, err := json.Marshal(track)
@@ -77,7 +79,7 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 		log.Printf("[services][applemusic][SearchTrackWithLink] Error serializing track: %v\n", err)
 		return nil, err
 	}
-	err = red.Set(context.Background(), cacheKey, serializeTrack, 0).Err()
+	err = red.Set(context.Background(), cacheKey, serializeTrack, time.Hour*24).Err()
 	if err != nil {
 		log.Printf("[services][applemusic][SearchTrackWithLink] Error caching track: %v\n", err)
 		return nil, err
@@ -86,7 +88,7 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 
 }
 
-// SearchTrack searches for a track using the query.
+// SearchTrackWithTitle searches for a track using the query.
 func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
 	cleanedArtiste := fmt.Sprintf("applemusic-%s-%s", util.NormalizeString(artiste), title)
 	log.Printf("Apple music: Searching with stripped artiste: %s. Original artiste: %s", cleanedArtiste, artiste)
@@ -142,16 +144,17 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	coverURL := strings.ReplaceAll(t.Attributes.Artwork.URL, "{w}x{h}bb.jpg", "150x150bb.jpg")
 
 	track := &blueprint.TrackSearchResult{
-		Artists:  []string{t.Attributes.ArtistName},
-		Released: t.Attributes.ReleaseDate,
-		Duration: util.GetFormattedDuration(int(t.Attributes.DurationInMillis / 1000)),
-		Explicit: false, // apple doesnt seem to return explict content value for songs
-		Title:    t.Attributes.Name,
-		Preview:  previewURL,
-		Album:    t.Attributes.AlbumName,
-		ID:       t.Id,
-		Cover:    coverURL,
-		URL:      t.Attributes.URL,
+		Artists:       []string{t.Attributes.ArtistName},
+		Released:      t.Attributes.ReleaseDate,
+		Duration:      util.GetFormattedDuration(int(t.Attributes.DurationInMillis / 1000)),
+		DurationMilli: int(t.Attributes.DurationInMillis),
+		Explicit:      false, // apple doesnt seem to return explicit content value for songs
+		Title:         t.Attributes.Name,
+		Preview:       previewURL,
+		Album:         t.Attributes.AlbumName,
+		ID:            t.Id,
+		Cover:         coverURL,
+		URL:           t.Attributes.URL,
 	}
 	serializedTrack, err := json.Marshal(track)
 	if err != nil {
@@ -298,16 +301,17 @@ func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSe
 		}
 
 		tracks = append(tracks, blueprint.TrackSearchResult{
-			URL:      trackAttr.URL,
-			Artists:  []string{trackAttr.ArtistName},
-			Released: trackAttr.ReleaseDate,
-			Duration: util.GetFormattedDuration(int(trackAttr.DurationInMillis / 1000)),
-			Explicit: false,
-			Title:    trackAttr.Name,
-			Preview:  previewURL,
-			Album:    trackAttr.AlbumName,
-			ID:       track.Id,
-			Cover:    cover,
+			URL:           trackAttr.URL,
+			Artists:       []string{trackAttr.ArtistName},
+			Released:      trackAttr.ReleaseDate,
+			Duration:      util.GetFormattedDuration(int(trackAttr.DurationInMillis / 1000)),
+			DurationMilli: int(trackAttr.DurationInMillis),
+			Explicit:      false,
+			Title:         trackAttr.Name,
+			Preview:       previewURL,
+			Album:         trackAttr.AlbumName,
+			ID:            track.Id,
+			Cover:         cover,
 		})
 	}
 	playlistCover := ""
@@ -387,18 +391,18 @@ func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSe
 
 		coverURL = strings.ReplaceAll(singleTrack.Attributes.Artwork.Url, "{w}x{h}bb.jpg", "300x300bb.jpg")
 		track := &blueprint.TrackSearchResult{
-			URL:      singleTrack.Attributes.Url,
-			Artists:  []string{singleTrack.Attributes.ArtistName},
-			Released: singleTrack.Attributes.ReleaseDate,
-			Duration: util.GetFormattedDuration(singleTrack.Attributes.DurationInMillis / 1000),
-			Explicit: false,
-			Title:    singleTrack.Attributes.Name,
-			Preview:  previewURL,
-			Album:    singleTrack.Attributes.AlbumName,
-			ID:       singleTrack.Id,
-			Cover:    coverURL,
+			URL:           singleTrack.Attributes.Url,
+			Artists:       []string{singleTrack.Attributes.ArtistName},
+			Released:      singleTrack.Attributes.ReleaseDate,
+			Duration:      util.GetFormattedDuration(singleTrack.Attributes.DurationInMillis / 1000),
+			DurationMilli: singleTrack.Attributes.DurationInMillis,
+			Explicit:      false,
+			Title:         singleTrack.Attributes.Name,
+			Preview:       previewURL,
+			Album:         singleTrack.Attributes.AlbumName,
+			ID:            singleTrack.Id,
+			Cover:         coverURL,
 		}
-
 		tracks = append(tracks, *track)
 	}
 
@@ -514,13 +518,4 @@ func CreateNewPlaylist(title, description, musicToken string, tracks []string) (
 
 	return []byte(fmt.Sprintf("https://music.apple.com/us/playlist/%s", playlist.Data[0].Id)), nil
 
-	//return &blueprint.PlaylistSearchResult{
-	//	Title:   title,
-	//	Tracks:  nil,
-	//	URL:     fmt.Sprintf("https://music.apple.com/us/playlist/%s", playlist.Data[0].Id),
-	//	Length:  "0:00",
-	//	Preview: "",
-	//	Owner:   "Spotify",
-	//	Cover:   tracks[0].Cover,
-	//}, nil
 }

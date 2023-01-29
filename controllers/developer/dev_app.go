@@ -30,7 +30,7 @@ func (d *DeveloperController) CreateApp(ctx *fiber.Ctx) error {
 	var body blueprint.CreateNewDeveloperAppData
 	if err := ctx.BodyParser(&body); err != nil {
 		log.Printf("[controllers][CreateApp] developer -  error: could not deserialize request body: %v\n", err)
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "Could not deserialize request body")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Could not deserialize request body")
 	}
 	pubKey := uuid.NewString()
 	secretKey := uuid.NewString()
@@ -40,7 +40,7 @@ func (d *DeveloperController) CreateApp(ctx *fiber.Ctx) error {
 	uid, err := database.CreateNewApp(body.Name, body.Description, body.RedirectURL, body.WebhookURL, pubKey, claims.UUID.String(), secretKey)
 	if err != nil {
 		log.Printf("[controllers][CreateApp] developer -  error: could not create new developer app: %v\n", err)
-		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
 	}
 
 	log.Printf("[controllers][CreateApp] developer -  new app created: %s\n", body.Name)
@@ -53,14 +53,14 @@ func (d *DeveloperController) UpdateApp(ctx *fiber.Ctx) error {
 
 	if ctx.Params("appId") == "" {
 		log.Printf("[controllers][UpdateApp] developer -  error: App ID is empty\n")
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "App ID is empty. Please pass a valid App ID")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "App ID is empty. Please pass a valid App ID")
 	}
 
 	// deserialize the request body into blueprint.DeveloperApp
 	var body blueprint.UpdateDeveloperAppData
 	if err := ctx.BodyParser(&body); err != nil {
 		log.Printf("[controllers][UpdateApp] developer -  error: could not deserialize update request body: %v\n", err)
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "Could not deserialize request body. Please make sure you pass the correct data")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Could not deserialize request body. Please make sure you pass the correct data")
 	}
 
 	// update the app
@@ -68,7 +68,7 @@ func (d *DeveloperController) UpdateApp(ctx *fiber.Ctx) error {
 	err := database.UpdateApp(ctx.Params("appId"), body)
 	if err != nil {
 		log.Printf("[controllers][UpdateApp] developer -  error: could not update app in Database: %v\n", err)
-		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not update developer app")
 	}
 
 	log.Printf("[controllers][UpdateApp] developer -  app updated: %s\n", ctx.Params("appId"))
@@ -80,7 +80,7 @@ func (d *DeveloperController) DeleteApp(ctx *fiber.Ctx) error {
 
 	if ctx.Params("appId") == "" {
 		log.Printf("[controllers][DeleteApp] developer -  error: appId is empty\n")
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "appId is empty")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "App ID is empty. Please pass a valid app ID")
 	}
 
 	// delete the app
@@ -88,7 +88,7 @@ func (d *DeveloperController) DeleteApp(ctx *fiber.Ctx) error {
 	err := database.DeleteApp(ctx.Params("appId"))
 	if err != nil {
 		log.Printf("[controllers][DeleteApp] developer -  error: could not delete app in Database: %v\n", err)
-		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occured")
 	}
 	log.Printf("[controllers][DeleteApp] developer -  app deleted: %s\n", ctx.Params("appId"))
 	return util.SuccessResponse(ctx, fiber.StatusOK, "App deleted successfully")
@@ -100,7 +100,7 @@ func (d *DeveloperController) FetchApp(ctx *fiber.Ctx) error {
 	appId := ctx.Params("appId")
 	if appId == "" {
 		log.Printf("[controllers][FetchApp] developer -  error: appId is empty\n")
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "appId is empty")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "App ID is empty. Could not create app ID")
 	}
 
 	// fetch the app
@@ -108,7 +108,7 @@ func (d *DeveloperController) FetchApp(ctx *fiber.Ctx) error {
 	app, err := database.FetchAppByAppId(appId)
 	if err != nil {
 		log.Printf("[controllers][FetchApp] developer -  error: could not fetch app in Database: %v\n", err)
-		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred. Could not fetch database record")
 	}
 
 	log.Printf("[controllers][FetchApp] developer -  app fetched: %s\n", appId)
@@ -136,7 +136,7 @@ func (d *DeveloperController) DisableApp(ctx *fiber.Ctx) error {
 	appId := ctx.Params("appId")
 	if appId == "" {
 		log.Printf("[controllers][DisableApp] developer -  error: appId is empty\n")
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "appId is empty")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "appId is empty")
 	}
 
 	// disable the app
@@ -144,7 +144,7 @@ func (d *DeveloperController) DisableApp(ctx *fiber.Ctx) error {
 	err := database.DisableApp(appId)
 	if err != nil {
 		log.Printf("[controllers][DisableApp] developer -  error: could not disable app in Database: %v\n", err)
-		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred.")
 	}
 
 	log.Printf("[controllers][DisableApp] developer -  app disabled: %s\n", appId)
@@ -156,7 +156,7 @@ func (d *DeveloperController) EnableApp(ctx *fiber.Ctx) error {
 	appId := ctx.Params("appId")
 	if appId == "" {
 		log.Printf("[controllers][EnableApp] developer -  error: appId is empty\n")
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "appId is empty")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "AppId is empty. Please pass a valid app ID.")
 	}
 
 	// enable the app
@@ -164,7 +164,7 @@ func (d *DeveloperController) EnableApp(ctx *fiber.Ctx) error {
 	err := database.EnableApp(appId)
 	if err != nil {
 		log.Printf("[controllers][EnableApp] developer -  error: could not enable app in Database: %v\n", err)
-		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred")
 	}
 
 	log.Printf("[controllers][EnableApp] developer -  app enabled: %s\n", appId)
@@ -176,7 +176,7 @@ func (d *DeveloperController) FetchKeys(ctx *fiber.Ctx) error {
 	appId := ctx.Params("appId")
 	if appId == "" {
 		log.Printf("[controllers][FetchKeys] developer -  error: appId is empty\n")
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "appId is empty")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "App ID is empty. Please pass a valid app ID.")
 	}
 
 	// fetch the app
@@ -185,9 +185,9 @@ func (d *DeveloperController) FetchKeys(ctx *fiber.Ctx) error {
 	if err != nil {
 		log.Printf("[controllers][FetchKeys] developer -  error: could not fetch app keys from the Database: %v\n", err)
 		if err == sql.ErrNoRows {
-			return util.ErrorResponse(ctx, fiber.StatusNotFound, "App not found")
+			return util.ErrorResponse(ctx, fiber.StatusNotFound, "not found", "App not found")
 		}
-		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred.")
 	}
 
 	log.Printf("[controllers][FetchKeys] developer -  app keys fetched: %s\n", appId)
@@ -204,7 +204,7 @@ func (d *DeveloperController) FetchAllDeveloperApps(ctx *fiber.Ctx) error {
 	apps, err := database.FetchApps(claims.UUID.String())
 	if err != nil {
 		log.Printf("[controllers][FetchAllDeveloperApps] developer -  error: could not fetch apps in Database: %v\n", err)
-		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occured.")
 	}
 
 	log.Printf("[controllers][FetchAllDeveloperApps] developer -  apps fetched: %s\n", claims.UUID.String())

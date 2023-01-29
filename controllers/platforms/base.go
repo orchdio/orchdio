@@ -53,11 +53,11 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 		if err != nil {
 			if err == blueprint.ENOTIMPLEMENTED {
 				log.Printf("\n[controllers][platforms][deezer][ConvertEntity] error - %v\n", "Not implemented")
-				return util.ErrorResponse(ctx, http.StatusNotImplemented, "Not implemented")
+				return util.ErrorResponse(ctx, http.StatusNotImplemented, "not supported", "Not implemented")
 			}
 
 			log.Printf("\n[controllers][platforms][base][ConvertEntity] - Could not convert track")
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred")
 		}
 
 		log.Printf("\n[controllers][platforms][ConvertEntity] - converted %v with URL %v\n", linkInfo.Entity, linkInfo.TargetLink)
@@ -74,14 +74,14 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 		sid, err := shortid.New(1, format, 2342)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][ConvertEntity] - could not generate short id %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred")
 		}
 		uID, _ := sid.Generate()
 
 		serialized, err := json.Marshal(conversion)
 		if conversion == nil {
 			log.Printf("\n[controllers][platforms][ConvertEntity] - conversion is nil %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusNotFound, err)
+			return util.ErrorResponse(ctx, http.StatusNotFound, err, "An internal error occurred")
 		}
 
 		// add the task ID to the conversion response
@@ -89,13 +89,13 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 
 		if err != nil {
 			log.Printf("[db][CreateTrackTaskRecord] error serializing result. %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred. Could not deserialize result")
 		}
 
 		_, err = database.CreateTrackTaskRecord(uniqueId.String(), uID, linkInfo.EntityID, serialized)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][ConvertEntity] - Could not create task record")
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred and could not create task record.")
 		}
 
 		conversion.Entity = "track"
@@ -186,20 +186,18 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 				log.Printf("[controller][conversion][EchoConversion] - task already queued%v", r)
 				inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
 				// get the task
-				task, err := inspector.GetTaskInfo(queue.PlaylistConversionQueue, enquedTask.ID)
+				_, err := inspector.GetTaskInfo(queue.PlaylistConversionQueue, enquedTask.ID)
 				if err != nil {
 					log.Printf("[controller][conversion][EchoConversion] - error getting task info: %v", err)
 					return err
 				}
 				log.Printf("[controller][conversion][EchoConversion] - task info:")
-				spew.Dump(task)
 				queueInfo, err := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
 				if err != nil {
 					log.Printf("[controller][conversion][EchoConversion] - error getting queue info: %v", err)
 					return err
 				}
 				log.Printf("[controller][conversion][EchoConversion] - dumped task info")
-				spew.Dump(task)
 
 				// get the task from the db
 				//taskRecord, err := database.FetchTask(string(_taskId))
@@ -244,7 +242,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 	}
 
 	log.Printf("\n[controllers][platforms][ConvertEntity] error - %v\n", "It is not a playlist or track URL")
-	return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid URL")
+	return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid URL")
 }
 
 // ConvertPlaylist retrieves info about a playlist from various platforms.
@@ -256,17 +254,17 @@ func (p *Platforms) ConvertPlaylist(ctx *fiber.Ctx) error {
 	// make sure we're actually handling for track alone, not playlist.
 	if strings.Contains(linkInfo.Entity, "playlist") {
 		log.Printf("\n[controllers][platforms][ConvertEntity] error - %v\n", "It is a playlist URL")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Not a playlist entity")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Not a playlist entity")
 	}
 
 	convertedPlaylist, err := universal.ConvertPlaylist(linkInfo, p.Redis)
 
 	if err != nil {
 		if err == blueprint.ENOTIMPLEMENTED {
-			return util.ErrorResponse(ctx, http.StatusNotImplemented, err)
+			return util.ErrorResponse(ctx, http.StatusNotImplemented, "not supported", "Not implemented")
 		}
 		log.Printf("\n[controllers][platforms][ConvertPlaylist][error] could not convert playlist %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred")
 	}
 	return util.SuccessResponse(ctx, http.StatusOK, convertedPlaylist)
 }
@@ -277,14 +275,14 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 	platform := ctx.Params("platform")
 	if platform == "" {
 		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "No platform in context")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Platform not found")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Platform not found")
 	}
 
 	//// get the playlist ID
 	//playlistID := ctx.Params("playlistId")
 	//if playlistID == "" {
 	//	log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "No playlist ID in context")
-	//	return util.ErrorResponse(ctx, http.StatusBadRequest, "Playlist ID not found")
+	//	return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request ,"Playlist ID not found")
 	//}
 
 	// get the playlist creation body
@@ -297,17 +295,17 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 	err := ctx.BodyParser(&createBodyData)
 	if err != nil {
 		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusBadRequest, err)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid request body. Please make sure the body is valid.")
 	}
 
 	if len(createBodyData.Tracks) == 0 {
 		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "No tracks in playlist")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "No tracks to insert into playlist. please add tracks to the playlist")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "No tracks to insert into playlist. please add tracks to the playlist")
 	}
 
 	if createBodyData.Title == "" {
 		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "No title in playlist")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "No title to insert into playlist. please add title to the playlist")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "No title to insert into playlist. please add title to the playlist")
 	}
 
 	log.Printf("\n[controllers][platforms][AddPlaylistToAccount] incoming body - %v\n", createBodyData)
@@ -320,17 +318,17 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "User not found")
-			return util.ErrorResponse(ctx, http.StatusNotFound, "User not found")
+			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User not found")
 		}
 		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred.")
 	}
 
 	// get the user's access token
 	t, err := util.Decrypt(user.RefreshToken, []byte(os.Getenv("ENCRYPTION_SECRET")))
 	if err != nil {
 		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error decrypting user refresh token - %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred while decrypting refresh token")
 	}
 
 	//title := fmt.Sprintf("Zoove playlist: %s", createBodyData.Title)
@@ -347,7 +345,7 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 
 		if err != nil {
 			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error getting profile - %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Internal server error")
 		}
 
 		var trackIds []spotify.ID
@@ -363,9 +361,9 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		if err != nil {
 			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error getting profile - %v\n", err)
 			if err.Error() == "No tracks specified." {
-				return util.ErrorResponse(ctx, http.StatusBadRequest, err.Error())
+				return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", err.Error())
 			}
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, err.Error())
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, err.Error(), "An internal error occurred")
 		}
 
 		playlistlink = createdPlaylist.ExternalURLs["spotify"]
@@ -376,7 +374,7 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		id, err := deezer.CreateNewPlaylist(createBodyData.Title, user.PlatformID, string(t), createBodyData.Tracks)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error creating new playlist - %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not create a new playlist for user")
 		}
 
 		playlistlink = fmt.Sprintf("https://www.deezer.com/en/playlist/%s", id)
@@ -391,9 +389,9 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 			log.Printf("\n[controllers][platforms][AddPlaylistToAccount][error] - an error occurred while adding playlist to user platform account - %v\n", err)
 			if err == blueprint.EFORBIDDEN {
 				log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error creating new playlist - %v\n", err)
-				return util.ErrorResponse(ctx, http.StatusForbidden, err)
+				return util.ErrorResponse(ctx, http.StatusForbidden, err, "Could not create new playlist for user. Access has not been granted by user")
 			}
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred.")
 		}
 	}
 	return util.SuccessResponse(ctx, http.StatusCreated, playlistlink)

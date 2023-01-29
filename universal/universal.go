@@ -3,8 +3,7 @@ package universal
 import (
 	"context"
 	"encoding/json"
-	"github.com/go-redis/redis/v8"
-	spotify2 "github.com/zmb3/spotify/v2"
+	"fmt"
 	"log"
 	"orchdio/blueprint"
 	"orchdio/services/applemusic"
@@ -12,7 +11,20 @@ import (
 	"orchdio/services/spotify"
 	"orchdio/services/tidal"
 	"orchdio/services/ytmusic"
+	"time"
+
+	"github.com/go-redis/redis/v8"
+	spotify2 "github.com/zmb3/spotify/v2"
 )
+
+// sumUpResultLength sums up the length of all the tracks in a slice of TrackSearchResult
+func sumUpResultLength(tracks *[]blueprint.TrackSearchResult) int {
+	var length int
+	for _, track := range *tracks {
+		length += track.DurationMilli
+	}
+	return length
+}
 
 // ConvertTrack fetches all the tracks converted from all the supported platforms
 func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conversion, error) {
@@ -67,23 +79,23 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 		conversion.Platforms.AppleMusic = apple
 
 		if deezerTrack != nil {
-			deezerCacheKey = "deezer:" + deezerTrack.ID
+			deezerCacheKey = "deezer:track:" + deezerTrack.ID
 		}
 
 		if tidalTrack != nil {
-			tidalCacheKey = "tidal:" + tidalTrack.ID
+			tidalCacheKey = "tidal:track:" + tidalTrack.ID
 		}
 
 		if ytmusicTrack != nil {
-			ytmusicCacheKey = "ytmusic:" + ytmusicTrack.ID
+			ytmusicCacheKey = "ytmusic:track:" + ytmusicTrack.ID
 		}
 
 		if spSingleTrack != nil {
-			spotifyCacheKey = "spotify:" + spSingleTrack.ID
+			spotifyCacheKey = "spotify:track:" + spSingleTrack.ID
 		}
 
 		if apple != nil {
-			appleCacheKey = "applemusic:" + apple.ID
+			appleCacheKey = "applemusic:track:" + apple.ID
 		}
 
 	case spotify.IDENTIFIER:
@@ -131,23 +143,23 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 		conversion.Platforms.AppleMusic = apple
 
 		if dzSingleTrack != nil {
-			deezerCacheKey = "deezer:" + dzSingleTrack.ID
+			deezerCacheKey = "deezer:track:" + dzSingleTrack.ID
 		}
 
 		if tidalTrack != nil {
-			tidalCacheKey = "tidal:" + tidalTrack.ID
+			tidalCacheKey = "tidal:track:" + tidalTrack.ID
 		}
 
 		if ytmusicTrack != nil {
-			ytmusicCacheKey = "ytmusic:" + ytmusicTrack.ID
+			ytmusicCacheKey = "ytmusic:track:" + ytmusicTrack.ID
 		}
 
 		if spSingleTrack != nil {
-			spotifyCacheKey = "spotify:" + spSingleTrack.ID
+			spotifyCacheKey = "spotify:track:" + spSingleTrack.ID
 		}
 
 		if apple != nil {
-			appleCacheKey = "applemusic:" + apple.ID
+			appleCacheKey = "applemusic:track:" + apple.ID
 		}
 
 	case tidal.IDENTIFIER:
@@ -198,27 +210,27 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 
 		if spotifyTrack != nil {
 			//cacheKeys = append(cacheKeys, "spotify:"+spotifyTrack.ID)
-			spotifyCacheKey = "spotify:" + spotifyTrack.ID
+			spotifyCacheKey = "spotify:track:" + spotifyTrack.ID
 		}
 
 		if deezerSingleTrack != nil {
 			//cacheKeys = append(cacheKeys, "deezer:"+deezerSingleTrack.ID)
-			deezerCacheKey = "deezer:" + deezerSingleTrack.ID
+			deezerCacheKey = "deezer:track:" + deezerSingleTrack.ID
 		}
 
 		if tidalTrack != nil {
 			//cacheKeys = append(cacheKeys, "tidal:"+tidalTrack.ID)
-			tidalCacheKey = "tidal:" + tidalTrack.ID
+			tidalCacheKey = "tidal:track:" + tidalTrack.ID
 		}
 
 		if ytmusicTrack != nil {
 			//cacheKeys = append(cacheKeys, "ytmusic:"+ytmusicTrack.ID)
-			ytmusicCacheKey = "ytmusic:" + ytmusicTrack.ID
+			ytmusicCacheKey = "ytmusic:track:" + ytmusicTrack.ID
 		}
 
 		if apple != nil {
 			//cacheKeys = append(cacheKeys, "applemusic:"+apple.ID)
-			appleCacheKey = "applemusic:" + apple.ID
+			appleCacheKey = "applemusic:track:" + apple.ID
 		}
 
 	case ytmusic.IDENTIFIER:
@@ -267,22 +279,22 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 
 		if spotifyTrack != nil {
 			//cacheKeys = append(cacheKeys, "spotify:"+spotifyTrack.ID)
-			spotifyCacheKey = "spotify:" + spotifyTrack.ID
+			spotifyCacheKey = "spotify:track:" + spotifyTrack.ID
 		}
 
 		if deezerSingleTrack != nil {
 			//cacheKeys = append(cacheKeys, "deezer:"+deezerSingleTrack.ID)
-			deezerCacheKey = "deezer:" + deezerSingleTrack.ID
+			deezerCacheKey = "deezer:track:" + deezerSingleTrack.ID
 		}
 
 		if tidalTrack != nil {
 			//cacheKeys = append(cacheKeys, "tidal:"+tidalTrack.ID)
-			tidalCacheKey = "tidal:" + tidalTrack.ID
+			tidalCacheKey = "tidal:track:" + tidalTrack.ID
 		}
 
 		if ytmusicTrack != nil {
 			//cacheKeys = append(cacheKeys, "ytmusic:"+ytmusicTrack.ID)
-			ytmusicCacheKey = "ytmusic:" + ytmusicTrack.ID
+			ytmusicCacheKey = "ytmusic:track:" + ytmusicTrack.ID
 		}
 
 	case applemusic.IDENTIFIER:
@@ -327,22 +339,22 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 
 		if spotifyTrack != nil {
 			//cacheKeys = append(cacheKeys, "spotify:"+spotifyTrack.ID)
-			spotifyCacheKey = "spotify:" + spotifyTrack.ID
+			spotifyCacheKey = "spotify:track:" + spotifyTrack.ID
 		}
 
 		if deezerSingleTrack != nil {
 			//cacheKeys = append(cacheKeys, "deezer:"+deezerSingleTrack.ID)
-			deezerCacheKey = "deezer:" + deezerSingleTrack.ID
+			deezerCacheKey = "deezer:track:" + deezerSingleTrack.ID
 		}
 
 		if tidalTrack != nil {
 			//cacheKeys = append(cacheKeys, "tidal:"+tidalTrack.ID)
-			tidalCacheKey = "tidal:" + tidalTrack.ID
+			tidalCacheKey = "tidal:track:" + tidalTrack.ID
 		}
 
 		if ytmusicTrack != nil {
 			//cacheKeys = append(cacheKeys, "ytmusic:"+ytmusicTrack.ID)
-			ytmusicCacheKey = "ytmusic:" + ytmusicTrack.ID
+			ytmusicCacheKey = "ytmusic:track:" + ytmusicTrack.ID
 		}
 
 	default:
@@ -369,43 +381,27 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Conve
 // ConvertPlaylist converts a playlist from one platform to another
 func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.PlaylistConversion, error) {
 	var conversion blueprint.PlaylistConversion
-	omittedTracks := map[string][]blueprint.OmittedTracks{}
+
+	// todo: handle ebadrequest error where this function is called
+	if info.TargetPlatform == "" {
+		log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist] no target platform specified %s\n", info.EntityID)
+		return nil, blueprint.EBADREQUEST
+	}
+
 	switch info.Platform {
 	case deezer.IDENTIFIER:
 		log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist][deezer] converting playlist %s\n", info.EntityID)
-		var deezerPlaylist, tracklistErr = deezer.FetchPlaylistTracklist(info.EntityID, red)
+		var deezerPlaylist, tracklistErr = deezer.FetchPlaylistTracksAndInfo(info.EntityID, red)
 		if tracklistErr != nil {
 			log.Printf("\n[controllers][platforms][ConvertPlaylist][error] - Could not fetch tracklist from deezer %v\n", tracklistErr)
 			return nil, tracklistErr
 		}
-
-		// then for each of these playlists, search for the tracks on spotify
-
-		log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist][deezer] fetching tracks for playlist from spotify %s\n", info.EntityID)
-		spotifyTracks, omittedSpotifyTracks := spotify.FetchPlaylistSearchResult(deezerPlaylist, red)
-		log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist][deezer] fetchde playlist tracks from spotify %s\n", info.EntityID)
-
-		log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist][deezer] fetching tracks for playlist from tidal %s\n", info.EntityID)
-		tidalTracks, omittedTidalTracks := tidal.FetchTrackWithResult(deezerPlaylist, red)
-		log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist][deezer] fetchde playlist tracks from tidal %s\n", info.EntityID)
-
-		appleTracks, omittedAppleTracks := applemusic.FetchPlaylistSearchResult(deezerPlaylist, red)
-
-		omittedTracks["spotify"] = *omittedSpotifyTracks
-		omittedTracks["tidal"] = *omittedTidalTracks
-		omittedTracks["apple"] = *omittedAppleTracks
-
 		conversion.Meta.URL = deezerPlaylist.URL
 		conversion.Meta.Title = deezerPlaylist.Title
 		conversion.Meta.Length = deezerPlaylist.Length
 		conversion.Meta.Owner = deezerPlaylist.Owner
-		conversion.Meta.OmittedTracks = omittedTracks
 		conversion.Meta.Cover = deezerPlaylist.Cover
 
-		conversion.Platforms.Deezer = &deezerPlaylist.Tracks
-		conversion.Platforms.Spotify = spotifyTracks
-		conversion.Platforms.Tidal = tidalTracks
-		conversion.Platforms.AppleMusic = appleTracks
 		/**
 		what the structure looks like
 			{
@@ -413,19 +409,77 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 			  "deezer": [{ Title: '', URL: ''}, { Title: '', URL: ''}]
 			}
 		*/
-		log.Printf("\n[controllers][platforms][ConvertPlaylist][deezer] - fetching track in the playlist with url: %v\n", deezerPlaylist.URL)
-		err := CachePlaylistTracksWithID(&deezerPlaylist.Tracks, red)
-		if err != nil {
-			log.Printf("\n[controllers][platforms][ConvertPlaylist][deezer][warning] - Could not cache tracks for playlist %s: %v\n", deezerPlaylist.Title, err)
-		} else {
-			log.Printf("\n[controllers][platforms][ConvertPlaylist][success] - Cached tracks for playlist %s\n", deezerPlaylist.Title)
+		conversion.Platforms.Deezer = &blueprint.PlatformPlaylistTrackResult{
+			Tracks:        &deezerPlaylist.Tracks,
+			Length:        sumUpResultLength(&deezerPlaylist.Tracks),
+			OmittedTracks: nil,
 		}
-		log.Printf("\n[controllers][platforms][ConvertPlaylist][deezer] - converted playlist %v\n", deezerPlaylist.URL)
+		conversion.Platforms.Spotify = nil
+		conversion.Platforms.Tidal = nil
+		conversion.Platforms.AppleMusic = nil
+
+		log.Printf("\n[controllers][platforms][ConvertPlaylist][deezer] - fetching track in the playlist with url: %v\n", deezerPlaylist.URL)
+		err := CachePlaylistTracksWithID(&deezerPlaylist.Tracks, "deezer", red)
+		if err != nil {
+			log.Printf("\n[controllers][platforms][ConvertPlaylist][deezer][warning] - Could not cache deezer tracks for playlist %s: %v\n", deezerPlaylist.Title, err)
+		}
+
+		if info.TargetPlatform == spotify.IDENTIFIER {
+			log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist][deezer] fetching tracks for playlist from spotify %s\n", info.EntityID)
+			spotifyTracks, omittedSpotifyTracks := spotify.FetchPlaylistSearchResult(deezerPlaylist, red)
+			log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist][deezer] fetchde playlist tracks from spotify %s\n", info.EntityID)
+			conversion.Platforms.Spotify = &blueprint.PlatformPlaylistTrackResult{
+				Tracks:        spotifyTracks,
+				Length:        sumUpResultLength(spotifyTracks),
+				OmittedTracks: *omittedSpotifyTracks,
+			}
+			err := CachePlaylistTracksWithID(spotifyTracks, "spotify", red)
+			if err != nil {
+				log.Printf("\n[controllers][platforms][ConvertPlaylist][deezer][warning] - Could not cache spotify tracks for playlist %s: %v\n", deezerPlaylist.Title, err)
+			}
+
+			return &conversion, nil
+		}
+
+		if info.TargetPlatform == tidal.IDENTIFIER {
+			log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist][deezer] fetching tracks for playlist from tidal %s\n", info.EntityID)
+			tidalTracks, omittedTidalTracks := tidal.FetchTrackWithResult(deezerPlaylist, red)
+			log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist][deezer] fetchde playlist tracks from tidal %s\n", info.EntityID)
+
+			conversion.Platforms.Tidal = &blueprint.PlatformPlaylistTrackResult{
+				Tracks:        tidalTracks,
+				Length:        sumUpResultLength(tidalTracks),
+				OmittedTracks: *omittedTidalTracks,
+			}
+			err := CachePlaylistTracksWithID(tidalTracks, "tidal", red)
+			if err != nil {
+				log.Printf("\n[controllers][platforms][ConvertPlaylist][deezer][warning] - Could not cache tidal tracks for playlist %s: %v\n", deezerPlaylist.Title, err)
+			}
+
+			return &conversion, nil
+		}
+
+		if info.TargetPlatform == applemusic.IDENTIFIER {
+			log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist][deezer] fetching tracks for playlist from apple music %s\n", info.EntityID)
+			appleTracks, omittedAppleTracks := applemusic.FetchPlaylistSearchResult(deezerPlaylist, red)
+			log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist][deezer] fetchde playlist tracks from apple music %s\n", info.EntityID)
+			conversion.Platforms.AppleMusic = &blueprint.PlatformPlaylistTrackResult{
+				Tracks:        appleTracks,
+				Length:        sumUpResultLength(appleTracks),
+				OmittedTracks: *omittedAppleTracks,
+			}
+			err := CachePlaylistTracksWithID(appleTracks, "applemusic", red)
+			if err != nil {
+				log.Printf("\n[controllers][platforms][ConvertPlaylist][deezer][warning] - Could not cache apple music tracks for playlist %s: %v\n", deezerPlaylist.Title, err)
+			}
+
+			return &conversion, nil
+		}
+
 		return &conversion, nil
 	case spotify.IDENTIFIER:
 		log.Printf("\n[controllers][platforms][ConvertPlaylist][spotify] - converting playlist with id: %v\n", info.EntityID)
 		entityID := info.EntityID
-
 		spotifyPlaylist, _, err := spotify.FetchPlaylistTracksAndInfo(entityID, red)
 
 		// for whatever reason, the spotify API does not return the playlist. Probably because it is private
@@ -433,42 +487,79 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 			log.Printf("\n[controllers][platforms][base] Error fetching playlist tracks and info from spotify: %v\n", err)
 			return nil, err
 		}
-		log.Printf("\n[controllers][platforms][base][spotify] - fetching playlist tracks and info from deezer: %v\n", spotifyPlaylist)
-		deezerTracks, omittedDeezerTracks := deezer.FetchPlaylistSearchResult(spotifyPlaylist, red)
-		log.Printf("\n[controllers][platforms][base][spotify] - fetched playlist tracks and info from deezer: %v\n", deezerTracks)
-
-		tidalTracks, omittedTidalTracks := tidal.FetchTrackWithResult(spotifyPlaylist, red)
-		log.Printf("\n[controllers][platforms][base][spotify] - fetched playlist tracks and info from tidal: %v\n", tidalTracks)
-
-		appleTracks, omittedAppleTracks := applemusic.FetchPlaylistSearchResult(spotifyPlaylist, red)
-
-		omittedTracks["deezer"] = *omittedDeezerTracks
-		omittedTracks["tidal"] = *omittedTidalTracks
-		omittedTracks["apple"] = *omittedAppleTracks
 
 		conversion.Meta.URL = spotifyPlaylist.URL
 		conversion.Meta.Title = spotifyPlaylist.Title
 		conversion.Meta.Length = spotifyPlaylist.Length
 		conversion.Meta.Owner = spotifyPlaylist.Owner
-		conversion.Meta.OmittedTracks = omittedTracks
 		conversion.Meta.Cover = spotifyPlaylist.Cover
 
-		conversion.Platforms.Spotify = &spotifyPlaylist.Tracks
-		conversion.Platforms.Deezer = deezerTracks
-		conversion.Platforms.Tidal = tidalTracks
-		conversion.Platforms.AppleMusic = appleTracks
+		conversion.Platforms.Spotify = &blueprint.PlatformPlaylistTrackResult{
+			Tracks:        &spotifyPlaylist.Tracks,
+			Length:        sumUpResultLength(&spotifyPlaylist.Tracks),
+			OmittedTracks: nil,
+		}
+		conversion.Platforms.Tidal = nil
+		conversion.Platforms.AppleMusic = nil
+		conversion.Platforms.Deezer = nil
 
-		log.Printf("\n[controllers][platforms][ConvertPlaylist][spotify] - caching tracks in playlist %v\n", spotifyPlaylist.URL)
-		err = CachePlaylistTracksWithID(deezerTracks, red)
-		if err != nil {
-			log.Printf("\n[controllers][platforms][base] warning - could not cache tracks: %v %v\n\n", err, deezerTracks)
-		}
 		log.Printf("\n[controllers][platforms][ConvertPlaylist][spotify] - fetching tracks in playlist %v\n", spotifyPlaylist.URL)
-		err = CachePlaylistTracksWithID(&spotifyPlaylist.Tracks, red)
+		err = CachePlaylistTracksWithID(&spotifyPlaylist.Tracks, "spotify", red)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][base] warning - could not cache tracks: %v %v\n\n", err, spotifyPlaylist.Tracks)
+			log.Printf("\n[controllers][platforms][base] warning - could not cache spotify tracks: %v %v\n\n", err, spotifyPlaylist.Tracks)
 		}
-		log.Printf("\n[controllers][platforms][ConvertPlaylist][spotify] - converted playlist %v\n", spotifyPlaylist.URL)
+
+		if info.TargetPlatform == deezer.IDENTIFIER {
+			log.Printf("\n[controllers][platforms][base][spotify] - fetching playlist tracks and info from deezer: %v\n", spotifyPlaylist)
+			deezerTracks, omittedDeezerTracks := deezer.FetchPlaylistSearchResult(spotifyPlaylist, red)
+			log.Printf("\n[controllers][platforms][base][spotify] - fetched playlist tracks and info from deezer: %v\n", deezerTracks)
+			conversion.Platforms.Deezer = &blueprint.PlatformPlaylistTrackResult{
+				Tracks:        deezerTracks,
+				Length:        sumUpResultLength(deezerTracks),
+				OmittedTracks: *omittedDeezerTracks,
+			}
+			log.Printf("\n[controllers][platforms][ConvertPlaylist][spotify] - caching tracks in playlist %v\n", spotifyPlaylist.URL)
+			err = CachePlaylistTracksWithID(deezerTracks, "deezer", red)
+			if err != nil {
+				log.Printf("\n[controllers][platforms][base] warning - could not cache deezer tracks: %v %v\n\n", err, deezerTracks)
+			}
+
+			return &conversion, nil
+		}
+
+		if info.TargetPlatform == tidal.IDENTIFIER {
+			log.Printf("\n[controllers][platforms][base][spotify] - fetching playlist tracks and info from tidal: %v\n", spotifyPlaylist)
+			tidalTracks, omittedTidalTracks := tidal.FetchTrackWithResult(spotifyPlaylist, red)
+			log.Printf("\n[controllers][platforms][base][spotify] - fetched playlist tracks and info from tidal: %v\n", tidalTracks)
+			conversion.Platforms.Tidal = &blueprint.PlatformPlaylistTrackResult{
+				Tracks:        tidalTracks,
+				Length:        sumUpResultLength(tidalTracks),
+				OmittedTracks: *omittedTidalTracks,
+			}
+
+			err = CachePlaylistTracksWithID(tidalTracks, "tidal", red)
+			if err != nil {
+				log.Printf("\n[controllers][platforms][base] warning - could not cache tidal tracks: %v %v\n\n", err, tidalTracks)
+			}
+
+			return &conversion, nil
+		}
+
+		if info.TargetPlatform == applemusic.IDENTIFIER {
+
+			appleTracks, omittedAppleTracks := applemusic.FetchPlaylistSearchResult(spotifyPlaylist, red)
+			conversion.Platforms.AppleMusic = &blueprint.PlatformPlaylistTrackResult{
+				Tracks:        appleTracks,
+				Length:        sumUpResultLength(appleTracks),
+				OmittedTracks: *omittedAppleTracks,
+			}
+			err = CachePlaylistTracksWithID(appleTracks, "applemusic", red)
+			if err != nil {
+				log.Printf("\n[controllers][platforms][base] warning - could not cache apple music tracks: %v %v\n\n", err, appleTracks)
+			}
+
+			return &conversion, nil
+		}
 		return &conversion, nil
 
 	case tidal.IDENTIFIER:
@@ -478,40 +569,74 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 			log.Printf("\n[controllers][platforms][tidal][ConvertPlaylist] error - could not fetch playlist with ID from tidal: %v\n", err)
 			return nil, err
 		}
-		deezerTracks, omittedDeezerTracks := deezer.FetchPlaylistSearchResult(tidalPlaylist, red)
-		log.Printf("\n[controllers][platforms][base][tidal] - fetched playlist tracks and info from deezer: %v\n", deezerTracks)
-
-		spotifyTracks, omittedSpotifyTracks := spotify.FetchPlaylistSearchResult(tidalPlaylist, red)
-		log.Printf("\n[controllers][platforms][base][tidal] - fetched playlist tracks and info from spotify: %v\n", spotifyTracks)
-
-		appleTracks, omittedAppleTracks := applemusic.FetchPlaylistSearchResult(tidalPlaylist, red)
-
-		omittedTracks["deezer"] = *omittedDeezerTracks
-		omittedTracks["spotify"] = *omittedSpotifyTracks
-		omittedTracks["apple"] = *omittedAppleTracks
-
 		conversion.Meta.URL = tidalPlaylist.URL
 		conversion.Meta.Title = tidalPlaylist.Title
 		conversion.Meta.Length = tidalPlaylist.Length
 		conversion.Meta.Owner = tidalPlaylist.Owner
-		// hated doing this but lol tsk tsk
-		conversion.Meta.OmittedTracks = *&omittedTracks
 		conversion.Meta.Cover = tidalPlaylist.Cover
 
-		conversion.Platforms.Deezer = deezerTracks
-		conversion.Platforms.Spotify = spotifyTracks
-		conversion.Platforms.Tidal = &tidalPlaylist.Tracks
-		conversion.Platforms.AppleMusic = appleTracks
-
-		log.Printf("\n[controllers][platforms][ConvertPlaylist][tidal] - caching tracks in playlist %v\n", tidalPlaylist.URL)
-		err = CachePlaylistTracksWithID(conversion.Platforms.Tidal, red)
-		if err != nil {
-			log.Printf("\n[controllers][platforms][tidal][ConvertPlaylist] warning - could not cache tracks: %v %v\n\n", err, deezerTracks)
-		} else {
-			log.Printf("\n[controllers][platforms][tidal][ConvertPlaylist] success - cached tracks: %v\n\n", tidalPlaylist.Title)
+		conversion.Platforms.Tidal = &blueprint.PlatformPlaylistTrackResult{
+			Tracks:        &tidalPlaylist.Tracks,
+			Length:        sumUpResultLength(&tidalPlaylist.Tracks),
+			OmittedTracks: nil,
 		}
-		log.Printf("\n[controllers][platforms][ConvertPlaylist][tidal] - converted playlist %v\n", tidalPlaylist.URL)
+
+		conversion.Platforms.Deezer = nil
+		conversion.Platforms.Spotify = nil
+		conversion.Platforms.AppleMusic = nil
+
+		err = CachePlaylistTracksWithID(conversion.Platforms.Tidal.Tracks, "tidal", red)
+		if err != nil {
+			log.Printf("\n[controllers][platforms][tidal][ConvertPlaylist] warning - could not cache tracks for playlist %s: %v %v\n\n", tidalPlaylist.Title, err, tidalPlaylist.Tracks)
+		}
+
+		if info.TargetPlatform == deezer.IDENTIFIER {
+			deezerTracks, omittedDeezerTracks := deezer.FetchPlaylistSearchResult(tidalPlaylist, red)
+			log.Printf("\n[controllers][platforms][base][tidal] - fetched playlist tracks and info from deezer: %v\n", deezerTracks)
+
+			conversion.Platforms.Deezer = &blueprint.PlatformPlaylistTrackResult{Tracks: deezerTracks,
+				Length: sumUpResultLength(deezerTracks), OmittedTracks: *omittedDeezerTracks}
+
+			err = CachePlaylistTracksWithID(deezerTracks, "deezer", red)
+			if err != nil {
+				log.Printf("\n[controllers][platforms][base] warning - could not cache deezer tracks: %v %v\n\n", err, deezerTracks)
+			}
+			return &conversion, nil
+		}
+
+		if info.TargetPlatform == spotify.IDENTIFIER {
+			spotifyTracks, omittedSpotifyTracks := spotify.FetchPlaylistSearchResult(tidalPlaylist, red)
+			log.Printf("\n[controllers][platforms][base][tidal] - fetched playlist tracks and info from spotify: %v\n", spotifyTracks)
+			conversion.Platforms.Spotify = &blueprint.PlatformPlaylistTrackResult{
+				Tracks:        spotifyTracks,
+				Length:        sumUpResultLength(spotifyTracks),
+				OmittedTracks: *omittedSpotifyTracks,
+			}
+			err = CachePlaylistTracksWithID(spotifyTracks, "spotify", red)
+			if err != nil {
+				log.Printf("\n[controllers][platforms][tidal][ConvertPlaylist] warning - could not cache tracks: %v %v\n\n", err, spotifyTracks)
+			}
+			return &conversion, nil
+		}
+
+		if info.TargetPlatform == applemusic.IDENTIFIER {
+			appleTracks, omittedAppleTracks := applemusic.FetchPlaylistSearchResult(tidalPlaylist, red)
+			conversion.Platforms.AppleMusic = &blueprint.PlatformPlaylistTrackResult{
+				Tracks:        appleTracks,
+				Length:        sumUpResultLength(appleTracks),
+				OmittedTracks: *omittedAppleTracks,
+			}
+
+			log.Printf("\n[controllers][platforms][ConvertPlaylist][tidal] - converted playlist %v\n", tidalPlaylist.URL)
+			err = CachePlaylistTracksWithID(appleTracks, "applemusic", red)
+			if err != nil {
+				log.Printf("\n[controllers][platforms][tidal][ConvertPlaylist] warning - could not cache tracks: %v %v\n\n", err, appleTracks)
+			}
+			return &conversion, nil
+		}
+
 		return &conversion, nil
+
 	case applemusic.IDENTIFIER:
 		log.Printf("\n[controllers][platforms][ConvertPlaylist][applemusic] - converting playlist %v\n", info.EntityID)
 		applePlaylist, err := applemusic.FetchPlaylistTrackList(info.EntityID, red)
@@ -526,33 +651,71 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 			return nil, blueprint.ENORESULT
 		}
 
-		deezerTracks, omittedDeezerTracks := deezer.FetchPlaylistSearchResult(applePlaylist, red)
-		log.Printf("\n[controllers][platforms][base][applemusic] - fetched playlist tracks and info from deezer: %v\n", deezerTracks)
-
-		spotifyTracks, omittedSpotifyTracks := spotify.FetchPlaylistSearchResult(applePlaylist, red)
-		log.Printf("\n[controllers][platforms][base][applemusic] - fetched playlist tracks and info from spotify: %v\n", spotifyTracks)
-		tidalTracks, omittedTidalTracks := tidal.FetchTrackWithResult(applePlaylist, red)
-		log.Printf("\n[controllers][platforms][base][applemusic] - fetched playlist tracks and info from tidal: %v\n", tidalTracks)
-
-		omittedTracks["deezer"] = *omittedDeezerTracks
-		omittedTracks["spotify"] = *omittedSpotifyTracks
-		omittedTracks["tidal"] = *omittedTidalTracks
-
+		// playlist meta
 		conversion.Meta.URL = applePlaylist.URL
 		conversion.Meta.Title = applePlaylist.Title
 		conversion.Meta.Length = applePlaylist.Length
 		conversion.Meta.Owner = applePlaylist.Owner
-		conversion.Meta.OmittedTracks = *&omittedTracks
 		conversion.Meta.Cover = applePlaylist.Cover
-		conversion.Platforms.Deezer = deezerTracks
-		conversion.Platforms.Spotify = spotifyTracks
-		conversion.Platforms.Tidal = tidalTracks
-		conversion.Platforms.AppleMusic = &applePlaylist.Tracks
-		err = CachePlaylistTracksWithID(&applePlaylist.Tracks, red)
+
+		// platform tracks
+		conversion.Platforms.AppleMusic = &blueprint.PlatformPlaylistTrackResult{Tracks: &applePlaylist.Tracks, Length: sumUpResultLength(&applePlaylist.Tracks)}
+		conversion.Platforms.Tidal = nil
+		conversion.Platforms.Spotify = nil
+		conversion.Platforms.Deezer = nil
+
+		err = CachePlaylistTracksWithID(conversion.Platforms.AppleMusic.Tracks, "applemusic", red)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][applemusic][ConvertPlaylist] warning - could not cache tracks: %v %v\n\n", err, applePlaylist.Tracks)
+			log.Printf("\n[controllers][platforms][applemusic][ConvertPlaylist] warning - could not cache tracks for playlist %s: %v %v\n\n", applePlaylist.Title, err, applePlaylist.Tracks)
 		}
-		log.Printf("\n[controllers][platforms][ConvertPlaylist][applemusic] - caching tracks in playlist %v\n", applePlaylist.URL)
+
+		if info.TargetPlatform == deezer.IDENTIFIER {
+			deezerTracks, omittedDeezerTracks := deezer.FetchPlaylistSearchResult(applePlaylist, red)
+			log.Printf("\n[controllers][platforms][base][applemusic] - fetched playlist tracks and info from deezer: %v\n", deezerTracks)
+			conversion.Platforms.Deezer = &blueprint.PlatformPlaylistTrackResult{
+				Tracks:        deezerTracks,
+				Length:        sumUpResultLength(deezerTracks),
+				OmittedTracks: *omittedDeezerTracks,
+			}
+
+			err = CachePlaylistTracksWithID(deezerTracks, "deezer", red)
+			if err != nil {
+				log.Printf("\n[controllers][platforms][base] warning - could not cache deezer tracks: %v %v\n\n", err, deezerTracks)
+			}
+			return &conversion, nil
+		}
+
+		if info.TargetPlatform == spotify.IDENTIFIER {
+			spotifyTracks, omittedSpotifyTracks := spotify.FetchPlaylistSearchResult(applePlaylist, red)
+			log.Printf("\n[controllers][platforms][base][applemusic] - fetched playlist tracks and info from spotify: %v\n", spotifyTracks)
+			conversion.Platforms.Spotify = &blueprint.PlatformPlaylistTrackResult{
+				Tracks:        spotifyTracks,
+				Length:        sumUpResultLength(spotifyTracks),
+				OmittedTracks: *omittedSpotifyTracks,
+			}
+
+			err = CachePlaylistTracksWithID(spotifyTracks, "spotify", red)
+			if err != nil {
+				log.Printf("\n[controllers][platforms][base] warning - could not cache spotify tracks: %v %v\n\n", err, spotifyTracks)
+			}
+			return &conversion, nil
+		}
+
+		if info.TargetPlatform == tidal.IDENTIFIER {
+			tidalTracks, omittedTidalTracks := tidal.FetchTrackWithResult(applePlaylist, red)
+			log.Printf("\n[controllers][platforms][base][applemusic] - fetched playlist tracks and info from tidal: %v\n", tidalTracks)
+			conversion.Platforms.Tidal = &blueprint.PlatformPlaylistTrackResult{
+				Tracks:        tidalTracks,
+				Length:        sumUpResultLength(tidalTracks),
+				OmittedTracks: *omittedTidalTracks,
+			}
+
+			err = CachePlaylistTracksWithID(tidalTracks, "tidal", red)
+			if err != nil {
+				log.Printf("\n[controllers][platforms][base] warning - could not cache tidal tracks: %v %v\n\n", err, tidalTracks)
+			}
+			return &conversion, nil
+		}
 		return &conversion, nil
 	default:
 		return nil, blueprint.ENOTIMPLEMENTED
@@ -582,7 +745,7 @@ func CacheTracksWithID(records map[string]*blueprint.TrackSearchResult, red *red
 }
 
 // CachePlaylistTracksWithID caches the results of each of the tracks from a playlist conversion, under the same key scheme as CacheTracksWithID
-func CachePlaylistTracksWithID(tracks *[]blueprint.TrackSearchResult, red *redis.Client) error {
+func CachePlaylistTracksWithID(tracks *[]blueprint.TrackSearchResult, platform string, red *redis.Client) error {
 	for _, data := range *tracks {
 		// stringify data
 		dataJSON, err := json.Marshal(data)
@@ -590,11 +753,11 @@ func CachePlaylistTracksWithID(tracks *[]blueprint.TrackSearchResult, red *redis
 			log.Printf("\n[controllers][platforms][base] Error marshalling track result data to JSON: %v\n", err)
 			return err
 		}
-		if err := red.Set(context.Background(), "spotify:"+data.ID, string(dataJSON), 0).Err(); err != nil {
+		if err := red.Set(context.Background(), fmt.Sprintf("%s:track:%s", platform, data.ID), string(dataJSON), time.Hour*24).Err(); err != nil {
 			log.Printf("\n[controllers][platforms][spotify][ConvertEntity] error - could not cache track on %s: %v\n", "spotify:"+data.ID, err)
 			return err
 		}
 	}
-	log.Printf("\n[controllers][platforms][spotify][ConvertEntity] cache - track ")
+	log.Printf("\n[controllers][platforms][CachePlaylistTracksWithID] cache - track ")
 	return nil
 }

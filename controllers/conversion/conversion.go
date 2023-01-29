@@ -178,10 +178,10 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("[controller][conversion][GetPlaylistTaskStatus] - task not found")
-			return util.ErrorResponse(ctx, http.StatusNotFound, "task not found")
+			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "task not found")
 		}
 		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - error fetching task: %v", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "error fetching task")
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "error fetching task")
 	}
 
 	taskUUID, err := uuid.Parse(taskId)
@@ -194,7 +194,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		err = json.Unmarshal([]byte(taskRecord.Result), &res)
 		if err != nil {
 			log.Printf("[controller][conversion][GetPlaylistTaskStatus] - not a playlist task")
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "Could not deserialize task result")
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not deserialize task result")
 		}
 
 		result := &blueprint.TaskResponse{
@@ -218,7 +218,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		err = json.Unmarshal([]byte(taskRecord.Result), &res)
 		if err != nil {
 			log.Printf("[controller][conversion][GetPlaylistTaskStatus] - error deserializing task result: %v", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "task failed. could not process or unknown error")
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "task failed. could not process or unknown error")
 		}
 
 		// create a new task response
@@ -227,7 +227,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 			Status:  taskRecord.Status,
 			Payload: res,
 		}
-		return util.ErrorResponse(ctx, http.StatusOK, result)
+		return util.ErrorResponse(ctx, http.StatusOK, result, "")
 	}
 
 	if taskRecord.Status == "completed" {
@@ -235,8 +235,8 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		var res blueprint.PlaylistConversion
 		err = json.Unmarshal([]byte(taskRecord.Result), &res)
 		if err != nil {
-			log.Printf("[controller][conversion][GetPlaylistTaskStatus] - error unmarshalling task data: %v", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "could not deserialize playlist task result")
+			log.Printf("[controller][conversion][GetPlaylistTaskStatus] error- could not deserialize task data: %v", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "could not deserialize playlist task result")
 		}
 
 		if res.Meta.URL == "" {
@@ -267,7 +267,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		return util.SuccessResponse(ctx, http.StatusOK, taskResponse)
 	}
 	log.Printf("[controller][conversion][GetPlaylistTaskStatus] - task status: %s", taskRecord.Status)
-	return util.ErrorResponse(ctx, http.StatusInternalServerError, "unknown error")
+	return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unknown error occurred while updating task record status")
 }
 
 // DeletePlaylistTask deletes a playlist task
@@ -279,7 +279,7 @@ func (c *Controller) DeletePlaylistTask(ctx *fiber.Ctx) error {
 	err := database.DeleteTask(taskId)
 	if err != nil {
 		log.Printf("[controller][conversion][DeletePlaylistTask] - error deleting task: %v", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "error deleting task")
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "error deleting task")
 	}
 	return util.SuccessResponse(ctx, http.StatusOK, nil)
 }

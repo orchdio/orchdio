@@ -306,7 +306,7 @@ func main() {
 				// e.Code will be the status code.
 				// e.Message will be the error message.
 				log.Printf(err.Error())
-				return util.ErrorResponse(ctx, e.Code, e.Message)
+				return util.ErrorResponse(ctx, e.Code, "internal error", e.Message)
 			}
 			log.Printf("Error in next router %v", err)
 			// get the PID of the asynq server and send it a kill signal to OS
@@ -428,7 +428,7 @@ func main() {
 		LimiterMiddleware: limiter.SlidingWindow{},
 		LimitReached: func(ctx *fiber.Ctx) error {
 			log.Printf("[main] [info] - Rate limit exceeded")
-			return util.ErrorResponse(ctx, fiber.StatusTooManyRequests, "Rate limit exceeded")
+			return util.ErrorResponse(ctx, fiber.StatusTooManyRequests, "rate limit error", "Rate limit exceeded")
 		},
 	}))
 	app.Use(requestid.New(requestid.Config{
@@ -470,7 +470,7 @@ func main() {
 		ContextKey: "authToken",
 		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
 			log.Printf("Error validating auth token %v:\n", err)
-			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Invalid or Expired token")
+			return util.ErrorResponse(ctx, http.StatusUnauthorized, "internal error", "Invalid or Expired token")
 		},
 	}), middleware.VerifyToken)
 
@@ -480,9 +480,9 @@ func main() {
 	appRouter.Get("/:appId", devAppController.FetchApp)
 	appRouter.Get("/all", devAppController.FetchAllDeveloperApps)
 	appRouter.Post("/new", devAppController.CreateApp)
-	orchRouter.Post("/app/disable", devAppController.DisableApp)
-	orchRouter.Post("/app/enable", devAppController.EnableApp)
-	orchRouter.Delete("/app/delete", devAppController.DeleteApp)
+	appRouter.Post("/app/disable", devAppController.DisableApp)
+	appRouter.Post("/app/enable", devAppController.EnableApp)
+	appRouter.Delete("/app/delete", devAppController.DeleteApp)
 	appRouter.Put("/:appId", devAppController.UpdateApp)
 
 	//baseRouter.Get("/heartbeat", getInfo)

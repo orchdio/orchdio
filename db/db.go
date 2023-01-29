@@ -523,7 +523,7 @@ func (d *NewDB) AlreadyInWaitList(user string) bool {
 		if err == sql.ErrNoRows {
 			log.Printf("[db][FetchUserFromWaitlist] user %s not found in waitlist\n", user)
 		}
-		log.Printf("[db][FetchUserFromWaitlist] error fetching user from waitlist. %v\n", err)
+		log.Printf("[db][FetchUserFromWaitlist] email has not been added to waitlist%v\n", err)
 		return false
 	}
 	return true

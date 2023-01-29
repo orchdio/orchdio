@@ -49,25 +49,25 @@ func (c *Controller) Handle(ctx *fiber.Ctx) error {
 	var webhookMessage blueprint.WebhookMessage
 	var err = json.Unmarshal(body, &webhookMessage)
 	if err != nil {
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid JSON")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid JSON")
 	}
 
 	user, uErr := database.FindUserByEmail(os.Getenv("ZOOVE_ADMIN_EMAIL"), claims.Platform)
 	if uErr != nil {
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error")
 	}
 
 	apiKey, aErr := database.FetchUserApikey(user.Email)
 	log.Printf("[controller][webhook][Handle] - user apikey: %+v", apiKey.Key.String())
 	if aErr != nil {
 		log.Printf("[controller][webhook][Handle] - error fetching user apikey %s\n", aErr.Error())
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "An unexpected error")
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error")
 	}
 	hash := util.GenerateHMAC(webhookMessage, apiKey.Key.String())
 
 	if hmac2.Equal([]byte(orchdioHmac), hash) {
 		log.Printf("[controller][webhook][Handle] - error - hmac verification failed")
-		return util.ErrorResponse(ctx, http.StatusUnauthorized, "Unauthorized. Payload tampered with")
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "unauthorized", "Unauthorized. Payload tampered with")
 	}
 
 	// get the webhook type

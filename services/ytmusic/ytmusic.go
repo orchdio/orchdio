@@ -11,6 +11,7 @@ import (
 	"orchdio/util"
 	"strings"
 	"sync"
+	"time"
 )
 
 const IDENTIFIER = "ytmusic"
@@ -28,7 +29,7 @@ func FetchSingleTrack(id string) (*ytmusic.TrackItem, error) {
 
 // SearchTrackWithLink fetches a track from the ID using the link.
 func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.TrackSearchResult, error) {
-	cacheKey := "ytmusic:" + info.EntityID
+	cacheKey := "ytmusic:track:" + info.EntityID
 	cachedTrack, err := red.Get(context.Background(), cacheKey).Result()
 	if err != nil && err != redis.Nil {
 		log.Printf("[services][ytmusic][SearchTrackWithLink] Error fetching track from cache: %v\n", err)
@@ -57,23 +58,24 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 			artistes = append(artistes, artist.Name)
 		}
 
-		red.Set(context.Background(), cacheKey, track, 0)
+		red.Set(context.Background(), cacheKey, track, time.Hour*24)
 		// TODO: add more fields to the result in the ytmusic library
 		thumbnail := ""
 		if len(track.Thumbnails) > 0 {
 			thumbnail = track.Thumbnails[0].URL
 		}
 		return &blueprint.TrackSearchResult{
-			URL:      info.TargetLink,
-			Artists:  artistes,
-			Released: "",
-			Duration: util.GetFormattedDuration(track.Duration),
-			Explicit: false,
-			Title:    track.Title,
-			Preview:  info.TargetLink, // for now, preview is also original link
-			Album:    track.Album.Name,
-			ID:       track.VideoID,
-			Cover:    thumbnail,
+			URL:           info.TargetLink,
+			Artists:       artistes,
+			Released:      "",
+			Duration:      util.GetFormattedDuration(track.Duration),
+			DurationMilli: track.Duration * 1000,
+			Explicit:      false,
+			Title:         track.Title,
+			Preview:       info.TargetLink, // for now, preview is also original link
+			Album:         track.Album.Name,
+			ID:            track.VideoID,
+			Cover:         thumbnail,
 		}, nil
 	}
 
@@ -150,16 +152,17 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	}
 
 	result := &blueprint.TrackSearchResult{
-		URL:      fmt.Sprintf("https://music.youtube.com/watch?v=%s", track.VideoID),
-		Artists:  artistes,
-		Released: "",
-		Duration: util.GetFormattedDuration(track.Duration),
-		Explicit: track.IsExplicit,
-		Title:    track.Title,
-		Preview:  fmt.Sprintf("https://music.youtube.com/watch?v=%s", track.VideoID), // for now, preview is also original link
-		Album:    track.Album.Name,
-		ID:       track.VideoID,
-		Cover:    thumbnail,
+		URL:           fmt.Sprintf("https://music.youtube.com/watch?v=%s", track.VideoID),
+		Artists:       artistes,
+		Released:      "",
+		Duration:      util.GetFormattedDuration(track.Duration),
+		DurationMilli: track.Duration * 1000,
+		Explicit:      track.IsExplicit,
+		Title:         track.Title,
+		Preview:       fmt.Sprintf("https://music.youtube.com/watch?v=%s", track.VideoID), // for now, preview is also original link
+		Album:         track.Album.Name,
+		ID:            track.VideoID,
+		Cover:         thumbnail,
 	}
 	serviceResult, err := json.Marshal(result)
 	if err != nil {
@@ -168,12 +171,21 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	}
 	newHashIdentifier := util.HashIdentifier(fmt.Sprintf("ytmusic-%s-%s", artistes[0], track.Title))
 
-	trackResultIdentifier := util.HashIdentifier(fmt.Sprintf("ytmusic:%s", track.VideoID))
+	trackResultIdentifier := util.HashIdentifier(fmt.Sprintf("ytmusic:track:%s", track.VideoID))
 	err = red.MSet(context.Background(), newHashIdentifier, serviceResult, trackResultIdentifier, serviceResult).Err()
-	if err != nil {
-		log.Printf("[services][ytmusic][SearchTrackWithTitle] Error caching track: %v\n", err)
-		return nil, err
+	keys := map[string]interface{}{
+		newHashIdentifier:     serviceResult,
+		trackResultIdentifier: serviceResult,
 	}
+
+	for k, v := range keys {
+		err = red.Set(context.Background(), k, v, time.Hour*24).Err()
+		if err != nil {
+			log.Printf("[services][ytmusic][SearchTrackWithTitle] Error caching track: %v\n", err)
+			return nil, err
+		}
+	}
+
 	return result, nil
 }
 

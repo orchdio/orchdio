@@ -27,29 +27,22 @@
                 "deezer"
               ]
             }
+          },
+          {
+            "name": "x-orchdio-public-key",
+            "in": "header",
+            "description": "The public key of the Orchdio server",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful response",
-            "headers": {
-              "x-orchdio-public-key": {
-                "description": "The public key of the Orchdio server",
-                "required": true,
-                "schema": {
-                  "type": "string",
-                  "format": "uuid",
-                  "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/responses/ConnectResponse"
-                }
-              }
-            }
+            "$ref": "#/components/responses/ConnectResponse"
           },
           "500": {
             "description": "Internal server error",
@@ -78,35 +71,24 @@
       "description": "Converts an entity from one platform to another. An entity can be a track or a playlist.",
       "post": {
         "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "url": {
-                    "type": "string",
-                    "description": "The URL of the entity to convert",
-                    "example": "https://open.spotify.com/track/3Qm86XLflmIXVm1wcwkgDK?si=6a6e6f6d6e6f6f6d"
-                  }
-                }
-              }
+          "$ref": "#/components/requestBodies/ConvertEntityRequestBody"
+        },
+        "parameters": [
+          {
+            "name": "x-orchdio-public-key",
+            "in": "header",
+            "description": "The public key of the Orchdio server",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
             }
           }
-        },
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
-            "headers": {
-              "x-orchdio-public-key": {
-                "description": "The public key of the Orchdio server",
-                "required": true,
-                "schema": {
-                  "type": "string",
-                  "format": "uuid",
-                  "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
-                }
-              }
-            },
             "content": {
               "application/json": {
                 "schema": {
@@ -152,26 +134,329 @@
               "format": "uuid",
               "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
             }
+          },
+          {
+            "name": "x-orchdio-public-key",
+            "in": "header",
+            "description": "The public key of the Orchdio server",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+            }
           }
         ],
         "responses": {
           "200": {
             "description": "Successful response",
-            "headers": {
-              "x-orchdio-public-key": {
-                "description": "The public key of the Orchdio server",
-                "required": true,
-                "schema": {
-                  "type": "string",
-                  "format": "uuid",
-                  "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
-                }
-              }
-            },
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/responses/TaskResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/app/new": {
+      "description": "Create a new app",
+      "parameters": [
+        {
+          "name": "Authorization",
+          "in": "header",
+          "description": "The auth token for the developer",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "example": "Bearer token"
+          }
+        }
+      ],
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/CreateNewAppResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "description": "Fields passed during app creation",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "The name of the app",
+                    "example": "My App"
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "The description of the app",
+                    "example": "My App Description"
+                  },
+                  "redirect_url": {
+                    "type": "string",
+                    "description": "The redirect URI of the app",
+                    "example": "https://myapp.com/callback"
+                  },
+                  "webhook_url": {
+                    "type": "string",
+                    "description": "The webhook URI of the app",
+                    "example": "https://myapp.com/webhook"
+                  }
+                },
+                "example": {
+                  "name": "My Awesome App",
+                  "description": "this is a very cool app",
+                  "redirect_url": "https://webhook.site/9636e79e-52f0-4565-8c7b-9172e5160680",
+                  "webhook_url": "https://webhook.site/9636e79e-52f0-4565-8c7b-9172e5160680"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/app/{app_id}": {
+      "description": "Returns the details of an app",
+      "get": {
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "The ID of the app",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+            }
+          },
+            {
+              "name": "Authorization",
+              "in": "header",
+              "description": "The auth token for the developer",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "example": "Bearer token"
+              }
+            }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/GetAppResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "description": "Update an app",
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "description": "The ID of the app",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "description": "The auth token for the developer",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "Bearer token"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Fields passed during app creation. Only the fields that need to be updated need to be passed",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "The name of the app",
+                    "example": "My App"
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "The description of the app",
+                    "example": "My App Description"
+                  },
+                  "redirect_url": {
+                    "type": "string",
+                    "description": "The redirect URI of the app",
+                    "example": "https://myapp.com/callback"
+                  },
+                  "webhook_url": {
+                    "type": "string",
+                    "description": "The webhook URI of the app",
+                    "example": "https://myapp.com/webhook"
+                  }
+                },
+                "example": {
+                  "name": "My Awesome App",
+                  "description": "this is a very cool app",
+                  "redirect_url": "https://webhook.site/9636e79e-52f0-4565-8c7b-9172e5160680",
+                  "webhook_url": "https://webhook.site/9636e79e-52f0-4565-8c7b-9172e5160680"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+            "200": {
+              "description": "Successful response",
+              "content": {
+                "application/json": {
+                    "schema": {
+                      "$ref": "#/components/responses/UpdateAppResponse"
+                    }
+                }
+              }
+            },
+            "500": {
+                "description": "Internal server error",
+                "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/responses/ErrorResponse"
+                    }
+                }
+                }
+            },
+            "401": {
+                "description": "Unauthorized",
+                "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/responses/ErrorResponse"
+                    }
+                  }
+                }
+            }
+        }
+      }
+    },
+    "/v1/app/{app_id}/keys": {
+      "description": "Get the keys associated with the app",
+      "parameters": [
+        {
+          "name": "app_id",
+          "in": "path",
+          "description": "The ID of the app",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid",
+            "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+          }
+        },
+        {
+          "name": "Authorization",
+          "in": "header",
+          "description": "The auth token for the developer",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "example": "Bearer token"
+          }
+        }
+      ],
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/GetAppKeysResponse"
                 }
               }
             }
@@ -345,7 +630,31 @@
                           "$ref": "#/components/responses/PlatformsPayload"
                         }
                       ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "success",
+                      "description": "The status of the request"
                     }
+                  }
+                }
+              }
+            },
+            "example": {
+              "data": {
+                "task_id": "12345678-1234-1234-1234-123456789012",
+                "payload": {
+                  "spotify": {
+                    "id": "7ghZ7dFtp",
+                    "url": "https://open.spotify.com/playlist/7ghZ7dFtp?si=1234567890123456"
+                  },
+                  "deezer": {
+                    "id": "123456789",
+                    "url": "https://www.deezer.com/playlist/123456789"
+                  },
+                  "youtube": {
+                    "id": "PL1234567890123456",
+                    "url": "https://www.youtube.com/playlist?list=PL1234567890123456"
                   }
                 }
               }
@@ -700,7 +1009,147 @@
             }
           }
         }
+      },
+      "GetAppKeysResponse": {
+        "description": "Fetch the app's keys",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "public_key": {
+                  "type": "string",
+                  "example": "xxxx-xxxx-xxxx-xxxx-xxxx",
+                  "description": "The app's public key"
+                },
+                "secret_key": {
+                  "type": "string",
+                  "example": "xxxx-xxxx-xxxx-xxxx-xxxx",
+                  "description": "The app's secret key"
+                }
+              }
+            }
+          }
+        }
+      },
+      "UpdateAppResponse": {
+        "description": "Update an app",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string",
+                  "example": "App updated successfully"
+                },
+                "success": {
+                  "type": "integer",
+                  "example": 200,
+                  "description": "The HTTP status code"
+                }
+              }
+            }
+          }
+        }
+      },
+
+      "ConvertEntityRequestBody": {
+        "description": "Convert an entity",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "description": "The URL of the entity to convert",
+                  "example": "https://open.spotify.com/track/3Qm86XLflmIXVm1wcwkgDK?si=6a6e6f6d6e6f6f6d"
+                }
+              }
+            }
+          }
+        }
       }
+    },
+    "requestBodies": {
+        "CreateNewAppRequestBody": {
+            "description": "Create a new app",
+            "content": {
+            "application/json": {
+                "schema": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                    "type": "string",
+                    "example": "My App"
+                    },
+                    "description": {
+                    "type": "string",
+                    "example": "The coolest app in the world."
+                    },
+                    "redirect_url": {
+                    "type": "string",
+                    "description": "The URL to redirect to after authentication",
+                    "example": "https://myapp.com/callback"
+                    },
+                    "webhook_url": {
+                    "type": "string",
+                    "description": "The URL to which the webhook will be sent",
+                    "example": "https://myapp.com/webhook"
+                    }
+                }
+                }
+            }
+            }
+        },
+        "UpdateAppRequestBody": {
+            "description": "Update an app",
+            "content": {
+            "application/json": {
+                "schema": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                    "type": "string",
+                    "example": "My App"
+                    },
+                    "description": {
+                    "type": "string",
+                    "example": "The coolest app in the world."
+                    },
+                    "redirect_url": {
+                    "type": "string",
+                    "description": "The URL to redirect to after authentication",
+                    "example": "https://myapp.com/callback"
+                    },
+                    "webhook_url": {
+                    "type": "string",
+                    "description": "The URL to which the webhook will be sent",
+                    "example": "https://myapp.com/webhook"
+                    }
+                }
+                }
+            }
+            }
+        },
+        "ConvertEntityRequestBody": {
+            "description": "Convert an entity",
+            "content": {
+            "application/json": {
+                "schema": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                    "type": "string",
+                    "description": "The URL of the entity to convert",
+                    "example": "https://open.spotify.com/track/3Qm86XLflmIXVm1wcwkgDK?si=6a6e6f6d6e6f6f6d"
+                    }
+                }
+                }
+            }
+            }
+        }
     }
   }
 }

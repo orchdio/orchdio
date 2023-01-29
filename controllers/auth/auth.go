@@ -40,12 +40,12 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 	reg := regexp.MustCompile(`spotify|apple|deezer`)
 
 	if !reg.MatchString(platform) {
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "Invalid platform")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Invalid platform")
 	}
 
 	if pubKey == "" {
 		log.Printf("[controllers][AppAuthRedirect] developer -  error: no app id provided\n")
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "App ID is not present. please pass your app id as a header")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "App ID is not present. please pass your app id as a header")
 	}
 
 	// we want to get the developer redirect url to redirect to after authenticating the user
@@ -61,7 +61,7 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 	isValid := util.IsValidUUID(pubKey)
 	if !isValid {
 		log.Printf("[controllers][AppAuthRedirect] developer -  error: invalid app id\n")
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "Invalid app id")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Invalid app id")
 	}
 
 	// get the redirect url of the developer
@@ -71,9 +71,9 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 	if err != nil {
 		log.Printf("[controllers][AppAuthRedirect] developer -  error: unable to  fetch the developer app with pubKey %v\n", err)
 		if errors.Is(err, sql.ErrNoRows) {
-			return util.ErrorResponse(ctx, fiber.StatusNotFound, "App not found")
+			return util.ErrorResponse(ctx, fiber.StatusNotFound, "not found", "App not found")
 		}
-		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 	}
 
 	// create new AppAuthToken action
@@ -101,7 +101,7 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 		encryptedToken, err := util.SignAuthJwt(&redirectToken)
 		if err != nil {
 			log.Printf("[controllers][AppAuthRedirect] developer -  error: unable to generate auth token: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 		authURL := spotify.FetchAuthURL(string(encryptedToken))
 		log.Printf("[controllers][AppAuthRedirect] developer -  redirecting to spotify auth url: %s\n", string(authURL))
@@ -115,7 +115,7 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 		encryptedToken, err := util.SignAuthJwt(&redirectToken)
 		if err != nil {
 			log.Printf("[controllers][AppAuthRedirect] developer -  error: unable to generate auth token: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		deezerSecret := os.Getenv("DEEZER_SECRET")
@@ -132,10 +132,10 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 	//   in accordance with new auth flow.
 	case "applemusic":
 		log.Printf("[controllers][AppAuthRedirect] developer -  redirecting to apple music auth url\n")
-		return util.ErrorResponse(ctx, fiber.StatusNotImplemented, "Apple music auth not implemented yet")
+		return util.ErrorResponse(ctx, fiber.StatusNotImplemented, "not supported", "Apple music auth not implemented yet")
 	}
 
-	return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "Unknown action in auth. perhaps not implemented yet")
+	return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurrednknown action in auth. perhaps not implemented yet")
 }
 
 // HandleAppAuthRedirect handles the redirect from the platform auth page to orchdio
@@ -160,7 +160,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 	encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
 	if state == "" {
 		log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: no state provided\n")
-		return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "no state present. please pass a state")
+		return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "no state present. please pass a state")
 	}
 
 	// decode state
@@ -168,9 +168,9 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 	if err != nil {
 		log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: could not decode the auth token: %v\n", err)
 		if errors.Is(err, jwt.ErrTokenExpired) {
-			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "token expired")
+			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "token expired")
 		}
-		return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unable to decode state")
+		return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "unable to decode state")
 	}
 
 	switch decodedState.Platform {
@@ -180,7 +180,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		r, err := http.NewRequest("GET", string(ctx.Request().RequestURI()), nil)
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to create new http request for spotify auth: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		defer func() {
@@ -193,21 +193,21 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to complete spotify user auth: %v\n", err)
 			if err == blueprint.EINVALIDAUTHCODE {
 				log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: invalid auth code\n")
-				return util.ErrorResponse(ctx, fiber.StatusBadRequest, "invalid auth code")
+				return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "invalid auth code")
 			}
 
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 		encryptedRefreshToken, err := util.Encrypt(refreshToken, []byte(encryptionSecretKey))
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to encrypt refresh token: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		user, err := client.CurrentUser(ctx.Context())
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to get current user during auth: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		userProfile := &blueprint.User{}
@@ -216,7 +216,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		err = newUser.StructScan(userProfile)
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to scan user during final auth: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		serialized, err := json.Marshal(map[string]string{
@@ -226,7 +226,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		_, err = a.DB.Exec(queries.UpdatePlatformUsernames, user.Email, string(serialized))
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to update platform usernames: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		log.Printf("spotify user: %v\n", user)
@@ -235,7 +235,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		_, err = a.DB.Exec(queries.UpdateUserPlatformToken, encryptedRefreshToken, "spotify", user.Email)
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to update user spotify refresh platform token: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		// if the developer is Orchdio Labs, we want to redirect to the respective redirect urls for the apps and a fallback from env incase
@@ -246,7 +246,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: could not decode state token. perhaps it has expired: %v\n", err)
 			// TODO: handle expired token
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		t := blueprint.OrchdioUserToken{
@@ -260,7 +260,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		authToken, err := util.SignJwt(&t)
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign spotify auth jwt: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		// if developer is orchdio labs, create jwt token and redirect to the app url
@@ -272,12 +272,12 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		log.Printf("[controllers][HandleAppAuthRedirect] developer -  deezer auth flow")
 		if code == "" {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: no code provided\n")
-			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "no code present. please pass a code")
+			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "no code present. please pass a code")
 		}
 
 		if errorCode == "access_denied" {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: deezer returned an %v error\n", errorCode)
-			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "User access denied")
+			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "User access denied")
 		}
 
 		deezerSecret := os.Getenv("DEEZER_SECRET")
@@ -289,12 +289,12 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		deezerUser, err := deezerAuth.CompleteUserAuth(deezerToken)
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to complete deezer auth. could not fetch deezer complete auth token: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 		encryptedRefreshToken, err := util.Encrypt(deezerToken, []byte(encryptionSecretKey))
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to encrypt refresh token: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		userProfile := &blueprint.User{}
@@ -304,7 +304,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		err = newUser.StructScan(userProfile)
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to scan deezer user during final auth: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 		serialed, err := json.Marshal(map[string]string{
 			"deezer": deezerUser.Name,
@@ -312,18 +312,18 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		_, err = a.DB.Exec(queries.UpdatePlatformUsernames, deezerUser.Email, string(serialed))
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to update deezer platform usernames: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 		_, err = a.DB.Exec(queries.UpdateUserPlatformToken, encryptedRefreshToken, "deezer", deezerUser.Email)
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to update deezer platform token: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		appToken, err := util.DecodeAuthJwt(state)
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: could not decode state token. perhaps it has expired: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		// generate jwt token for orchdio labs
@@ -338,7 +338,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		authToken, err := util.SignJwt(&t)
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign deezer auth jwt: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		redirectURL := fmt.Sprintf("%s?token=%s", appToken.RedirectURL, string(authToken))
@@ -351,20 +351,20 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		err := ctx.BodyParser(body)
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to parse apple music auth body: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		state := body.State
 		if state == "" {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: no state provided in apple music auth body\n")
-			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "no state present. please pass a state for apple music auth")
+			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "no state present. please pass a state for apple music auth")
 		}
 
 		// decode the developer token
 		appToken, err := util.DecodeAuthJwt(state)
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: could not decode state token. perhaps it has expired: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		var displayName = "-"
@@ -374,7 +374,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		encryptedRefreshToken, err := util.Encrypt([]byte(body.Token), []byte(encryptionSecretKey))
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to encrypt user apple music refresh token: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		// apple doesn't (seem to) have a context of user ID here, in the API, we're using the music user token and
@@ -384,7 +384,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		_, err = hash.Write([]byte(body.Email))
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to hash apple music user email: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		hashedEmail := hex.EncodeToString(hash.Sum(nil))
@@ -394,7 +394,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		err = newUser.StructScan(userProfile)
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to scan apple music user during final auth: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		serialized, err := json.Marshal(map[string]string{
@@ -403,13 +403,13 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		_, err = a.DB.Exec(queries.UpdatePlatformUsernames, hashedEmail, string(serialized))
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to update apple music platform usernames: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		_, err = a.DB.Exec(queries.UpdateUserPlatformToken, encryptedRefreshToken, "applemusic", body.Email)
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to update apple music platform token: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		t := blueprint.OrchdioUserToken{
@@ -423,7 +423,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		authToken, err := util.SignJwt(&t)
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign apple music auth jwt: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		redirectURL := fmt.Sprintf("%v?token=%v", appToken.RedirectURL, authToken)
@@ -433,5 +433,5 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 	}
 
 	// not supported yet??
-	return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "invalid platform")
+	return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "invalid platform")
 }

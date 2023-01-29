@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 const ApiUrl = "https://listen.tidal.com/v1"
@@ -31,7 +32,7 @@ type tidal struct {
 
 // SearchWithID searches for a track on tidal using the tidal ID
 func SearchWithID(id string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
-	cacheKey := "tidal:" + id
+	cacheKey := "tidal:track:" + id
 	log.Println("\n[services][tidal][SearchWithID] - cacheKey - ", cacheKey)
 	cachedTrack, err := red.Get(context.Background(), cacheKey).Result()
 	if err != nil && err != redis.Nil {
@@ -55,16 +56,17 @@ func SearchWithID(id string, red *redis.Client) (*blueprint.TrackSearchResult, e
 		}
 
 		searchResult := blueprint.TrackSearchResult{
-			URL:      tracks.URL,
-			Artists:  artistes,
-			Released: tracks.StreamStartDate,
-			Duration: util.GetFormattedDuration(tracks.Duration),
-			Explicit: tracks.Explicit,
-			Title:    tracks.Title,
-			Preview:  "",
-			Album:    tracks.Album.Title,
-			ID:       strconv.Itoa(tracks.Album.ID),
-			Cover:    util.BuildTidalAssetURL(tracks.Album.Cover),
+			URL:           tracks.URL,
+			Artists:       artistes,
+			Released:      tracks.StreamStartDate,
+			Duration:      util.GetFormattedDuration(tracks.Duration),
+			DurationMilli: tracks.Duration * 1000,
+			Explicit:      tracks.Explicit,
+			Title:         tracks.Title,
+			Preview:       "",
+			Album:         tracks.Album.Title,
+			ID:            strconv.Itoa(tracks.Album.ID),
+			Cover:         util.BuildTidalAssetURL(tracks.Album.Cover),
 		}
 
 		serialized, err := json.Marshal(searchResult)
@@ -72,7 +74,7 @@ func SearchWithID(id string, red *redis.Client) (*blueprint.TrackSearchResult, e
 			log.Printf("\n[services][tidal][SearchWithID] - could not serialize track result - %v\n", err)
 			return nil, err
 		}
-		err = red.Set(context.Background(), cacheKey, serialized, 0).Err()
+		err = red.Set(context.Background(), cacheKey, serialized, time.Hour*24).Err()
 		if err != nil {
 			log.Printf("\n[services][tidal][SearchWithID] - could not cache track - %v\n", err)
 		} else {
@@ -201,12 +203,14 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 			Artists:  artistes,
 			Released: track.StreamStartDate,
 			Duration: util.GetFormattedDuration(track.Duration),
-			Explicit: track.Explicit,
-			Title:    track.Title,
-			Preview:  "",
-			Album:    track.Album.Title,
-			ID:       strconv.Itoa(track.Id),
-			Cover:    util.BuildTidalAssetURL(track.Album.Cover),
+			// format the duration in miliseconds. seems to be in seconds from TIDAL
+			DurationMilli: track.Duration * 1000,
+			Explicit:      track.Explicit,
+			Title:         track.Title,
+			Preview:       "",
+			Album:         track.Album.Title,
+			ID:            strconv.Itoa(track.Id),
+			Cover:         util.BuildTidalAssetURL(track.Album.Cover),
 		}
 
 		serialized, err := json.Marshal(tidalTrack)
@@ -216,25 +220,20 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 		}
 
 		if lo.Contains(tidalTrack.Artists, artiste) {
-			err = red.MSet(context.Background(), map[string]interface{}{
+			keys := map[string]interface{}{
 				cleanedArtiste: string(serialized),
-			}).Err()
-			if err != nil {
-				log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error caching track - %v\n", err)
-			} else {
-				log.Printf("\n[controllers][platforms][tidal][SearchTrackWithTitle] Track %s has been cached\n", tidalTrack.Title)
+			}
+
+			for cacheArtiste, cacheResult := range keys {
+				err = red.Set(context.Background(), cacheArtiste, cacheResult, time.Hour*24).Err()
+				if err != nil {
+					log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error caching track - %v\n", err)
+				} else {
+					log.Printf("\n[controllers][platforms][tidal][SearchTrackWithTitle] Track %s has been cached\n", tidalTrack.Title)
+				}
 			}
 		}
 
-		//newHashIdentifier := util.HashIdentifier(fmt.Sprintf("tidal-%s-%s", tidalTrack.Artistes[0], tidalTrack.Title))
-		//// FIXME: perhaps look into how to batch insert into redis
-		//err = red.Set(context.Background(), newHashIdentifier, serialized, 0).Err()
-		//err = red.Set(context.Background(), identifierHash, serialized, 0).Err()
-		//if err != nil {
-		//	log.Printf("\n[services][tidal][SearchTrackWithTitle] - could not cache track - %v\n", err)
-		//} else {
-		//	log.Printf("\n[services][tidal][SearchTrackWithTitle] - track %s cached successfully\n", tidalTrack.Title)
-		//}
 		return tidalTrack, nil
 	}
 	return nil, nil
@@ -297,7 +296,7 @@ func FetchPlaylistInfo(id string) (*PlaylistInfo, error) {
 		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistInfo] - could not fetch the playlist info for %s - %v\n", err, id)
 		return nil, err
 	}
-	log.Printf("\n[controllers][platforms][tidal][FetchPlaylistInfo] - response -\n")
+	log.Printf("\n[controllers][platforms][tidal][FetchPlaylistInfo] - response - \n")
 	playlistInfo := &PlaylistInfo{}
 	err = json.Unmarshal(response.Data, playlistInfo)
 	if err != nil {
@@ -422,16 +421,17 @@ func FetchPlaylist(id string, red *redis.Client) (*PlaylistInfo, *blueprint.Play
 			artistes = append(artistes, artist.Name)
 		}
 		t := blueprint.TrackSearchResult{
-			URL:      item.Item.Url,
-			Artists:  artistes,
-			Released: item.Item.StreamStartDate,
-			Duration: util.GetFormattedDuration(item.Item.Duration),
-			Explicit: item.Item.Explicit,
-			Title:    item.Item.Title,
-			Preview:  "",
-			Album:    item.Item.Album.Title,
-			ID:       strconv.Itoa(item.Item.Id),
-			Cover:    util.BuildTidalAssetURL(item.Item.Album.Cover),
+			URL:           item.Item.Url,
+			Artists:       artistes,
+			Released:      item.Item.StreamStartDate,
+			Duration:      util.GetFormattedDuration(item.Item.Duration),
+			DurationMilli: item.Item.Duration * 1000,
+			Explicit:      item.Item.Explicit,
+			Title:         item.Item.Title,
+			Preview:       "",
+			Album:         item.Item.Album.Title,
+			ID:            strconv.Itoa(item.Item.Id),
+			Cover:         util.BuildTidalAssetURL(item.Item.Album.Cover),
 		}
 
 		tracks = append(tracks, t)

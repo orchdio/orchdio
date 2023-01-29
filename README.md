@@ -25,7 +25,7 @@ products like organic music discovery through what friends are playing and have 
     - Tidal, Deezer and Spotify are currently supported
  - Playlist conversion
     - Tidal, Deezer and Spotify are currently supported
- - Playlist follow
+ - Playlist follow (WIP)
     - Tidal, Deezer and Spotify are currently supported
     
 
