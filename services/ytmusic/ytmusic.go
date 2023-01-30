@@ -110,7 +110,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 		return &result, nil
 	}
 	log.Printf("[services][ytmusic][SearchTrackWithTitle] Track not found in cache, fetching from YT Music: %v\n", cleanedArtiste)
-	s := ytmusic.Search(fmt.Sprintf("%s %s", cleanedArtiste, title))
+	s := ytmusic.Search(fmt.Sprintf("%s %s", artiste, title))
 	r, err := s.Next()
 	if err != nil {
 		log.Printf("[services][ytmusic][SearchTrackWithTitle] Error fetching track from YT Music: %v\n", err)
@@ -126,11 +126,12 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	var track *ytmusic.TrackItem
 
 	for _, t := range tracks {
-		log.Printf("[services][ytmusic][SearchTrackWithTitle] Found track:\n")
-		if strings.Contains(t.Title, title) {
-			log.Printf("[services][ytmusic][SearchTrackWithTitle] Found track with title: %v\n", title)
+		if strings.Contains(t.Title, title) || strings.Contains(t.Artists[0].Name, artiste) {
 			track = t
+			break
 		}
+		track = t
+		break
 	}
 
 	// get artistes

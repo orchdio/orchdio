@@ -22,6 +22,7 @@ import (
 	"orchdio/queue"
 	"orchdio/services/applemusic"
 	"orchdio/services/deezer"
+	"orchdio/services/tidal"
 	"orchdio/universal"
 	"orchdio/util"
 	"os"
@@ -392,6 +393,17 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 				return util.ErrorResponse(ctx, http.StatusForbidden, err, "Could not create new playlist for user. Access has not been granted by user")
 			}
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred.")
+		}
+
+	case "tidal":
+		pl, err := tidal.CreateNewPlaylist(createBodyData.Title, description, string(t), createBodyData.Tracks)
+		playlistlink = string(pl)
+		if err != nil {
+			log.Printf("\n[controllers][platforms][AddPlaylistToAccount][error] - an error occurred while adding playlist to user platform account - %v\n", err)
+			if err == blueprint.EFORBIDDEN {
+				log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error creating new playlist - %v\n", err)
+				return util.ErrorResponse(ctx, http.StatusForbidden, err, "Could not create new playlist for user. Access has not been granted by user")
+			}
 		}
 	}
 	return util.SuccessResponse(ctx, http.StatusCreated, playlistlink)

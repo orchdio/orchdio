@@ -4,10 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/go-redis/redis/v8"
-	"github.com/nleeper/goment"
-	"github.com/samber/lo"
-	"github.com/vicanso/go-axios"
 	"log"
 	"net/url"
 	"orchdio/blueprint"
@@ -17,6 +13,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/go-redis/redis/v8"
+	"github.com/nleeper/goment"
+	"github.com/samber/lo"
+	"github.com/vicanso/go-axios"
 )
 
 const ApiUrl = "https://listen.tidal.com/v1"
@@ -191,7 +192,6 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	// but ideally if for example we want to filter more "generic" tracks, we can do that here
 	// etc.
 	if len(result.Tracks.Items) > 0 {
-		log.Printf("Responses are: %v \n", result.Tracks.Items)
 		var track = result.Tracks.Items[0]
 		var artistes []string
 		for _, artist := range track.Artists {
@@ -586,7 +586,7 @@ func CreateNewPlaylist(title, description, musicToken string, tracks []string) (
 	p.Add("locale", "en_US")
 	p.Add("deviceType", "BROWSER")
 
-	inst, err := instance.Post("create-playlist", p)
+	inst, err := instance.Put("create-playlist", p)
 	if err != nil {
 		log.Printf("\n[services][tidal][CreateNewPlaylist] - error creating playlist - %v\n", err)
 		return nil, err
@@ -605,12 +605,12 @@ func CreateNewPlaylist(title, description, musicToken string, tracks []string) (
 	}
 
 	// now add tracks to the playlist. the tracks are added in a url encoded format, with property of trackIds and can take multiple values. the api endpoint is like: https://listen.tidal.com/v1/playlists/287fae69-37f0-40cf-b95f-52d8a3173530/items?countryCode=US&locale=en_US&deviceType=BROWSER
-
 	instance = axios.NewInstance(&axios.InstanceConfig{
 		BaseURL: "https://listen.tidal.com/v1/playlists/",
 		Headers: map[string][]string{
 			"Content-Type":  {"application/x-www-form-urlencoded"},
 			"Authorization": {fmt.Sprintf("Bearer %s", accessToken)},
+			"if-none-match": {"*"},
 		},
 	})
 	p = url.Values{}
@@ -618,7 +618,10 @@ func CreateNewPlaylist(title, description, musicToken string, tracks []string) (
 		p.Add("trackIds", track)
 	}
 
-	inst, err = instance.Post(fmt.Sprintf("%s/items", playlist.Data.Uuid), p)
+	p.Add("onDupes", "FAIL")
+	p.Add("onArtifactNotFound", "FAIL")
+
+	inst, err = instance.Post(fmt.Sprintf("%s/items?countryCode=US&locale=en_US&deviceType=BROWSER", playlist.Data.Uuid), p)
 	if err != nil {
 		log.Printf("\n[services][tidal][CreateNewPlaylist] - error adding tracks to playlist - %v\n", err)
 		return nil, err
@@ -626,6 +629,7 @@ func CreateNewPlaylist(title, description, musicToken string, tracks []string) (
 
 	if inst.Status != 200 {
 		log.Printf("\n[services][tidal][CreateNewPlaylist] - error adding tracks to playlist - %v\n", err)
+		log.Printf("\n[services][tidal][CreateNewPlaylist] - error adding tracks to playlist - %v\n", string(inst.Data))
 		return nil, err
 	}
 

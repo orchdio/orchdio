@@ -5,9 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-redis/redis/v8"
-	"github.com/samber/lo"
-	"github.com/vicanso/go-axios"
 	"log"
 	"net/http"
 	"net/url"
@@ -18,6 +15,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/go-redis/redis/v8"
+	"github.com/samber/lo"
+	"github.com/vicanso/go-axios"
 )
 
 type SearchInfo struct {
@@ -142,13 +143,14 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 	log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] Track has not been cached\n")
 
 	trackTitle := ExtractTitle(title)
+
 	// for deezer we'll not trim the artiste name. this is because it becomes way less accurate.
 	// deezer has second to the lowest accuracy in terms of search results (youtube being the lowest)
 	// however, just like others, we're caching the result under the normalized string, which contains trimmed artiste name
 	// like so: "deezer-artistename-title". For example: "deezer-flatbushzombies-reelgirls
-	_link := fmt.Sprintf("track:\"%s\" artist:\"%s\" album:\"%s\"", strings.Trim(trackTitle, " "), strings.ReplaceAll(strings.Trim(artiste, " "), " ", ""), strings.Trim(album, " "))
-	payload := url.QueryEscape(_link)
-	link := fmt.Sprintf("%s/search?q=%s", os.Getenv("DEEZER_API_BASE"), payload)
+	_link := fmt.Sprintf("track:\"%s\" artist:\"%s\" album:\"%s\"", strings.Trim(trackTitle, " "),
+		artiste, strings.Trim(album, " "))
+	link := fmt.Sprintf("%s/search?q=%s", os.Getenv("DEEZER_API_BASE"), url.QueryEscape(_link))
 
 	response, err := axios.Get(link)
 	if err != nil {
@@ -162,6 +164,7 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 	err = json.Unmarshal(response.Data, &fullTrack)
 	if err != nil {
 		log.Printf("\n[services][deezer][base][SearchTrackWithTitle] error - Could not deserialize the body into the out response: %v\n", err)
+		log.Printf("\n[services][deezer][base][SearchTrackWithTitle] error - Could not deserialize the body into the out response, body is: %v\n", string(response.Data))
 		return nil, err
 	}
 
@@ -221,7 +224,7 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 		return &out, nil
 	}
 
-	log.Printf("\n[services][deezer][base][SearchTrackWithTitle] Deezer search for track done but no results. Searched with %s \n")
+	log.Printf("\n[services][deezer][base][SearchTrackWithTitle] Deezer search for track done but no results. Searched with %s \n", _link)
 	return nil, nil
 }
 

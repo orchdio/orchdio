@@ -478,7 +478,7 @@ func main() {
 	// developer endpoints
 	appRouter.Get("/:appId/keys", devAppController.FetchKeys)
 	appRouter.Get("/:appId", devAppController.FetchApp)
-	appRouter.Get("/all", devAppController.FetchAllDeveloperApps)
+	app.Get("/v1/apps/all", devAppController.FetchAllDeveloperApps)
 	appRouter.Post("/new", devAppController.CreateApp)
 	appRouter.Post("/app/disable", devAppController.DisableApp)
 	appRouter.Post("/app/enable", devAppController.EnableApp)
