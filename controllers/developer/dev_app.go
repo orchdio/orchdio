@@ -2,13 +2,14 @@ package developer
 
 import (
 	"database/sql"
-	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
 	"log"
 	"orchdio/blueprint"
 	"orchdio/db"
 	"orchdio/util"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 )
 
 type DeveloperController struct {
@@ -112,21 +113,15 @@ func (d *DeveloperController) FetchApp(ctx *fiber.Ctx) error {
 	}
 
 	log.Printf("[controllers][FetchApp] developer -  app fetched: %s\n", appId)
-	//secK, err := util.Decrypt(app.SecretKey, []byte(os.Getenv("ENCRYPTION_SECRET")))
-	//if err != nil {
-	//	log.Printf("[controllers][FetchApp] developer -  error: could not decrypt secret key: %v\n", err)
-	//	return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err)
-	//}
-	//
-	//log.Printf("private key: %s", string(secK))
-	info := map[string]interface{}{
-		"app_id":       app.UID,
-		"name":         app.Name,
-		"description":  app.Description,
-		"redirect_url": app.RedirectURL,
-		"webhook_url":  app.WebhookURL,
-		"public_key":   app.PublicKey,
-		"authorized":   app.Authorized,
+
+	info := &blueprint.AppInfo{
+		AppID:       app.UID.String(),
+		Name:        app.Name,
+		Description: app.Description,
+		RedirectURL: app.RedirectURL,
+		WebhookURL:  app.WebhookURL,
+		PublicKey:   app.PublicKey.String(),
+		Authorized:  false,
 	}
 	return util.SuccessResponse(ctx, fiber.StatusOK, info)
 }
@@ -198,7 +193,7 @@ func (d *DeveloperController) FetchAllDeveloperApps(ctx *fiber.Ctx) error {
 	log.Printf("[controllers][FetchAllDeveloperApps] developer -  fetching all apps\n")
 
 	// get the developer from the context
-	claims := ctx.Locals("claims").(blueprint.OrchdioUserToken)
+	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
 	// fetch the apps
 	database := db.NewDB{DB: d.DB}
 	apps, err := database.FetchApps(claims.UUID.String())

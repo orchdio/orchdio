@@ -480,8 +480,8 @@ func main() {
 	appRouter.Get("/:appId", devAppController.FetchApp)
 	app.Get("/v1/apps/all", devAppController.FetchAllDeveloperApps)
 	appRouter.Post("/new", devAppController.CreateApp)
-	appRouter.Post("/app/disable", devAppController.DisableApp)
-	appRouter.Post("/app/enable", devAppController.EnableApp)
+	baseRouter.Post("/v1/app/disable", devAppController.DisableApp)
+	baseRouter.Post("/v1/app/enable", devAppController.EnableApp)
 	appRouter.Delete("/app/delete", devAppController.DeleteApp)
 	appRouter.Put("/:appId", devAppController.UpdateApp)
 

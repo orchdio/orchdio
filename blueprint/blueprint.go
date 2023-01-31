@@ -440,3 +440,13 @@ type AddToWaitlistBody struct {
 	Email    string `json:"email"`
 	Platform string `json:"platform"`
 }
+
+type AppInfo struct {
+	AppID       string `json:"app_id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	RedirectURL string `json:"redirect_url"`
+	WebhookURL  string `json:"webhook_url"`
+	PublicKey   string `json:"public_key"`
+	Authorized  bool   `json:"authorized"`
+}
