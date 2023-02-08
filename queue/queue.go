@@ -66,7 +66,7 @@ func (o *OrchdioQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task
 		log.Printf("[queue][PlaylistConversionHandler][conversion] - error unmarshalling task payload: %v", err)
 		return err
 	}
-	cErr := o.PlaylistHandler(task.ResultWriter().TaskID(), data.ShortURL, data.LinkInfo, data.User.UUID.String())
+	cErr := o.PlaylistHandler(task.ResultWriter().TaskID(), data.ShortURL, data.LinkInfo, data.App.UID.String())
 	if cErr != nil {
 		log.Printf("[queue][PlaylistConversionHandler][conversion] - error processing task in queue handler: %v", cErr)
 		if err == blueprint.EPHANTOMERR {
@@ -80,13 +80,13 @@ func (o *OrchdioQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task
 }
 
 // PlaylistHandler converts a playlist immediately.
-func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.LinkInfo, developer string) error {
+func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.LinkInfo, appId string) error {
 	log.Printf("[queue][PlaylistHandler] - processing task: %v", uid)
 	database := db.NewDB{DB: o.DB}
-	log.Printf("[queue][PlaylistHandler] - processing playlist: %v %v %v\n", database, info, developer)
+	log.Printf("[queue][PlaylistHandler] - processing playlist: %v %v %v\n", database, info, appId)
 
-	// fetch user from database
-	user, err := database.FindUserByUUID(developer)
+	// fetch app from db
+	app, err := database.FetchAppByAppId(appId)
 	if err != nil {
 		log.Printf("[queue][PlaylistHandler] - could not find user: %v", err)
 		return err
@@ -218,13 +218,6 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 	}
 
 	// post to the developer webhook
-	webhook, wErr := database.FetchWebhook(user.UUID.String())
-	if wErr != nil {
-		if wErr.Error() != "sql: no rows in result set" {
-			log.Printf("[queue][EnqueueTask] - error fetching webhook: %v", wErr)
-			return wErr
-		}
-	}
 
 	r := blueprint.WebhookMessage{
 		Message: "playlist conversion done",
@@ -232,37 +225,29 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 		Payload: &result,
 	}
 
-	// get user api key
-	apiKey, aErr := database.FetchUserApikey(user.Email)
-	if aErr != nil {
-		log.Printf("[queue][PlaylistHandler] - error fetching user api key: %v", aErr)
-		return aErr
-	}
 	// generate the hmac for the webhook
-	hmac := util.GenerateHMAC(r, apiKey.Key.String())
+	hmac := util.GenerateHMAC(r, string(app.VerifyToken))
 	ax := axios.NewInstance(&axios.InstanceConfig{
 		Headers: map[string][]string{
 			"x-orchdio-hmac": {string(hmac)},
 		},
 	})
 
-	if webhook == nil {
+	if app.WebhookURL == "" {
 		log.Printf("[queue][PlaylistHandler] - no webhook found. Skipping. Task done.")
 		return nil
 	}
 
-	re, evErr := ax.Post(webhook.Url, r)
+	re, pErr := ax.Post(app.WebhookURL, r)
 
-	// TODO: implement proper retry logic for queue. After retrying for some time, it should stop (marked as failed)
-	//   current assumption is that asynq handles this but to-do is to verify this.
-	if evErr != nil {
-		log.Printf("[queue][PlaylistHandler] - error posting to webhook: %v", evErr.Error())
+	if pErr != nil {
+		log.Printf("[queue][PlaylistHandler] - error posting to webhook: %v", pErr.Error())
 		// TODO: implement retry logic. For now, if the webhook is unavailable, it will NOT be retried since we're returning nil
-		if strings.Contains(evErr.Error(), "no such host") {
+		if strings.Contains(pErr.Error(), "no such host") {
 			log.Printf("[queue][PlaylistHandler] - webhook unavailable, skipping")
 			return nil
 		}
-		log.Printf("[queue][PlaylistHandler] - error posting webhook to endpoint %s=%v", webhook.Url, evErr)
+		log.Printf("[queue][PlaylistHandler] - error posting webhook to endpoint %s=%v", app.WebhookURL, pErr)
 		// TODO: change this to return evErr
 		return nil
 	}

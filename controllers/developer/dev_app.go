@@ -35,10 +35,10 @@ func (d *DeveloperController) CreateApp(ctx *fiber.Ctx) error {
 	}
 	pubKey := uuid.NewString()
 	secretKey := uuid.NewString()
-
+	verifySecret := uuid.NewString()
 	// create new developer app
 	database := db.NewDB{DB: d.DB}
-	uid, err := database.CreateNewApp(body.Name, body.Description, body.RedirectURL, body.WebhookURL, pubKey, claims.UUID.String(), secretKey)
+	uid, err := database.CreateNewApp(body.Name, body.Description, body.RedirectURL, body.WebhookURL, pubKey, claims.UUID.String(), secretKey, verifySecret)
 	if err != nil {
 		log.Printf("[controllers][CreateApp] developer -  error: could not create new developer app: %v\n", err)
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
@@ -204,4 +204,33 @@ func (d *DeveloperController) FetchAllDeveloperApps(ctx *fiber.Ctx) error {
 
 	log.Printf("[controllers][FetchAllDeveloperApps] developer -  apps fetched: %s\n", claims.UUID.String())
 	return util.SuccessResponse(ctx, fiber.StatusOK, apps)
+}
+
+func (d *DeveloperController) RevokeAppKeys(ctx *fiber.Ctx) error {
+	log.Printf("[controllers][RevokeAppKeys] developer -  revoking app keys\n")
+	appId := ctx.Params("appId")
+	if appId == "" {
+		log.Printf("[controllers][RevokeAppKeys] developer -  error: appId is empty\n")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "App ID is empty. Please pass a valid app ID.")
+	}
+
+	// revoke the app keys
+	database := db.NewDB{DB: d.DB}
+	publicKey := uuid.NewString()
+	privateKey := uuid.NewString()
+	verifySecret := uuid.NewString()
+	err := database.UpdateAppKeys(publicKey, privateKey, verifySecret, appId)
+	if err != nil {
+		log.Printf("[controllers][RevokeAppKeys] developer -  error: could not revoke app keys in Database: %v\n", err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred")
+	}
+
+	updatedKeys := &blueprint.AppKeys{
+		PublicKey:    publicKey,
+		SecretKey:    privateKey,
+		VerifySecret: verifySecret,
+	}
+
+	log.Printf("[controllers][RevokeAppKeys] developer -  app keys revoked and new credentials generated: %s\n", appId)
+	return util.SuccessResponse(ctx, fiber.StatusOK, updatedKeys)
 }

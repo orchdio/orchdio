@@ -90,6 +90,15 @@ func (a *AuthMiddleware) AddReadOnlyDeveloperToContext(ctx *fiber.Ctx) error {
 	}
 	log.Printf("[db][AddReadOnlyDevAccessToContext] developer - making read only request")
 	ctx.Locals("developer", developer)
+
+	// fetch the app with the public key
+	app, err := database.FetchAppByPublicKey(pubKey)
+	if err != nil {
+		log.Printf("[db][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app with public key")
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred")
+	}
+	// set the app to the context
+	ctx.Locals("app", app)
 	return ctx.Next()
 }
 
@@ -123,7 +132,11 @@ func (a *AuthMiddleware) AddReadWriteDeveloperToContext(ctx *fiber.Ctx) error {
 }
 
 func (a *AuthMiddleware) HandleTrolls(ctx *fiber.Ctx) error {
-	var blacklists = []string{"/.env", "/_profiler/phpinfo", "/.htcaccess", "/robot.txt", "/admin.php"}
+	var blacklists = []string{"/.env", "/_profiler/phpinfo",
+		"/.admin",
+		"/.git",
+		"/nginx_status",
+		"/.htcaccess", "/robot.txt", "/admin.php"}
 	for _, blacklist := range blacklists {
 		if strings.Contains(ctx.Path(), blacklist) {
 			log.Printf("[middleware][HandleTrolls] warning - Trolling attempt from IP: %s at path: %s at time: %s\n", ctx.IP(), ctx.Path(), time.Now().String())
@@ -169,9 +182,9 @@ func (a *AuthMiddleware) CheckOrInitiateUserAuthStatus(ctx *fiber.Ctx) error {
 	user, err := database.FindUserByUUID(userId)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User not found")
+			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "App not found")
 		}
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "User not found")
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An internal error occurred")
 	}
 
 	// check if the user is authenticated on orchdio
@@ -221,7 +234,7 @@ func (a *AuthMiddleware) CheckOrInitiateUserAuthStatus(ctx *fiber.Ctx) error {
 		case "applemusic":
 			log.Printf("[middleware][CheckUserAuthStatus] - generating apple music auth token")
 			return ctx.Status(http.StatusNotImplemented).JSON(fiber.Map{
-				"message": "Apple Music auth not implemented yet",
+				"message": "Apple Music auth not supported on this endpoint",
 			})
 		}
 	}

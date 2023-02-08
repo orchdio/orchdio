@@ -447,7 +447,7 @@ func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Cli
 
 func CreateNewPlaylist(title, description, musicToken string, tracks []string) ([]byte, error) {
 	log.Printf("[services][applemusic][CreateNewPlaylist] Creating new playlist: %v\n", title)
-	log.Printf("User Applemusic token is: %v\n", musicToken)
+	log.Printf("App Applemusic token is: %v\n", musicToken)
 	tp := applemusic.Transport{Token: os.Getenv("APPLE_MUSIC_API_KEY"), MusicUserToken: musicToken}
 
 	defer func() {

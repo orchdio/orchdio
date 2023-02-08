@@ -36,7 +36,7 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 	// we want to check the incoming platform redirect. we make sure its only valid for spotify apple and deezer
 	platform := ctx.Params("platform")
 	pubKey := ctx.Get("x-orchdio-public-key")
-	//developer := ctx.Locals("developer").(blueprint.User)
+	//developer := ctx.Locals("developer").(blueprint.App)
 	reg := regexp.MustCompile(`spotify|apple|deezer`)
 
 	if !reg.MatchString(platform) {
@@ -277,7 +277,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 
 		if errorCode == "access_denied" {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: deezer returned an %v error\n", errorCode)
-			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "User access denied")
+			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "App access denied")
 		}
 
 		deezerSecret := os.Getenv("DEEZER_SECRET")

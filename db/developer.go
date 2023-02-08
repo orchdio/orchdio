@@ -10,11 +10,11 @@ import (
 )
 
 // CreateNewApp creates a new app for the developer and returns a uuid of the newly created app
-func (d *NewDB) CreateNewApp(name, description, redirectURL, webhookURL, publicKey, developerId, secretKey string) ([]byte, error) {
+func (d *NewDB) CreateNewApp(name, description, redirectURL, webhookURL, publicKey, developerId, secretKey, verifySecret string) ([]byte, error) {
 	log.Printf("[db][CreateNewApp] developer -  creating new app: %s\n", name)
 	// create a new app
 	uid := uuid.NewString()
-	_, err := d.DB.Exec(queries.CreateNewApp, uid, name, description, redirectURL, webhookURL, publicKey, developerId, secretKey)
+	_, err := d.DB.Exec(queries.CreateNewApp, uid, name, description, redirectURL, webhookURL, publicKey, developerId, secretKey, verifySecret)
 	if err != nil {
 		log.Printf("[db][CreateNewApp] developer -  error: could not create new developer app: %v\n", err)
 		return nil, err
@@ -196,4 +196,16 @@ func (d *NewDB) FetchApps(developerId string) (*[]blueprint.AppInfo, error) {
 
 	log.Printf("[db][FetchAppKeys] developer - apps fetched: %s\n", developerId)
 	return &apps, nil
+}
+
+// UpdateAppKeys updates the public and secret keys associated with an app. It also updates the verify secret key for webhook verification
+func (d *NewDB) UpdateAppKeys(publicKey, secretKey, verifySecret, appId string) error {
+	log.Printf("[db][UpdateAppKeys] developer - updating app keys: %s\n", publicKey)
+	_, err := d.DB.Exec(queries.UpdateAppKeys, publicKey, secretKey, verifySecret, appId)
+	if err != nil {
+		log.Printf("[db][UpdateAppKeys] developer - error: could not update app keys: %v\n", err)
+		return err
+	}
+	log.Printf("[db][UpdateAppKeys] developer - app keys updated: %s\n", publicKey)
+	return nil
 }

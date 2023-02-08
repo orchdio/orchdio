@@ -614,9 +614,7 @@ func CreateNewPlaylist(title, description, musicToken string, tracks []string) (
 		},
 	})
 	p = url.Values{}
-	for _, track := range tracks {
-		p.Add("trackIds", track)
-	}
+	p.Add("trackIds", strings.Join(tracks, ","))
 
 	p.Add("onDupes", "FAIL")
 	p.Add("onArtifactNotFound", "FAIL")
@@ -639,5 +637,7 @@ func CreateNewPlaylist(title, description, musicToken string, tracks []string) (
 		log.Printf("\n[services][tidal][CreateNewPlaylist] - error parsing playlist item addition response - %v\n", err)
 		return nil, err
 	}
-	return []byte(playlist.Data.Uuid), nil
+
+	createdPlaylistLink := fmt.Sprintf("https://tidal.com/browse/playlist/%s", playlist.Data.Uuid)
+	return []byte(createdPlaylistLink), nil
 }

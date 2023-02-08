@@ -1,7 +1,7 @@
 package queries
 
-const CreateNewApp = `INSERT INTO apps (uuid, name, description, redirect_url, webhook_url, created_at, updated_at, public_key, developer, secret_key) 
-	VALUES ($1, $2, $3, $4, $5, now(), now(), $6, $7, $8) RETURNING uuid`
+const CreateNewApp = `INSERT INTO apps (uuid, name, description, redirect_url, webhook_url, created_at, updated_at, public_key, developer, secret_key, verify_token) 
+	VALUES ($1, $2, $3, $4, $5, now(), now(), $6, $7, $8, $9) RETURNING uuid`
 
 const FetchAppByAppID = `SELECT * FROM apps WHERE uuid = $1`
 const FetchAppByPubKey = `SELECT * FROM apps WHERE public_key = $1`
@@ -23,6 +23,7 @@ const DeleteApp = `DELETE FROM apps WHERE uuid = $1`
 
 const DisableApp = `UPDATE apps SET authorized = false WHERE uuid = $1;`
 const EnableApp = `UPDATE apps SET authorized = true WHERE uuid = $1;`
-const FetchAppKeysByID = `SELECT public_key, secret_key FROM apps WHERE uuid = $1;`
+const FetchAppKeysByID = `SELECT public_key, secret_key, verify_token FROM apps WHERE uuid = $1;`
 
 const FetchAppsByDeveloper = `SELECT * FROM apps WHERE developer = $1`
+const UpdateAppKeys = `UPDATE apps SET public_key = $1, secret_key = $2, verify_token = $3 WHERE uuid = $4`

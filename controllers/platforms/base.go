@@ -46,6 +46,7 @@ func NewPlatform(r *redis.Client, db *sqlx.DB, asynqClient *asynq.Client, asynqM
 // ConvertEntity returns the link to a track on several platforms
 func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 	linkInfo := ctx.Locals("linkInfo").(*blueprint.LinkInfo)
+	app := ctx.Locals("app").(*blueprint.DeveloperApp)
 
 	// make sure we're actually handling for track alone, not playlist.
 	if strings.Contains(linkInfo.Entity, "track") {
@@ -112,7 +113,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 	if strings.Contains(linkInfo.Entity, "playlist") {
 		log.Printf("\n[controllers][platforms][ConvertEntity] error - %v\n", "It is a playlist URL")
 
-		user := ctx.Locals("developer").(*blueprint.User)
+		//user := ctx.Locals("developer").(*blueprint.App)
 		uniqueId := uuid.New().String()
 		const format = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-"
 		sid, err := shortid.New(1, format, 2342)
@@ -125,7 +126,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 
 		taskData := &blueprint.PlaylistTaskData{
 			LinkInfo: linkInfo,
-			User:     user,
+			App:      app,
 			TaskID:   uniqueId,
 			ShortURL: shorturl,
 		}
@@ -161,8 +162,9 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 			log.Printf("[controller][conversion][EchoConversion] - error parsing redis url: %v", err)
 			return ctx.Status(http.StatusInternalServerError).JSON("error parsing redis url")
 		}
-		//
-		_taskId, dbErr := database.CreateOrUpdateTask(enquedTask.ID, shorturl, user.UUID.String(), linkInfo.EntityID)
+
+		// we were saving the task developer as user before but now we save the app
+		_taskId, dbErr := database.CreateOrUpdateTask(enquedTask.ID, shorturl, app.UID.String(), linkInfo.EntityID)
 		if dbErr != nil {
 			log.Printf("[controller][conversion][EchoConversion] - error creating task: %v", dbErr)
 			return ctx.Status(http.StatusInternalServerError).JSON("error creating task")
@@ -319,8 +321,8 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 	user, err := database.FindUserByEmail(createBodyData.User, platform)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "User not found")
-			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User not found")
+			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "App not found")
+			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "App not found")
 		}
 		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred.")
@@ -332,8 +334,6 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error decrypting user refresh token - %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred while decrypting refresh token")
 	}
-
-	log.Printf("\n[controllers][platforms][AddPlaylistToAccount] - got user %v\n", string(t))
 
 	//title := fmt.Sprintf("Zoove playlist: %s", createBodyData.Title)
 	description := "powered by Orchdio. https://orchdio.com"

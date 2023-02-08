@@ -55,7 +55,7 @@ func NewConversionController(db *sqlx.DB, red *redis.Client, queue taskq.Queue, 
 func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 	log.Printf("[controller][conversion][EchoConversion] - echo conversion")
 
-	user := ctx.Locals("developer").(*blueprint.User)
+	app := ctx.Locals("app").(*blueprint.DeveloperApp)
 	linkInfo := ctx.Locals("linkInfo").(*blueprint.LinkInfo)
 	uniqueId := uuid.New().String()
 	const format = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-"
@@ -69,7 +69,7 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 
 	taskData := &blueprint.PlaylistTaskData{
 		LinkInfo: linkInfo,
-		User:     user,
+		App:      app,
 		TaskID:   uniqueId,
 		ShortURL: shorturl,
 	}
@@ -89,10 +89,7 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 	// create new task
 	conversionTask := asynq.NewTask(fmt.Sprintf("playlist:conversion:%s", taskData.TaskID), ser, asynq.Retention(time.Hour*24*7*4), asynq.Queue(queue.PlaylistConversionTask))
 
-	//conversionCtx := context.WithValue(context.Background(), "payload", taskData)
-	//log.Printf("[controller][conversion][EchoConversion] - conversionCtx: %v", conversionCtx)
 	// enqueue the task
-	// enquedTask, enqErr := c.Asynq.EnqueueContext(conversionCtx, conversionTask, asynq.Queue(queue.PlaylistConversionQueue), asynq.TaskID(taskData.TaskID), asynq.Unique(time.Second*60))
 	enquedTask, enqErr := c.Asynq.Enqueue(conversionTask, asynq.Queue(queue.PlaylistConversionQueue), asynq.TaskID(taskData.TaskID), asynq.Unique(time.Second*60))
 	if enqErr != nil {
 		log.Printf("[controller][conversion][EchoConversion] - error enqueuing task: %v", enqErr)
@@ -105,8 +102,8 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 		log.Printf("[controller][conversion][EchoConversion] - error parsing redis url: %v", err)
 		return ctx.Status(http.StatusInternalServerError).JSON("error parsing redis url")
 	}
-	//
-	_taskId, dbErr := database.CreateOrUpdateTask(enquedTask.ID, shorturl, user.UUID.String(), linkInfo.EntityID)
+
+	_taskId, dbErr := database.CreateOrUpdateTask(enquedTask.ID, shorturl, app.UID.String(), linkInfo.EntityID)
 	if dbErr != nil {
 		log.Printf("[controller][conversion][EchoConversion] - error creating task: %v", dbErr)
 		return ctx.Status(http.StatusInternalServerError).JSON("error creating task")
@@ -202,12 +199,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 			Status:  taskRecord.Status,
 			Payload: res,
 		}
-		//result := map[string]interface{}{
-		//	"task_id": taskId,
-		//	"status":  taskRecord.Status,
-		//	"data":    res,
-		//}
-
+		
 		return util.SuccessResponse(ctx, http.StatusOK, result)
 	}
 

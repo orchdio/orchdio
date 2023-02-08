@@ -264,7 +264,7 @@ func main() {
 						// for example during server restart or shutdown during task processing, even though we detect queue pauses and pause them
 						// when we do this, the next task the queue server picks up the task, we'll attach this handler to it and just process it.
 						taskHandler := queue.NewOrchdioQueue(asyncClient, db, redisClient)
-						err = taskHandler.PlaylistHandler(t.ResultWriter().TaskID(), taskData.ShortURL, taskData.LinkInfo, taskData.User.UUID.String())
+						err = taskHandler.PlaylistHandler(t.ResultWriter().TaskID(), taskData.ShortURL, taskData.LinkInfo, taskData.App.UID.String())
 						if err != nil {
 							log.Printf("[main] [QueueErrorHandler] Error processing task %v", err)
 							return err
@@ -277,7 +277,7 @@ func main() {
 				}
 
 				taskHandler := queue.NewOrchdioQueue(asyncClient, db, redisClient)
-				err = taskHandler.PlaylistHandler(task.ResultWriter().TaskID(), taskData.ShortURL, taskData.LinkInfo, taskData.User.UUID.String())
+				err = taskHandler.PlaylistHandler(task.ResultWriter().TaskID(), taskData.ShortURL, taskData.LinkInfo, taskData.App.UID.String())
 				if err != nil {
 					log.Printf("[main] [QueueErrorHandler] Error processing task %v", err)
 					return
@@ -484,6 +484,7 @@ func main() {
 	baseRouter.Post("/v1/app/enable", devAppController.EnableApp)
 	appRouter.Delete("/app/delete", devAppController.DeleteApp)
 	appRouter.Put("/:appId", devAppController.UpdateApp)
+	appRouter.Post("/:appId/keys/revoke", devAppController.RevokeAppKeys)
 
 	//baseRouter.Get("/heartbeat", getInfo)
 	orchRouter.Post("/white-tiger", authMiddleware.AddReadWriteDeveloperToContext, whController.Handle)

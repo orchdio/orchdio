@@ -512,7 +512,6 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 		if info.TargetPlatform == deezer.IDENTIFIER {
 			log.Printf("\n[controllers][platforms][base][spotify] - fetching playlist tracks and info from deezer: %v\n", spotifyPlaylist)
 			deezerTracks, omittedDeezerTracks := deezer.FetchPlaylistSearchResult(spotifyPlaylist, red)
-			log.Printf("\n[controllers][platforms][base][spotify] - fetched playlist tracks and info from deezer: %v\n", deezerTracks)
 			conversion.Platforms.Deezer = &blueprint.PlatformPlaylistTrackResult{
 				Tracks:        deezerTracks,
 				Length:        sumUpResultLength(deezerTracks),
@@ -530,7 +529,6 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 		if info.TargetPlatform == tidal.IDENTIFIER {
 			log.Printf("\n[controllers][platforms][base][spotify] - fetching playlist tracks and info from tidal: %v\n", spotifyPlaylist)
 			tidalTracks, omittedTidalTracks := tidal.FetchTrackWithResult(spotifyPlaylist, red)
-			log.Printf("\n[controllers][platforms][base][spotify] - fetched playlist tracks and info from tidal: %v\n", tidalTracks)
 			conversion.Platforms.Tidal = &blueprint.PlatformPlaylistTrackResult{
 				Tracks:        tidalTracks,
 				Length:        sumUpResultLength(tidalTracks),
@@ -606,7 +604,6 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 
 		if info.TargetPlatform == spotify.IDENTIFIER {
 			spotifyTracks, omittedSpotifyTracks := spotify.FetchPlaylistSearchResult(tidalPlaylist, red)
-			log.Printf("\n[controllers][platforms][base][tidal] - fetched playlist tracks and info from spotify: %v\n", spotifyTracks)
 			conversion.Platforms.Spotify = &blueprint.PlatformPlaylistTrackResult{
 				Tracks:        spotifyTracks,
 				Length:        sumUpResultLength(spotifyTracks),
@@ -671,7 +668,6 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 
 		if info.TargetPlatform == deezer.IDENTIFIER {
 			deezerTracks, omittedDeezerTracks := deezer.FetchPlaylistSearchResult(applePlaylist, red)
-			log.Printf("\n[controllers][platforms][base][applemusic] - fetched playlist tracks and info from deezer: %v\n", deezerTracks)
 			conversion.Platforms.Deezer = &blueprint.PlatformPlaylistTrackResult{
 				Tracks:        deezerTracks,
 				Length:        sumUpResultLength(deezerTracks),
@@ -703,7 +699,6 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.Pl
 
 		if info.TargetPlatform == tidal.IDENTIFIER {
 			tidalTracks, omittedTidalTracks := tidal.FetchTrackWithResult(applePlaylist, red)
-			log.Printf("\n[controllers][platforms][base][applemusic] - fetched playlist tracks and info from tidal: %v\n", tidalTracks)
 			conversion.Platforms.Tidal = &blueprint.PlatformPlaylistTrackResult{
 				Tracks:        tidalTracks,
 				Length:        sumUpResultLength(tidalTracks),

@@ -168,8 +168,6 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 		return nil, err
 	}
 
-	log.Printf("\n[services][deezer][base][SearchTrackWithTitle] Track from Deezer search with title result %v\n", fullTrack)
-
 	// NB: when the time comes to properly handle the results and return the best match (sometimes its like the 2nd result)
 	// then, this is where to probably start.
 	if len(fullTrack.Data) > 0 {

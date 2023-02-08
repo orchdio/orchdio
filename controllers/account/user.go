@@ -123,7 +123,7 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	errorCode := ctx.Query("error")
 
 	if errorCode == "access_denied" {
-		return util.ErrorResponse(ctx, http.StatusUnauthorized, "access denied", "User denied access")
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "access denied", "App denied access")
 	}
 
 	encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
@@ -207,7 +207,7 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 		return err
 	}
 
-	log.Printf("\n[user][controller][AuthUser] Method - User with the email %s just signed up or logged in with their Spotify account.\n", user.Email)
+	log.Printf("\n[user][controller][AuthUser] Method - App with the email %s just signed up or logged in with their Spotify account.\n", user.Email)
 	// create a jwt
 	claim := &blueprint.OrchdioUserToken{
 		Email:    user.Email,
@@ -260,7 +260,7 @@ func (c *UserController) AuthOrchdioSpotifyUser(ctx *fiber.Ctx) error {
 	errorCode := ctx.Query("error")
 
 	if errorCode == "access_denied" {
-		return util.ErrorResponse(ctx, http.StatusUnauthorized, "unauthorized", "User denied access")
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "unauthorized", "App denied access")
 	}
 
 	encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
@@ -348,7 +348,7 @@ func (c *UserController) AuthOrchdioSpotifyUser(ctx *fiber.Ctx) error {
 		return err
 	}
 
-	log.Printf("\n[user][controller][AuthUser] Method - User with the email %s just signed up or logged in with their Spotify account.\n", user.Email)
+	log.Printf("\n[user][controller][AuthUser] Method - App with the email %s just signed up or logged in with their Spotify account.\n", user.Email)
 	// create a jwt
 	claim := &blueprint.OrchdioUserToken{
 		Email:    user.Email,
@@ -745,7 +745,7 @@ func (c *UserController) RetrieveKey(ctx *fiber.Ctx) error {
 	key, err := database.FetchUserApikey(claims.Email)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			log.Printf("[controller][user][RetrieveKey] - User does not have a key")
+			log.Printf("[controller][user][RetrieveKey] - App does not have a key")
 			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "You do not have a key")
 		}
 
@@ -846,7 +846,7 @@ func (c *UserController) CreateOrUpdateRedirectURL(ctx *fiber.Ctx) error {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("[controller][user][CreateOrUpdateRedirectURL] - user not found %v\n", claims)
-			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User not found")
+			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "App not found")
 		}
 		log.Printf("[controller][user][CreateOrUpdateRedirectURL] - error updating redirect url %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")

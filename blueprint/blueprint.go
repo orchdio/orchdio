@@ -301,10 +301,10 @@ type ApiKey struct {
 
 // PlaylistTaskData represents the payload of a playlist task
 type PlaylistTaskData struct {
-	LinkInfo *LinkInfo `json:"link_info"`
-	User     *User     `json:"user"`
-	TaskID   string    `json:"task_id"`
-	ShortURL string    `json:"short_url"`
+	LinkInfo *LinkInfo     `json:"link_info"`
+	App      *DeveloperApp `json:"app"`
+	TaskID   string        `json:"task_id"`
+	ShortURL string        `json:"short_url"`
 }
 
 // TaskRecord representsUs a task record in the database
@@ -432,8 +432,9 @@ type Action struct {
 }
 
 type AppKeys struct {
-	PublicKey string `json:"public_key,omitempty" db:"public_key"`
-	SecretKey string `json:"secret_key,omitempty" db:"secret_key"`
+	PublicKey    string `json:"public_key,omitempty" db:"public_key"`
+	SecretKey    string `json:"secret_key,omitempty" db:"secret_key"`
+	VerifySecret string `json:"verify_token,omitempty" db:"verify_secret"`
 }
 
 type AddToWaitlistBody struct {

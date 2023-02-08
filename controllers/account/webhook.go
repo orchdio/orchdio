@@ -124,7 +124,7 @@ func (w *WebhookController) CreateWebhookUrl(ctx *fiber.Ctx) error {
 	if err != nil {
 		if err == blueprint.EALREADY_EXISTS {
 			log.Printf("[controller][user][CreateWebhookUrl] - error - user already has a webhook url")
-			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "User already has a webhook url")
+			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "App already has a webhook url")
 		}
 		log.Printf("[controller][user][CreateWebhookUrl] - error creating webhook url %s\n", err.Error())
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err.Error(), "An unexpected error")
