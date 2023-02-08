@@ -296,7 +296,6 @@ func FetchPlaylistInfo(id string) (*PlaylistInfo, error) {
 		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistInfo] - could not fetch the playlist info for %s - %v\n", err, id)
 		return nil, err
 	}
-	log.Printf("\n[controllers][platforms][tidal][FetchPlaylistInfo] - response - \n")
 	playlistInfo := &PlaylistInfo{}
 	err = json.Unmarshal(response.Data, playlistInfo)
 	if err != nil {

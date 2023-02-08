@@ -25,7 +25,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
-	"github.com/teris-io/shortid"
 	"github.com/zmb3/spotify/v2"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
 	"golang.org/x/oauth2"
@@ -73,14 +72,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 		uniqueId, _ := uuid.NewUUID()
 		// generate a URL friendly short ID. this is what we're going to send to the API response
 		// and user can use it in the conversion URL.
-		const format = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-" // 0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-
-		sid, err := shortid.New(1, format, 2342)
-		if err != nil {
-			log.Printf("\n[controllers][platforms][ConvertEntity] - could not generate short id %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred")
-		}
-		uID, _ := sid.Generate()
-
+		shortURL := util.GenerateShortID()
 		serialized, err := json.Marshal(conversion)
 		if conversion == nil {
 			log.Printf("\n[controllers][platforms][ConvertEntity] - conversion is nil %v\n", err)
@@ -88,14 +80,14 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 		}
 
 		// add the task ID to the conversion response
-		conversion.ShortURL = uID
+		conversion.ShortURL = string(shortURL)
 
 		if err != nil {
 			log.Printf("[db][CreateTrackTaskRecord] error serializing result. %v\n", err)
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred. Could not deserialize result")
 		}
 
-		_, err = database.CreateTrackTaskRecord(uniqueId.String(), uID, linkInfo.EntityID, serialized)
+		_, err = database.CreateTrackTaskRecord(uniqueId.String(), string(shortURL), linkInfo.EntityID, serialized)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][ConvertEntity] - Could not create task record")
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred and could not create task record.")
@@ -111,24 +103,15 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 
 	// make sure we're actually handling for playlist alone, not track.
 	if strings.Contains(linkInfo.Entity, "playlist") {
-		log.Printf("\n[controllers][platforms][ConvertEntity] error - %v\n", "It is a playlist URL")
+		log.Printf("\n[controllers][platforms][deezer][ConvertEntity] warning - It is a playlist URL")
 
-		//user := ctx.Locals("developer").(*blueprint.App)
 		uniqueId := uuid.New().String()
-		const format = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-"
-		sid, err := shortid.New(1, format, 2342)
-		if err != nil {
-			log.Printf("\n[controllers][platforms][ConvertEntity] - could not generate short id %v\n", err)
-			return err
-		}
-
-		shorturl, _ := sid.Generate()
-
+		shortURL := util.GenerateShortID()
 		taskData := &blueprint.PlaylistTaskData{
 			LinkInfo: linkInfo,
 			App:      app,
 			TaskID:   uniqueId,
-			ShortURL: shorturl,
+			ShortURL: string(shortURL),
 		}
 
 		if !strings.Contains(linkInfo.Entity, "playlist") {
@@ -164,7 +147,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 		}
 
 		// we were saving the task developer as user before but now we save the app
-		_taskId, dbErr := database.CreateOrUpdateTask(enquedTask.ID, shorturl, app.UID.String(), linkInfo.EntityID)
+		_taskId, dbErr := database.CreateOrUpdateTask(enquedTask.ID, string(shortURL), app.UID.String(), linkInfo.EntityID)
 		if dbErr != nil {
 			log.Printf("[controller][conversion][EchoConversion] - error creating task: %v", dbErr)
 			return ctx.Status(http.StatusInternalServerError).JSON("error creating task")
@@ -201,14 +184,6 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 					log.Printf("[controller][conversion][EchoConversion] - error getting queue info: %v", err)
 					return err
 				}
-				log.Printf("[controller][conversion][EchoConversion] - dumped task info")
-
-				// get the task from the db
-				//taskRecord, err := database.FetchTask(string(_taskId))
-				if err != nil {
-					log.Printf("[controller][conversion][EchoConversion][error] - could not fetch task record from DB. Fatal error%v", err)
-					return err
-				}
 
 				// update the task to success. because this seems to be a race condition in production where
 				// it duplicates task scheduling even though the task is already queued
@@ -227,11 +202,9 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 					}
 					log.Printf("[controller][conversion][EchoConversion] - queue resumed")
 				}
-				//
-				//log.Printf("Dumped task info")
-				//spew.Dump(queueInfo)
 
 				log.Printf("[controller][conversion][EchoConversion] - task updated to success")
+
 				if r.(string) == "asynq: multiple registrations for playlist:conversion" {
 					log.Printf("[controller][conversion][EchoConversion] - task already queued")
 				}

@@ -319,6 +319,7 @@ type TaskRecord struct {
 	EntityID   string    `json:"entity_id,omitempty" db:"entity_id"`
 	Type       string    `json:"type,omitempty" db:"type"`
 	RetryCount int       `json:"retry_count,omitempty" db:"retry_count"`
+	App        string    `json:"app,omitempty" db:"app"`
 }
 
 type FollowTask struct {

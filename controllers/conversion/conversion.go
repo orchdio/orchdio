@@ -53,7 +53,7 @@ func NewConversionController(db *sqlx.DB, red *redis.Client, queue taskq.Queue, 
 
 // ConvertPlaylist creates a new playlist conversion task and returns an id to the task.
 func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
-	log.Printf("[controller][conversion][EchoConversion] - echo conversion")
+	log.Printf("[controller][conversion][ConvertPlaylist] - echo conversion")
 
 	app := ctx.Locals("app").(*blueprint.DeveloperApp)
 	linkInfo := ctx.Locals("linkInfo").(*blueprint.LinkInfo)
@@ -75,7 +75,7 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 	}
 
 	if !strings.Contains(linkInfo.Entity, "playlist") {
-		log.Printf("[controller][conversion][EchoConversion] - not a playlist")
+		log.Printf("[controller][conversion][ConvertPlaylist] - not a playlist")
 		return ctx.Status(http.StatusBadRequest).JSON("not a playlist")
 	}
 	// create new task and set the handler. the handler will create or update a new task in the db
@@ -83,7 +83,7 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 	// serialize linkInfo
 	ser, err := json.Marshal(&taskData)
 	if err != nil {
-		log.Printf("[controller][conversion][EchoConversion] - error marshalling link info: %v", err)
+		log.Printf("[controller][conversion][ConvertPlaylist] - error marshalling link info: %v", err)
 		return ctx.Status(http.StatusInternalServerError).JSON("error marshalling link info")
 	}
 	// create new task
@@ -92,20 +92,20 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 	// enqueue the task
 	enquedTask, enqErr := c.Asynq.Enqueue(conversionTask, asynq.Queue(queue.PlaylistConversionQueue), asynq.TaskID(taskData.TaskID), asynq.Unique(time.Second*60))
 	if enqErr != nil {
-		log.Printf("[controller][conversion][EchoConversion] - error enqueuing task: %v", enqErr)
+		log.Printf("[controller][conversion][ConvertPlaylist] - error enqueuing task: %v", enqErr)
 		return ctx.Status(http.StatusInternalServerError).JSON("error enqueuing task")
 	}
 
 	database := db.NewDB{DB: c.DB}
 	redisOpts, err := redis.ParseURL(os.Getenv("REDISCLOUD_URL"))
 	if err != nil {
-		log.Printf("[controller][conversion][EchoConversion] - error parsing redis url: %v", err)
+		log.Printf("[controller][conversion][ConvertPlaylist] - error parsing redis url: %v", err)
 		return ctx.Status(http.StatusInternalServerError).JSON("error parsing redis url")
 	}
 
 	_taskId, dbErr := database.CreateOrUpdateTask(enquedTask.ID, shorturl, app.UID.String(), linkInfo.EntityID)
 	if dbErr != nil {
-		log.Printf("[controller][conversion][EchoConversion] - error creating task: %v", dbErr)
+		log.Printf("[controller][conversion][ConvertPlaylist] - error creating task: %v", dbErr)
 		return ctx.Status(http.StatusInternalServerError).JSON("error creating task")
 	}
 	orchdioQueue := queue.NewOrchdioQueue(c.Asynq, c.DB, c.Red)
@@ -122,13 +122,13 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 	defer func() error {
 		// handle panic
 		if r := recover(); r != nil {
-			log.Printf("[controller][conversion][EchoConversion] - gracefully ignoring this")
-			log.Printf("[controller][conversion][EchoConversion] - task already queued%v", r)
+			log.Printf("[controller][conversion][ConvertPlaylist] - gracefully ignoring this")
+			log.Printf("[controller][conversion][ConvertPlaylist] - task already queued%v", r)
 			inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
 
 			queueInfo, err := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
 			if err != nil {
-				log.Printf("[controller][conversion][EchoConversion] - error getting queue info: %v", err)
+				log.Printf("[controller][conversion][ConvertPlaylist] - error getting queue info: %v", err)
 				return err
 			}
 
@@ -137,31 +137,31 @@ func (c *Controller) ConvertPlaylist(ctx *fiber.Ctx) error {
 			// update task to success
 			err = database.UpdateTaskStatus(enquedTask.ID, "pending")
 			if err != nil {
-				log.Printf("[controller][conversion][EchoConversion] - error unmarshalling task data: %v", err)
+				log.Printf("[controller][conversion][ConvertPlaylist] - error unmarshalling task data: %v", err)
 			}
 
 			if queueInfo.Paused {
-				log.Printf("[controller][conversion][EchoConversion] - queue is paused. resuming it")
+				log.Printf("[controller][conversion][ConvertPlaylist] - queue is paused. resuming it")
 				err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
 				if err != nil {
-					log.Printf("[controller][conversion][EchoConversion] - error resuming queue. Dumping error: ")
+					log.Printf("[controller][conversion][ConvertPlaylist] - error resuming queue. Dumping error: ")
 					spew.Dump(err)
 					log.Printf("\n")
 				}
-				log.Printf("[controller][conversion][EchoConversion] - queue resumed")
+				log.Printf("[controller][conversion][ConvertPlaylist] - queue resumed")
 			}
 
-			log.Printf("[controller][conversion][EchoConversion] - task updated to success")
+			log.Printf("[controller][conversion][ConvertPlaylist] - task updated to success")
 			if r.(string) == "asynq: multiple registrations for playlist:conversion" {
-				log.Printf("[controller][conversion][EchoConversion] - task already queued")
+				log.Printf("[controller][conversion][ConvertPlaylist] - task already queued")
 			}
 		}
-		log.Printf("[controller][conversion][EchoConversion] - recovered from panic.. task already queued")
+		log.Printf("[controller][conversion][ConvertPlaylist] - recovered from panic.. task already queued")
 
 		return util.SuccessResponse(ctx, http.StatusOK, res)
 	}()
 	c.AsynqMux.HandleFunc("playlist:conversion:", orchdioQueue.PlaylistTaskHandler)
-	log.Printf("[controller][conversion][EchoConversion] - task handler attached")
+	log.Printf("[controller][conversion][ConvertPlaylist] - task handler attached")
 	return util.SuccessResponse(ctx, http.StatusCreated, res)
 }
 
@@ -184,8 +184,12 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 	taskUUID, err := uuid.Parse(taskId)
 	if err != nil {
 		log.Printf("[controller][conversion][GetPlaylistTaskStatus][warning] - not a playlist task, most likely a short url")
-		// TODO: type track response task. Ideally this would be for a shortlink, but returning interface for now,
-		//   kill this when i move this to a separate handler method
+
+		// we are casting the result into an interface. Before, we wanted to type each response
+		// but with the current implementation, we don't care about that here because each result we
+		// deserialize here and return to client is already typed based on what the entity is. For example
+		// in this case, it isn't a playlist task, it might be a track or follow task. Casting into interface
+		// is ok because each of these results were typed from a struct before being serialized into the DB for storage.
 		var res interface{}
 		// HACK: to check if the task is a playlist task result as to be able to format the right type
 		err = json.Unmarshal([]byte(taskRecord.Result), &res)
@@ -199,7 +203,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 			Status:  taskRecord.Status,
 			Payload: res,
 		}
-		
+
 		return util.SuccessResponse(ctx, http.StatusOK, result)
 	}
 

@@ -17,6 +17,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
+	"github.com/teris-io/shortid"
 	"golang.org/x/text/unicode/norm"
 	"io"
 	"log"
@@ -314,4 +315,20 @@ func GenerateHMAC(message interface{}, secret string) []byte {
 	}
 	mac.Write(payload)
 	return []byte(hex.EncodeToString(mac.Sum(nil)))
+}
+
+// GenerateShortID generates a short id, used for short url for final conversion/entity results. The ID is 10 characters long
+func GenerateShortID() []byte {
+	const format = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-"
+	sid, err := shortid.New(1, format, 2342)
+	if err != nil {
+		log.Printf("\n[main][GenerateShortID] - error generating short id %v\n", err)
+		return nil
+	}
+	shortID, err := sid.Generate()
+	if err != nil {
+		log.Printf("\n[main][GenerateShortID] - error generating short id %v\n", err)
+		return nil
+	}
+	return []byte(shortID)
 }

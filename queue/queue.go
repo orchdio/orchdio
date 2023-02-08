@@ -57,8 +57,6 @@ func (o *OrchdioQueue) NewPlaylistQueue(entityID string, payload *blueprint.Link
 func (o *OrchdioQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task) error {
 	log.Printf("[queue][PlaylistTaskHandler] - processing task")
 
-	log.Printf("[queue][PlaylistTaskHandler] - task context info: %v", ctx)
-	//handlerChan := make(chan int)
 	// deserialize the task payload and get the PlaylistTaskData struct
 	var data blueprint.PlaylistTaskData
 	err := json.Unmarshal(task.Payload(), &data)
@@ -83,7 +81,7 @@ func (o *OrchdioQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task
 func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.LinkInfo, appId string) error {
 	log.Printf("[queue][PlaylistHandler] - processing task: %v", uid)
 	database := db.NewDB{DB: o.DB}
-	log.Printf("[queue][PlaylistHandler] - processing playlist: %v %v %v\n", database, info, appId)
+	log.Printf("[queue][PlaylistHandler] - processing playlist: %v %v %v\n", database, info.TargetLink, appId)
 
 	// fetch app from db
 	app, err := database.FetchAppByAppId(appId)
@@ -122,7 +120,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 		if err == blueprint.ENORESULT {
 			// create a new
 			payload := blueprint.TaskErrorPayload{
-				Platform: "applemusic",
+				Platform: info.Platform,
 				Status:   "failed",
 				Error:    "Not Found",
 				Message:  "It could be that the playlist is visible but has not been added to public and search by Author. See https://support.apple.com/en-gb/HT207948",
