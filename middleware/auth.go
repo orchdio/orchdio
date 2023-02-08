@@ -128,6 +128,15 @@ func (a *AuthMiddleware) AddReadWriteDeveloperToContext(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "invalid x-orchdio-key header")
 	}
 	ctx.Locals("developer", &developer)
+
+	database := db.NewDB{DB: a.DB}
+	app, err := database.FetchAppBySecretKey([]byte(key))
+	if err != nil {
+		log.Printf("[db][AddReadWriteDevAccessToContext] developer -  error: could not fetch app with private key")
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred")
+	}
+	// set the app to the context
+	ctx.Locals("app", app)
 	return ctx.Next()
 }
 
