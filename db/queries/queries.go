@@ -34,7 +34,7 @@ const FetchUserWithApiKey = `SELECT u.id, u.email, coalesce(u.username, '') as u
 const UpdateUserWebhook = `UPDATE webhooks SET url = $1, verify_token = $3, updated_at = now() FROM users AS u WHERE "user" = $2 RETURNING uuid;`
 const DeleteUserWebhook = `DELETE FROM webhooks wh WHERE wh.user = $1;`
 
-const CreateOrUpdateTask = `INSERT INTO tasks(uuid, shortid, "user", entity_id, created_at, updated_at, type) values ($1, $2, $3, $4, now(), now(), 'conversion') ON CONFLICT("uuid") 
+const CreateOrUpdateTask = `INSERT INTO tasks(uuid, shortid, app, entity_id, created_at, updated_at, type) values ($1, $2, $3, $4, now(), now(), 'conversion') ON CONFLICT("uuid") 
 DO UPDATE SET status = 'pending', updated_at = now() RETURNING uuid;`
 
 const UpdateTaskStatus = `UPDATE tasks SET status = $2, updated_at = now() WHERE uuid = $1 RETURNING uuid;`
