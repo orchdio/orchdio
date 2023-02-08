@@ -435,7 +435,7 @@ type Action struct {
 type AppKeys struct {
 	PublicKey    string `json:"public_key,omitempty" db:"public_key"`
 	SecretKey    string `json:"secret_key,omitempty" db:"secret_key"`
-	VerifySecret string `json:"verify_token,omitempty" db:"verify_secret"`
+	VerifySecret string `json:"verify_secret,omitempty" db:"verify_token"`
 }
 
 type AddToWaitlistBody struct {

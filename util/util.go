@@ -310,7 +310,7 @@ func GenerateHMAC(message interface{}, secret string) []byte {
 	// serialize message
 	payload, err := json.Marshal(message)
 	if err != nil {
-		log.Printf("\n[main][SocketEvent][EventMessage] - error serializing message %v\n", err)
+		log.Printf("\n error serializing message before generating sha256 hash %v\n", err)
 		return nil
 	}
 	mac.Write(payload)
