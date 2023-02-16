@@ -46,14 +46,22 @@ type MorbinTime string
 type User struct {
 	Email        string      `json:"email" db:"email"`
 	Usernames    interface{} `json:"usernames" db:"usernames"`
-	Username     string      `json:"username" db:"username"`
-	ID           int         `json:"id" db:"id"`
+	Username     string      `json:"username,omitempty" db:"username"`
+	ID           int         `json:"id,omitempty" db:"id"`
 	UUID         uuid.UUID   `json:"uuid" db:"uuid"`
 	CreatedAt    string      `json:"created_at" db:"created_at"`
 	UpdatedAt    string      `json:"updated_at" db:"updated_at"`
 	RefreshToken []byte      `json:"refresh_token" db:"refresh_token,omitempty"`
 	PlatformID   string      `json:"platform_id" db:"platform_id"`
-	Authorized   bool        `json:"authorized" db:"authorized,omitempty"`
+	Authorized   bool        `json:"authorized,omitempty" db:"authorized,omitempty"`
+}
+
+type UserProfile struct {
+	Email     string      `json:"email" db:"email"`
+	Usernames interface{} `json:"usernames" db:"usernames"`
+	UUID      uuid.UUID   `json:"uuid" db:"uuid"`
+	CreatedAt string      `json:"created_at,omitempty" db:"created_at"`
+	UpdatedAt string      `json:"updated_at,omitempty" db:"updated_at"`
 }
 
 //type AppleMusicAuthBody struct {

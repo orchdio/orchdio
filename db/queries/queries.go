@@ -18,6 +18,11 @@ const FindUserByEmail = `SELECT id, email, coalesce(username, '') AS username, u
        (case when $2 ILIKE '%spotify%' then spotify_token when $2 ILIKE '%deezer%' then deezer_token when $2 ILIKE '%applemusic%' then applemusic_token else refresh_token end) AS refresh_token  FROM users where email = $1`
 const FindUserByUUID = `SELECT id, email, coalesce(username, '') AS username, uuid, created_at, updated_at, usernames FROM users where uuid = $1 AND platform_id IS NOT NULL`
 
+// FindUserProfileByEmail is similar to FindUserByEmail with the fact that they both fetch profile info for a user except this one fetches just the user profile we want to return
+// without including the refreshtoken and other fields. the above is currently used in the code and it has its own usecases. They are similar, but it seems there are more fields needed
+// above for the places its used and its a lot of work amending to use that only. Maybe if it gets messier, it'll be refactored into 1.
+const FindUserProfileByEmail = `SELECT email, usernames, uuid, created_at, updated_at FROM users WHERE email = $1`
+
 const FetchUserApiKey = `SELECT api.* FROM apikeys api JOIN users u ON u.uuid = api.user WHERE u.email = $1;`
 
 const CreateNewKey = `INSERT INTO apiKeys(key, "user", revoked, created_at, updated_at) values ($1, $2, false, now(), now());`

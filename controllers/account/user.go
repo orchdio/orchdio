@@ -568,215 +568,20 @@ func (c *UserController) AuthAppleMusicUser(ctx *fiber.Ctx) error {
 }
 
 // FetchProfile fetches the playlist of the person, on the platform
-func (c *UserController) FetchProfile(ctx *fiber.Ctx) error {
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
-
-	database := db.NewDB{
-		DB: c.DB,
-	}
-
-	user, err := database.FindUserByEmail(claims.Email, claims.Platform)
-	if err != nil {
-		return util.ErrorResponse(ctx, http.StatusBadRequest, err, "Could not fetch user profile")
-	}
-
-	return util.SuccessResponse(ctx, http.StatusOK, user)
-}
-
-// GenerateAPIKey generates API key for users
-func (c *UserController) GenerateAPIKey(ctx *fiber.Ctx) error {
-	/**
-	  SPEC
-	=====================================================================================================
-	  When a user wants to generate keys, first they obviously must have an account
-	  At the moment, there shall be no rate limit on the APIs.
-
-	  The API key would be like so: "xxx-xxx-xxx-xxx". A UUID v4 seems to fit this the most
-	  but if there are other ways to generate an ID similar to that, then its okay. Specific way/tool to
-	  arrive at the solution is up to be decided when implementing.
-
-	  The API key shall keep count of how many requests have been made. This is to ensure that there is
-	  good tracking of requests per app since there are no specific rate-limiting yet.
-
-	  The API key shall be used in the header like: "x-orchdio-key".
-
-	  There shall be just one key allowed per user for the moment.
-	  =====================================================================================================
-
-
-	  IMPLEMENTATION NOTES
-	  Create a new table called apiKeys
-	  Create a 1-1 (for now) relationship for apiKeys to users
-
-
-	  First, check if the access token is valid. An api key is valid for indefinite time (for now)
-	  If its valid, then the user can make calls. If not, they need to auth again.
-	*/
-
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
-
-	apiToken, _ := uuid.NewUUID()
-
-	database := db.NewDB{
-		DB: c.DB,
-	}
-
-	// first fetch user
-	user, err := database.FindUserByEmail(claims.Email, claims.Platform)
-	existingKey, err := database.FetchUserApikey(user.Email)
-	if err != nil && err != sql.ErrNoRows {
-		if err != sql.ErrNoRows {
-
-			log.Printf("[controller][user][GenerateApiKey] could not fetch api key from db. %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not fetch key from database")
-		}
-	}
-
-	// first check if the user already has an api key. if they do, return a
-	// http conflict status
-	if existingKey != nil {
-		log.Printf("[controller][user][Generate] warning - user already has key")
-		errResponse := "You already have a key"
-		return util.ErrorResponse(ctx, http.StatusConflict, "record conflict", errResponse)
-	}
-
-	// save into db
-	query := queries.CreateNewKey
-	_, dbErr := c.DB.Exec(query,
-		apiToken.String(),
-		user.UUID,
-	)
-
-	if dbErr != nil {
-		log.Printf("\n[controller][account][user][AuthUser] Error executing query: %v\n. Could not create new key", dbErr)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not create new key")
-	}
-
-	response := map[string]string{
-		"key": apiToken.String(),
-	}
-	log.Printf("[controller][accounnt][user]: Created a new api key for user\n")
-	return util.SuccessResponse(ctx, http.StatusCreated, response)
-
-}
-
-// RevokeKey revokes an api key.
-func (c *UserController) RevokeKey(ctx *fiber.Ctx) error {
-	// get the api key from the header
-	apiKey := ctx.Get("x-orchdio-key")
-	// we want to set the value of revoked to true
-	database := db.NewDB{DB: c.DB}
-
-	err := database.RevokeApiKey(apiKey)
-	if err != nil {
-		log.Printf("[controller][user][RevokeKey] error revoking key. %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
-	}
-
-	return util.SuccessResponse(ctx, http.StatusOK, nil)
-}
-
-// UnRevokeKey unrevokes an api key.
-func (c *UserController) UnRevokeKey(ctx *fiber.Ctx) error {
-	// get the api key from the header
-	apiKey := ctx.Get("x-orchdio-key")
-	// we want to set the value of revoked to true
-	database := db.NewDB{DB: c.DB}
-
-	err := database.UnRevokeApiKey(apiKey)
-	if err != nil {
-		log.Printf("[controller][user][RevokeKey] error revoking key. %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
-	}
-	log.Printf("[controller][user][UnRevokeKey] UnRevoked key")
-	return util.SuccessResponse(ctx, http.StatusOK, nil)
-}
-
-// RetrieveKey retrieves an API key associated with the user
-func (c *UserController) RetrieveKey(ctx *fiber.Ctx) error {
-	// swagger:route GET /key RetrieveKey
-	//
-	// Retrieves an API key associated with the user. The user is known by examining the request header and as such, the user must be authenticated
-	//
-	// ---
-	// Consumes:
-	//  - application/json
-	//
-	// Produces:
-	//  - application/json
-	//
-	// Schemes: https
-	//
-	// Security:
-	// 	api_key:
-	// 		[x-orchdio-key]:
-	//
-	// Responses:
-	//  200: retrieveApiKeyResponse
-
-	// swagger:response retrieveApiKeyResponse
-	type RetrieveApiKeyResponse struct {
-		// The message attached to the response.
-		//
-		// Required: true
-		//
-		// Example: "This is a message about whatever i can tell you about the error"
-		Message string `json:"message"`
-		// Description: The error code attached to the response. This will return 200 (or 201), depending on the endpoint. It returns 4xx - 5xx as suitable, otherwise.
-		//
-		// Required: true
-		//
-		// Example: 201
-		Status string `json:"status"`
-		// The key attached to the response.
-		//
-		// Example: c8e51d6c-4d6f-42f6-bcb6-9da19fc5b848
-		//
-		// Required: true
-		Data interface{} `json:"data"`
-	}
-
-	log.Printf("[controller][user][RetrieveKey] - Retrieving API key")
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
-	database := db.NewDB{
-		DB: c.DB,
-	}
-
-	key, err := database.FetchUserApikey(claims.Email)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			log.Printf("[controller][user][RetrieveKey] - App does not have a key")
-			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "You do not have a key")
-		}
-
-		log.Printf("[controller][user][RetrieveKey] - Could not retrieve user key. %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error")
-	}
-	log.Printf("[controller][user][RetrieveKey] - Retrieved apikey for user %+v\n", key)
-	return util.SuccessResponse(ctx, http.StatusOK, key.Key)
-}
-
-// DeleteKey deletes a user's api key
-func (c *UserController) DeleteKey(ctx *fiber.Ctx) error {
-	log.Printf("[controller][user][DeleteKey] - deleting key")
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
-	apiKey := ctx.Get("x-orchdio-key")
-	database := db.NewDB{DB: c.DB}
-
-	deletedKey, err := database.DeleteApiKey(apiKey, claims.UUID.String())
-	if err != nil {
-		log.Printf("[controller][user][DeleteKey] - error deleting Key from database %s\n", err.Error())
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error")
-	}
-
-	if len(deletedKey) == 0 {
-		log.Printf("[controller][user][DeleteKey] - key already deleted")
-		return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "Key not found. You already deleted this key")
-	}
-
-	log.Printf("[controller][user][DeleteKey] - deleted key for user %v\n", claims)
-	return util.SuccessResponse(ctx, http.StatusOK, string(deletedKey))
-}
+//func (c *UserController) FetchProfile(ctx *fiber.Ctx) error {
+//	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+//
+//	database := db.NewDB{
+//		DB: c.DB,
+//	}
+//
+//	user, err := database.FindUserByEmail(claims.Email, claims.Platform)
+//	if err != nil {
+//		return util.ErrorResponse(ctx, http.StatusBadRequest, err, "Could not fetch user profile")
+//	}
+//
+//	return util.SuccessResponse(ctx, http.StatusOK, user)
+//}
 
 func (c *UserController) AddToWaitlist(ctx *fiber.Ctx) error {
 	// we want to be able to add users to the waitlist. This means that we add the email to a "waitlist" table in the db
@@ -854,3 +659,257 @@ func (c *UserController) CreateOrUpdateRedirectURL(ctx *fiber.Ctx) error {
 	log.Printf("[controller][user][CreateOrUpdateRedirectURL] - updated redirect url for user %v\n", claims.UUID.String())
 	return util.SuccessResponse(ctx, http.StatusOK, nil)
 }
+
+// FetchProfile fetches the user profile
+func (c *UserController) FetchProfile(ctx *fiber.Ctx) error {
+	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+	if claims.Email == "" {
+		log.Printf("\n[user][controller][FetchUserProfile] warning - email not passed. Please pass email")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Email not passed")
+	}
+	log.Printf("\n[user][controller][FetchUserProfile] fetching user profile with email %s\n", claims.Email)
+	// get the user via the email
+	database := db.NewDB{DB: c.DB}
+	user, err := database.FindUserProfileByEmail(claims.Email)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("\n[user][controller][FetchUserProfile] error - user not found %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User profile not found. This user may not have connected to Orchdio yet")
+		}
+		log.Printf("\n[user][controller][FetchUserProfile] error - error fetching user profile %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+	}
+	return util.SuccessResponse(ctx, http.StatusOK, user)
+}
+
+// FetchUserProfile fetches the user profile.
+func (c *UserController) FetchUserProfile(ctx *fiber.Ctx) error {
+	email := ctx.Query("email")
+	if email == "" {
+		log.Printf("\n[user][controller][FetchUserProfile] warning - email not passed. Please pass email")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Email not passed")
+	}
+	log.Printf("\n[user][controller][FetchUserProfile] fetching user profile with email %s\n", email)
+
+	// check if the email is valid
+	_, err := mail.ParseAddress(email)
+	if err != nil {
+		log.Printf("\n[user][controller][FetchUserProfile] error - invalid email %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid email")
+	}
+	// get the user via the email
+	database := db.NewDB{DB: c.DB}
+	user, err := database.FindUserProfileByEmail(email)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("\n[user][controller][FetchUserProfile] error - user not found %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User profile not found. This user may not have connected to Orchdio yet")
+		}
+		log.Printf("\n[user][controller][FetchUserProfile] error - error fetching user profile %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+	}
+	return util.SuccessResponse(ctx, http.StatusOK, user)
+}
+
+// FetchPlatformPlaylists fetches the all the playlists on a user's platform library
+//func (c *UserController) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
+//	log.Printf("[controller][user][FetchPlatformPlaylists] fetching platform playlists")
+//	app := ctx.Locals("app").(*blueprint.DeveloperApp)
+//
+//	return util.SuccessResponse(ctx, http.StatusOK, nil)
+//}
+
+// GenerateAPIKey generates API key for users
+//func (c *UserController) GenerateAPIKey(ctx *fiber.Ctx) error {
+//	/**
+//	  SPEC
+//	=====================================================================================================
+//	  When a user wants to generate keys, first they obviously must have an account
+//	  At the moment, there shall be no rate limit on the APIs.
+//
+//	  The API key would be like so: "xxx-xxx-xxx-xxx". A UUID v4 seems to fit this the most
+//	  but if there are other ways to generate an ID similar to that, then its okay. Specific way/tool to
+//	  arrive at the solution is up to be decided when implementing.
+//
+//	  The API key shall keep count of how many requests have been made. This is to ensure that there is
+//	  good tracking of requests per app since there are no specific rate-limiting yet.
+//
+//	  The API key shall be used in the header like: "x-orchdio-key".
+//
+//	  There shall be just one key allowed per user for the moment.
+//	  =====================================================================================================
+//
+//
+//	  IMPLEMENTATION NOTES
+//	  Create a new table called apiKeys
+//	  Create a 1-1 (for now) relationship for apiKeys to users
+//
+//
+//	  First, check if the access token is valid. An api key is valid for indefinite time (for now)
+//	  If its valid, then the user can make calls. If not, they need to auth again.
+//	*/
+//
+//	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+//
+//	apiToken, _ := uuid.NewUUID()
+//
+//	database := db.NewDB{
+//		DB: c.DB,
+//	}
+//
+//	// first fetch user
+//	user, err := database.FindUserByEmail(claims.Email, claims.Platform)
+//	existingKey, err := database.FetchUserApikey(user.Email)
+//	if err != nil && err != sql.ErrNoRows {
+//		if err != sql.ErrNoRows {
+//
+//			log.Printf("[controller][user][GenerateApiKey] could not fetch api key from db. %v\n", err)
+//			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not fetch key from database")
+//		}
+//	}
+//
+//	// first check if the user already has an api key. if they do, return a
+//	// http conflict status
+//	if existingKey != nil {
+//		log.Printf("[controller][user][Generate] warning - user already has key")
+//		errResponse := "You already have a key"
+//		return util.ErrorResponse(ctx, http.StatusConflict, "record conflict", errResponse)
+//	}
+//
+//	// save into db
+//	query := queries.CreateNewKey
+//	_, dbErr := c.DB.Exec(query,
+//		apiToken.String(),
+//		user.UUID,
+//	)
+//
+//	if dbErr != nil {
+//		log.Printf("\n[controller][account][user][AuthUser] Error executing query: %v\n. Could not create new key", dbErr)
+//		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not create new key")
+//	}
+//
+//	response := map[string]string{
+//		"key": apiToken.String(),
+//	}
+//	log.Printf("[controller][accounnt][user]: Created a new api key for user\n")
+//	return util.SuccessResponse(ctx, http.StatusCreated, response)
+//
+//}
+
+// RevokeKey revokes an api key.
+//func (c *UserController) RevokeKey(ctx *fiber.Ctx) error {
+//	// get the api key from the header
+//	apiKey := ctx.Get("x-orchdio-key")
+//	// we want to set the value of revoked to true
+//	database := db.NewDB{DB: c.DB}
+//
+//	err := database.RevokeApiKey(apiKey)
+//	if err != nil {
+//		log.Printf("[controller][user][RevokeKey] error revoking key. %v\n", err)
+//		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+//	}
+//
+//	return util.SuccessResponse(ctx, http.StatusOK, nil)
+//}
+
+// UnRevokeKey unrevokes an api key.
+//func (c *UserController) UnRevokeKey(ctx *fiber.Ctx) error {
+//	// get the api key from the header
+//	apiKey := ctx.Get("x-orchdio-key")
+//	// we want to set the value of revoked to true
+//	database := db.NewDB{DB: c.DB}
+//
+//	err := database.UnRevokeApiKey(apiKey)
+//	if err != nil {
+//		log.Printf("[controller][user][RevokeKey] error revoking key. %v\n", err)
+//		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+//	}
+//	log.Printf("[controller][user][UnRevokeKey] UnRevoked key")
+//	return util.SuccessResponse(ctx, http.StatusOK, nil)
+//}
+
+// RetrieveKey retrieves an API key associated with the user
+//func (c *UserController) RetrieveKey(ctx *fiber.Ctx) error {
+//	// swagger:route GET /key RetrieveKey
+//	//
+//	// Retrieves an API key associated with the user. The user is known by examining the request header and as such, the user must be authenticated
+//	//
+//	// ---
+//	// Consumes:
+//	//  - application/json
+//	//
+//	// Produces:
+//	//  - application/json
+//	//
+//	// Schemes: https
+//	//
+//	// Security:
+//	// 	api_key:
+//	// 		[x-orchdio-key]:
+//	//
+//	// Responses:
+//	//  200: retrieveApiKeyResponse
+//
+//	// swagger:response retrieveApiKeyResponse
+//	type RetrieveApiKeyResponse struct {
+//		// The message attached to the response.
+//		//
+//		// Required: true
+//		//
+//		// Example: "This is a message about whatever i can tell you about the error"
+//		Message string `json:"message"`
+//		// Description: The error code attached to the response. This will return 200 (or 201), depending on the endpoint. It returns 4xx - 5xx as suitable, otherwise.
+//		//
+//		// Required: true
+//		//
+//		// Example: 201
+//		Status string `json:"status"`
+//		// The key attached to the response.
+//		//
+//		// Example: c8e51d6c-4d6f-42f6-bcb6-9da19fc5b848
+//		//
+//		// Required: true
+//		Data interface{} `json:"data"`
+//	}
+//
+//	log.Printf("[controller][user][RetrieveKey] - Retrieving API key")
+//	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+//	database := db.NewDB{
+//		DB: c.DB,
+//	}
+//
+//	key, err := database.FetchUserApikey(claims.Email)
+//	if err != nil {
+//		if err == sql.ErrNoRows {
+//			log.Printf("[controller][user][RetrieveKey] - App does not have a key")
+//			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "You do not have a key")
+//		}
+//
+//		log.Printf("[controller][user][RetrieveKey] - Could not retrieve user key. %v\n", err)
+//		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error")
+//	}
+//	log.Printf("[controller][user][RetrieveKey] - Retrieved apikey for user %+v\n", key)
+//	return util.SuccessResponse(ctx, http.StatusOK, key.Key)
+//}
+
+// DeleteKey deletes a user's api key
+//func (c *UserController) DeleteKey(ctx *fiber.Ctx) error {
+//	log.Printf("[controller][user][DeleteKey] - deleting key")
+//	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+//	apiKey := ctx.Get("x-orchdio-key")
+//	database := db.NewDB{DB: c.DB}
+//
+//	deletedKey, err := database.DeleteApiKey(apiKey, claims.UUID.String())
+//	if err != nil {
+//		log.Printf("[controller][user][DeleteKey] - error deleting Key from database %s\n", err.Error())
+//		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error")
+//	}
+//
+//	if len(deletedKey) == 0 {
+//		log.Printf("[controller][user][DeleteKey] - key already deleted")
+//		return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "Key not found. You already deleted this key")
+//	}
+//
+//	log.Printf("[controller][user][DeleteKey] - deleted key for user %v\n", claims)
+//	return util.SuccessResponse(ctx, http.StatusOK, string(deletedKey))
+//}

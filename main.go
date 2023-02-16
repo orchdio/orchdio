@@ -459,6 +459,7 @@ func main() {
 
 	orchRouter.Get("/task/:taskId", authMiddleware.AddReadOnlyDeveloperToContext, conversionController.GetPlaylistTask)
 	orchRouter.Post("/playlist/:platform/add", authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.AddPlaylistToAccount)
+	orchRouter.Get("/account/", authMiddleware.AddReadWriteDeveloperToContext, userController.FetchUserProfile)
 
 	orchRouter.Post("/follow", authMiddleware.AddReadWriteDeveloperToContext, followController.FollowPlaylist)
 	orchRouter.Post("/waitlist/add", authMiddleware.AddReadWriteDeveloperToContext, userController.AddToWaitlist)
@@ -507,7 +508,7 @@ func main() {
 	// FIXME: move this endpoint thats fetching link info from the `controllers` package
 	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
 
-	baseRouter.Get("/key", userController.RetrieveKey)
+	//baseRouter.Get("/key", userController.RetrieveKey)
 
 	// now to the WS endpoint to connect to when they visit the website and want to "convert"
 	app.Get("/portal", ikisocket.New(func(kws *ikisocket.Websocket) {

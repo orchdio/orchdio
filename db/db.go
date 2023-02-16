@@ -32,8 +32,28 @@ func (d *NewDB) FindUserByEmail(email, platform string) (*blueprint.User, error)
 		log.Printf("[controller][db] error unmarshalling usernames. %v\n", err)
 		return nil, err
 	}
-	user.Usernames = userNames
 	return user, nil
+}
+
+// FindUserProfileByEmail fetches a user profile by email.
+func (d *NewDB) FindUserProfileByEmail(email string) (*blueprint.UserProfile, error) {
+	result := d.DB.QueryRowx(queries.FindUserProfileByEmail, email)
+	profile := &blueprint.UserProfile{}
+	err := result.StructScan(profile)
+
+	if err != nil {
+		log.Printf("\n[controller][db] warning - error fetching user profile by email")
+		return nil, err
+	}
+
+	var usernames map[string]string
+	err = json.Unmarshal(profile.Usernames.([]byte), &usernames)
+	if err != nil {
+		log.Printf("\n[controller][db] warning - error deserializing usernames")
+		return nil, err
+	}
+	profile.Usernames = usernames
+	return profile, nil
 }
 
 // FindUserByUUID finds a user by their UUID
