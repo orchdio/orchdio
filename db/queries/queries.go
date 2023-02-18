@@ -16,7 +16,7 @@ const UpdatePlatformUsernames = `UPDATE users SET usernames = COALESCE(usernames
 // FindUserByEmail returns a  user the email. it fetches the refresh token for the user based on platform passed. if no platform passed, it'll return refresh_token
 const FindUserByEmail = `SELECT id, email, coalesce(username, '') AS username, uuid, created_at, updated_at, usernames, platform_id, 
        (case when $2 ILIKE '%spotify%' then spotify_token when $2 ILIKE '%deezer%' then deezer_token when $2 ILIKE '%applemusic%' then applemusic_token else refresh_token end) AS refresh_token  FROM users where email = $1`
-const FindUserByUUID = `SELECT id, email, coalesce(username, '') AS username, uuid, created_at, updated_at, usernames FROM users where uuid = $1 AND platform_id IS NOT NULL`
+const FindUserByUUID = `SELECT id, email, coalesce(username, '') AS username, uuid, created_at, updated_at, usernames, (case when $2 ILIKE '%spotify%' then spotify_token when $2 ILIKE '%deezer%' then deezer_token when $2 ILIKE '%applemusic%' then applemusic_token end) AS refresh_token  FROM users where uuid = $1 AND platform_id IS NOT NULL`
 
 // FindUserProfileByEmail is similar to FindUserByEmail with the fact that they both fetch profile info for a user except this one fetches just the user profile we want to return
 // without including the refreshtoken and other fields. the above is currently used in the code and it has its own usecases. They are similar, but it seems there are more fields needed
@@ -52,7 +52,7 @@ const DeleteTask = `DELETE FROM tasks WHERE uuid = $1;`
 const CreateOrAddSubscriberFollow = `INSERT INTO follows(uuid, developer, entity_id, subscribers, entity_url, created_at, updated_at) values ($1, $2, $3, $4, $5, now(), now())
 ON CONFLICT("entity_id") DO UPDATE SET updated_at = NOW() RETURNING uuid;`
 
-const CreateNewTrackTaskRecord = `INSERT INTO tasks(uuid, shortid, entity_id, result, status, type, created_at, updated_at) values ($1, $2, $3, $4, 'completed', 'track', now(), now()) RETURNING uuid;`
+const CreateNewTrackTaskRecord = `INSERT INTO tasks(uuid, shortid, entity_id, result, status, type, created_at, updated_at, app) values ($1, $2, $3, $4, 'completed', 'track', now(), now(), $5) RETURNING uuid;`
 const UpdateFollowSubscriber = `UPDATE follows SET subscribers = ARRAY [$1], updated_at = now() WHERE entity_id = $2 AND $1::text <> ANY (subscribers::text[]) RETURNING uuid;`
 const FetchFollowedTask = `SELECT * FROM  follows where entity_id = $1;`
 

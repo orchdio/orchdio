@@ -241,7 +241,7 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 		// PAGINATION SUPPORT.
 
 	case "api.spotify.com":
-		log.Printf("\n[servies][s: Track] Link info looks like a playlist pagination.")
+		log.Printf("\n[servies][s: Track] URL info looks like a playlist pagination.")
 		linkInfo := blueprint.LinkInfo{
 			Platform:   spotify.IDENTIFIER,
 			TargetLink: t,
@@ -252,7 +252,7 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 		return &linkInfo, nil
 
 	case "api.deezer.com":
-		log.Printf("\n[services][Playlists] Link info looks like a deezer playlist pagination")
+		log.Printf("\n[services][Playlists] URL info looks like a deezer playlist pagination")
 		eID := util.ExtractDeezerID(t)
 		log.Printf("\nExtractedID for deezer is: %v\n", eID)
 		linkInfo := blueprint.LinkInfo{
@@ -263,7 +263,7 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 		}
 		return &linkInfo, nil
 	default:
-		log.Printf("\n[servies][s: Track][error] Link info could not be processed. Might be an invalid link")
+		log.Printf("\n[servies][s: Track][error] URL info could not be processed. Might be an invalid link")
 		log.Printf(host)
 		return nil, blueprint.EHOSTUNSUPPORTED
 	}

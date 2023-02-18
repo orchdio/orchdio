@@ -57,8 +57,8 @@ func (d *NewDB) FindUserProfileByEmail(email string) (*blueprint.UserProfile, er
 }
 
 // FindUserByUUID finds a user by their UUID
-func (d *NewDB) FindUserByUUID(id string) (*blueprint.User, error) {
-	result := d.DB.QueryRowx(queries.FindUserByUUID, id)
+func (d *NewDB) FindUserByUUID(id, platform string) (*blueprint.User, error) {
+	result := d.DB.QueryRowx(queries.FindUserByUUID, id, platform)
 	user := &blueprint.User{}
 
 	err := result.StructScan(user)
@@ -408,10 +408,10 @@ func (d *NewDB) CreateFollowTask(developer, uid, entityId, entityURL string, sub
 }
 
 // CreateTrackTaskRecord creates a new task record for a track.
-func (d *NewDB) CreateTrackTaskRecord(uid, shortId, entityId string, result []byte) ([]byte, error) {
+func (d *NewDB) CreateTrackTaskRecord(uid, shortId, entityId, appId string, result []byte) ([]byte, error) {
 	log.Printf("[db][CreateTrackTaskRecord] Running query %s with '%s', '%s', '%s' \n", queries.CreateNewTrackTaskRecord, uid, shortId, entityId)
 
-	r := d.DB.QueryRowx(queries.CreateNewTrackTaskRecord, uid, shortId, entityId, string(result))
+	r := d.DB.QueryRowx(queries.CreateNewTrackTaskRecord, uid, shortId, entityId, string(result), appId)
 	var res string
 	err := r.Scan(&res)
 	if err != nil {

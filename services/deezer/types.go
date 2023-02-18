@@ -61,7 +61,6 @@ type Track struct {
 		Link          string `json:"link"`
 		Share         string `json:"share"`
 		Picture       string `json:"picture"`
-		PictureSmall  string `json:"picture_small"`
 		PictureMedium string `json:"picture_medium"`
 		PictureBig    string `json:"picture_big"`
 		PictureXl     string `json:"picture_xl"`
@@ -188,7 +187,7 @@ type Playlist struct {
 //		Title                 string `json:"title"`
 //		TitleShort            string `json:"title_short"`
 //		TitleVersion          string `json:"title_version,omitempty"`
-//		Link                  string `json:"link"`
+//		URL                  string `json:"link"`
 //		Duration              int    `json:"duration"`
 //		Rank                  int    `json:"rank"`
 //		ExplicitLyrics        bool   `json:"explicit_lyrics"`
@@ -279,4 +278,40 @@ type PlaylistTracksSearch struct {
 
 type PlaylistCreationResponse struct {
 	ID int64 `json:"id"`
+}
+
+type UserPlaylistsResponse struct {
+	Data []struct {
+		ID            int64  `json:"id"`
+		Title         string `json:"title"`
+		Duration      int    `json:"duration"`
+		Public        bool   `json:"public"`
+		IsLovedTrack  bool   `json:"is_loved_track"`
+		Collaborative bool   `json:"collaborative"`
+		NbTracks      int    `json:"nb_tracks"`
+		Fans          int    `json:"fans"`
+		Link          string `json:"link"`
+		Picture       string `json:"picture"`
+		PictureSmall  string `json:"picture_small"`
+		PictureMedium string `json:"picture_medium"`
+		PictureBig    string `json:"picture_big"`
+		PictureXl     string `json:"picture_xl"`
+		Checksum      string `json:"checksum"`
+		Tracklist     string `json:"tracklist"`
+		CreationDate  string `json:"creation_date"`
+		Md5Image      string `json:"md5_image"`
+		PictureType   string `json:"picture_type"`
+		TimeAdd       int    `json:"time_add"`
+		TimeMod       int    `json:"time_mod"`
+		Creator       struct {
+			ID        int    `json:"id"`
+			Name      string `json:"name"`
+			Tracklist string `json:"tracklist"`
+			Type      string `json:"type"`
+		} `json:"creator"`
+		Type string `json:"type"`
+	} `json:"data"`
+	Total int    `json:"total"`
+	Next  string `json:"next,omitempty"`
+	Prev  string `json:"previous,omitempty"`
 }

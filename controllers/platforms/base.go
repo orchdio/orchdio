@@ -12,10 +12,12 @@ import (
 	"orchdio/queue"
 	"orchdio/services/applemusic"
 	"orchdio/services/deezer"
+	spotify2 "orchdio/services/spotify"
 	"orchdio/services/tidal"
 	"orchdio/universal"
 	"orchdio/util"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -87,7 +89,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred. Could not deserialize result")
 		}
 
-		_, err = database.CreateTrackTaskRecord(uniqueId.String(), string(shortURL), linkInfo.EntityID, serialized)
+		_, err = database.CreateTrackTaskRecord(uniqueId.String(), string(shortURL), linkInfo.EntityID, app.UID.String(), serialized)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][ConvertEntity] - Could not create task record")
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred and could not create task record.")
@@ -384,4 +386,152 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 	}
 	return util.SuccessResponse(ctx, http.StatusCreated, playlistlink)
 
+}
+
+// FetchPlatformPlaylists fetches the all the playlists on a user's platform library
+func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
+	log.Printf("[platforms][FetchPlatformPlaylists] fetching platform playlists")
+	app := ctx.Locals("app").(*blueprint.DeveloperApp)
+	userId := ctx.Params("userId")
+	targetPlatform := ctx.Params("platform")
+	if userId == "" {
+		log.Printf("[platforms][FetchPlatformPlaylists] error - userId is empty")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "userId is empty")
+	}
+	if targetPlatform == "" {
+		log.Printf("[platforms][FetchPlatformPlaylists] error - targetPlatform is empty")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "targetPlatform is empty")
+	}
+
+	log.Printf("[platforms][FetchPlatformPlaylists] App %s is trying to fetch user %s's %s playlists\n", app.Name, userId, strings.ToUpper(targetPlatform))
+
+	// get the user via the id to make sure the user exists
+	database := db.NewDB{DB: p.DB}
+	user, err := database.FindUserByUUID(userId, targetPlatform)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("[platforms][FetchPlatformPlaylists] error - user not found %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User not found")
+		}
+		log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching user %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+	}
+	log.Printf("[platforms][FetchPlatformPlaylists] user found. Target platform is %v %s\n", user.Usernames, targetPlatform)
+
+	var refreshToken string
+	// if the user refresh token is nil, the user has not connected this platform to Orchdio.
+	// this is because everytime a user connects a platform to Orchdio, the refresh token is updated for the platform the user connected
+	if user.RefreshToken == nil && targetPlatform != "tidal" {
+		log.Printf("[platforms][FetchPlatformPlaylists] error - user's refresh token is empty %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "no access", "User has not connected this platform to Orchdio")
+	}
+
+	if user.RefreshToken != nil {
+		// decrypt the user's access token
+		r, err := util.Decrypt(user.RefreshToken, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if err != nil {
+			log.Printf("[platforms][FetchPlatformPlaylists] error - error decrypting access token %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		}
+		refreshToken = string(r)
+	}
+
+	switch targetPlatform {
+	case deezer.IDENTIFIER:
+		// get the deezer playlists
+		playlists, err := deezer.FetchUserPlaylists(refreshToken)
+		if err != nil {
+			log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching deezer playlists %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		}
+		log.Printf("[platforms][FetchPlatformPlaylists] deezer playlists fetched successfully")
+		// create a slice of UserPlaylist
+		var userPlaylists []blueprint.UserPlaylist
+		for _, playlist := range playlists.Data {
+			userPlaylists = append(userPlaylists, blueprint.UserPlaylist{
+				ID:            strconv.Itoa(int(playlist.ID)),
+				Title:         playlist.Title,
+				Duration:      util.GetFormattedDuration(playlist.Duration),
+				DurationMilis: playlist.Duration * 1000,
+				Public:        playlist.Public,
+				Collaborative: playlist.Collaborative,
+				NbTracks:      playlist.NbTracks,
+				Fans:          playlist.Fans,
+				URL:           playlist.Link,
+				Cover:         playlist.PictureMedium,
+				CreatedAt:     playlist.CreationDate,
+				Checksum:      playlist.Checksum,
+				Owner:         playlist.Creator.Name,
+			})
+		}
+		return util.SuccessResponse(ctx, http.StatusOK, userPlaylists)
+	case "spotify":
+		// get the spotify playlists
+		playlists, err := spotify2.FetchUserPlaylist(refreshToken)
+		if err != nil {
+			log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching spotify playlists %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		}
+		log.Printf("[platforms][FetchPlatformPlaylists] spotify playlists fetched successfully")
+		// create a slice of UserPlaylist
+		var userPlaylists []blueprint.UserPlaylist
+		for _, playlist := range playlists {
+			log.Printf("[platforms][FetchPlatformPlaylists] playlist info url is- %v\n", playlist.Endpoint)
+			pix := playlist.Images
+			var cover string
+			if len(pix) > 0 {
+				cover = pix[0].URL
+			}
+			userPlaylists = append(userPlaylists, blueprint.UserPlaylist{
+				ID:            string(playlist.ID),
+				Title:         playlist.Name,
+				Public:        playlist.IsPublic,
+				Collaborative: playlist.Collaborative,
+				NbTracks:      int(playlist.Tracks.Total),
+				URL:           playlist.ExternalURLs["spotify"],
+				Cover:         cover,
+				Checksum:      playlist.SnapshotID,
+				Owner:         playlist.Owner.DisplayName,
+			})
+		}
+		return util.SuccessResponse(ctx, http.StatusOK, userPlaylists)
+
+	case tidal.IDENTIFIER:
+		// get the tidal playlists
+		playlists, err := tidal.FetchUserPlaylists(refreshToken)
+		if err != nil {
+			log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching tidal playlists %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		}
+
+		if playlists == nil {
+			log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching tidal playlists %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		}
+
+		log.Printf("[platforms][FetchPlatformPlaylists] tidal playlists fetched successfully")
+		// create a slice of UserPlaylist
+		var userPlaylists []blueprint.UserPlaylist
+		for _, playlist := range playlists.Items {
+			if playlist.ItemType != "PLAYLIST" {
+				log.Printf("[platforms][FetchPlatformPlaylists] Item is not a playlist data, skipping...\n")
+				continue
+			}
+
+			data := playlist.Data
+			userPlaylists = append(userPlaylists, blueprint.UserPlaylist{
+				ID:            data.UUID,
+				Title:         data.Title,
+				Public:        util.TidalIsPrivate(data.SharingLevel),
+				Collaborative: util.TidalIsCollaborative(data.ContentBehavior),
+				NbTracks:      data.NumberOfTracks,
+				URL:           playlist.Data.URL,
+				Cover:         playlist.Data.Image,
+				CreatedAt:     data.Created,
+				Owner:         playlist.Data.Creator.Name,
+			})
+		}
+		return util.SuccessResponse(ctx, http.StatusOK, userPlaylists)
+	}
+	return util.ErrorResponse(ctx, http.StatusNotImplemented, "not implemented", "This platform is not yet supported")
 }

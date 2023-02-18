@@ -503,3 +503,40 @@ func CreateNewPlaylist(title, userDeezerId, token string, tracks []string) ([]by
 
 	return playlistIDBytes, nil
 }
+
+// FetchUserPlaylists fetches all the playlists for a user
+func FetchUserPlaylists(token string) (*UserPlaylistsResponse, error) {
+	deezerAPIBase := os.Getenv("DEEZER_API_BASE")
+	// DEEZER PLAYLIST LIMIT IS 250 FOR NOW. THIS IS ORCHDIO IMPOSED AND IT IS
+	// 1. TO EASE IMPLEMENTATION
+	// 2. TO MAKE IT "PREMIUM" IN THE FUTURE  (i.e. if we want to charge for more playlists), makes it easier to enforce/assimilate from now
+	reqURL := fmt.Sprintf("%s/user/me/playlists?access_token=%s&limit=250", deezerAPIBase, token)
+	axios.NewInstance(&axios.InstanceConfig{
+		Headers: map[string][]string{
+			"Content-Type": {"application/json"},
+		},
+	})
+
+	log.Printf("\n[services][deezer][FetchUserPlaylists] request url: %v\n", reqURL)
+
+	resp, err := axios.Get(reqURL, nil)
+	if err != nil {
+		log.Printf("\n[services][deezer][FetchUserPlaylists] error - Could not fetch user playlists: %v\n", err)
+		return nil, err
+	}
+
+	if resp.Status == http.StatusBadRequest {
+		log.Printf("\n[services][deezer][FetchUserPlaylists] error - Could not fetch user playlists. Bad request: %v\n", err)
+		return nil, errors.New("bad request")
+	}
+
+	// deserialize the response body into the out response
+	out := &UserPlaylistsResponse{}
+	err = json.Unmarshal(resp.Data, out)
+	if err != nil {
+		log.Printf("\n[services][deezer][FetchUserPlaylists] error - Could not deserialize the body into the out response: %v\n", err)
+		return nil, err
+	}
+
+	return out, nil
+}

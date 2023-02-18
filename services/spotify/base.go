@@ -350,16 +350,16 @@ func FetchPlaylistTracksAndInfo(id string, red *redis.Client) (*blueprint.Playli
 	// then we want to fetch the tracks and cache them.
 	if cacheErr != nil && cacheErr == redis.Nil || cachedSnapshotID != info.SnapshotID {
 
-		playlist, err := client.GetPlaylistTracks(ctx, spotify.ID(id))
+		playlist, err := client.GetPlaylistItems(ctx, spotify.ID(id))
 		if err != nil {
 			log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - Could not fetch playlist from spotify: %v\n", err)
 			return nil, nil, err
 		}
-		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - playlist fetched from spotify: %v\n", len(playlist.Tracks))
+		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - playlist fetched from spotify: %v\n", len(playlist.Items))
 
 		// fetch ALL the pages
 		for page := 1; ; page++ {
-			out := &spotify.PlaylistTrackPage{}
+			out := &spotify.PlaylistItemPage{}
 			paginationErr := client.NextPage(ctx, out)
 			if paginationErr == spotify.ErrNoMorePages {
 				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - No more pages for playlist\n")
@@ -369,42 +369,42 @@ func FetchPlaylistTracksAndInfo(id string, red *redis.Client) (*blueprint.Playli
 				log.Printf("\n[services][spotify][base][FetchPlaylistTracksAndInfo] error - could not fetch playlist: %v\n", err)
 				return nil, nil, err
 			}
-			playlist.Tracks = append(playlist.Tracks, out.Tracks...)
+			playlist.Items = append(playlist.Items, out.Items...)
 		}
 
 		var tracks []blueprint.TrackSearchResult
 
 		// calculate the duration of the playlist
 		playlistLength := 0
-		for _, track := range playlist.Tracks {
+		for _, track := range playlist.Items {
 			var artistes []string
-			for _, artist := range track.Track.Artists {
+			for _, artist := range track.Track.Track.Artists {
 				artistes = append(artistes, artist.Name)
 			}
 
-			playlistLength += track.Track.Duration / 1000
+			playlistLength += track.Track.Track.Duration / 1000
 
 			var cover string
-			if len(track.Track.Album.Images) > 0 {
-				cover = track.Track.Album.Images[0].URL
+			if len(track.Track.Track.Album.Images) > 0 {
+				cover = track.Track.Track.Album.Images[0].URL
 			}
 
 			trackCopy := blueprint.TrackSearchResult{
-				URL:           track.Track.ExternalURLs["spotify"],
+				URL:           track.Track.Track.ExternalURLs["spotify"],
 				Artists:       artistes,
-				Released:      track.Track.Album.ReleaseDate,
-				Duration:      util.GetFormattedDuration(track.Track.Duration / 1000),
-				DurationMilli: track.Track.Duration,
-				Explicit:      track.Track.Explicit,
-				Title:         track.Track.Name,
-				Preview:       track.Track.PreviewURL,
-				Album:         track.Track.Album.Name,
-				ID:            track.Track.ID.String(),
+				Released:      track.Track.Track.Album.ReleaseDate,
+				Duration:      util.GetFormattedDuration(track.Track.Track.Duration / 1000),
+				DurationMilli: track.Track.Track.Duration,
+				Explicit:      track.Track.Track.Explicit,
+				Title:         track.Track.Track.Name,
+				Preview:       track.Track.Track.PreviewURL,
+				Album:         track.Track.Track.Album.Name,
+				ID:            track.Track.Track.ID.String(),
 				Cover:         cover,
 			}
 			tracks = append(tracks, trackCopy)
 			// cache the track. the scheme is: "spotify:track_id"
-			cacheKey := "spotify:track:" + track.Track.ID.String()
+			cacheKey := "spotify:track:" + track.Track.Track.ID.String()
 			serialized, err := json.Marshal(trackCopy)
 			if err != nil {
 				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not serialize track: %v\n", err)
@@ -523,4 +523,31 @@ func FetchPlaylistHash(playlistId string) []byte {
 	}
 
 	return []byte(info.SnapshotID)
+}
+
+// FetchUserPlaylist fetches the user's playlist
+func FetchUserPlaylist(token string) ([]spotify.SimplePlaylist, error) {
+	log.Printf("\n[services][spotify][base][FetchUserPlaylist] - token is: %v\n", token)
+	httpClient := spotifyauth.New().Client(context.Background(), &oauth2.Token{RefreshToken: token})
+	client := spotify.New(httpClient)
+	playlists, err := client.CurrentUsersPlaylists(context.Background())
+	if err != nil {
+		log.Printf("\n[services][spotify][base][FetchUserPlaylist] error - could not fetch playlist: %v\n", err)
+		return nil, err
+	}
+	for {
+		out := spotify.SimplePlaylistPage{}
+		paginationErr := client.NextPage(context.Background(), &out)
+		if paginationErr == spotify.ErrNoMorePages {
+			log.Printf("\n[services][spotify][base][FetchUserPlaylist] - no more pages. User's full playlist retrieved\n")
+			break
+		}
+		if paginationErr != nil {
+			log.Printf("\n[services][spotify][base][FetchUserPlaylist] error - could not fetch playlist: %v\n", err)
+			return nil, paginationErr
+		}
+		playlists.Playlists = append(playlists.Playlists, out.Playlists...)
+	}
+
+	return playlists.Playlists, nil
 }

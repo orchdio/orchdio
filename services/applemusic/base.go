@@ -517,5 +517,4 @@ func CreateNewPlaylist(title, description, musicToken string, tracks []string) (
 	log.Printf("[services][applemusic][CreateNewPlaylist] Successfully created playlist: %v\n", playlist.Data[0].Href)
 
 	return []byte(fmt.Sprintf("https://music.apple.com/us/playlist/%s", playlist.Data[0].Id)), nil
-
 }
