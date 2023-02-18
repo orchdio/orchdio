@@ -188,7 +188,7 @@ func (a *AuthMiddleware) CheckOrInitiateUserAuthStatus(ctx *fiber.Ctx) error {
 
 	// find the user in the db with the id
 	database := db.NewDB{DB: a.DB}
-	user, err := database.FindUserByUUID(userId)
+	user, err := database.FindUserByUUID(userId, platform)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "App not found")

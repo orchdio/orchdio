@@ -332,3 +332,10 @@ func GenerateShortID() []byte {
 	}
 	return []byte(shortID)
 }
+
+func TidalIsCollaborative(level string) bool {
+	return level == "UNRESTRICTED" // || level == "PRIVATE"
+}
+func TidalIsPrivate(level string) bool {
+	return level == "PRIVATE"
+}

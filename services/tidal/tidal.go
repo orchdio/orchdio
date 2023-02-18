@@ -640,3 +640,79 @@ func CreateNewPlaylist(title, description, musicToken string, tracks []string) (
 	createdPlaylistLink := fmt.Sprintf("https://tidal.com/browse/playlist/%s", playlist.Data.Uuid)
 	return []byte(createdPlaylistLink), nil
 }
+
+// FetchUserPlaylists - fetches the user's playlists
+func FetchUserPlaylists(token string) (*UserPlaylistResponse, error) {
+	log.Printf("\n[services][tidal][FetchUserPlaylists] - fetching user playlists\n")
+
+	accessToken, err := FetchNewAuthToken()
+	if err != nil {
+		log.Printf("\n[services][tidal][FetchUserPlaylists] - error fetching new auth token - %v\n", err)
+		return nil, err
+	}
+
+	instance := axios.NewInstance(&axios.InstanceConfig{
+		BaseURL: "https://listen.tidal.com",
+		Headers: map[string][]string{
+			"Content-Type":  {"application/x-www-form-urlencoded"},
+			"Authorization": {fmt.Sprintf("Bearer %s", accessToken)},
+		},
+	})
+
+	p := url.Values{}
+	p.Add("countryCode", "US")
+	p.Add("locale", "en_US")
+	p.Add("deviceType", "BROWSER")
+	p.Add("limit", "50")
+	p.Add("order", "DATE")
+	p.Add("orderDirection", "DESC")
+	p.Add("folderId", "root")
+
+	endpoint := fmt.Sprintf("/v2/my-collection/playlists/folders?folderId=root&countryCode=US&locale=en_US&deviceType=BROWSER&limit=50&order=DATE&orderDirection=DESC")
+
+	inst, err := instance.Get(endpoint, p)
+	if err != nil {
+		log.Printf("\n[services][tidal][FetchUserPlaylists] - error fetching user playlists - %v\n", err)
+		return nil, err
+	}
+
+	if inst.Status != 200 {
+		log.Printf("\n[services][tidal][FetchUserPlaylists] - error fetching user playlists - %v\n", string(inst.Data))
+		return nil, err
+	}
+
+	playlists := &UserPlaylistResponse{}
+	err = json.Unmarshal(inst.Data, playlists)
+
+	if err != nil {
+		log.Printf("\n[services][tidal][FetchUserPlaylists] - error parsing playlists response - %v\n", err)
+		return nil, err
+	}
+
+	for {
+		if playlists.Cursor == "" {
+			continue
+		}
+		endpoint := fmt.Sprintf("/v2/my-collection/playlists/folders?folderId=root&countryCode=US&locale=en_US&deviceType=BROWSER&limit=50&order=DATE&orderDirection=DESC&cursor=%s", playlists.Cursor)
+		res, err := instance.Get(endpoint, p)
+		if err != nil {
+			log.Printf("\n[services][tidal][FetchUserPlaylists] - error fetching user playlists - %v\n", err)
+			return nil, err
+		}
+		// deserialize the response
+		resp := &UserPlaylistResponse{}
+		err = json.Unmarshal(res.Data, &resp)
+		if err != nil {
+			log.Printf("\n[services][tidal][FetchUserPlaylists] - error parsing playlists response - %v\n", err)
+			return nil, err
+		}
+		if resp.Cursor == "" {
+			log.Printf("\n[services][tidal][FetchUserPlaylists] - no more playlists to fetch. All playlist in library fetched\n")
+			break
+		}
+		playlists.Cursor = resp.Cursor
+		playlists.Items = append(playlists.Items, resp.Items...)
+	}
+	log.Printf("\n[services][tidal][FetchUserPlaylists] - fetched %d playlists\n", len(playlists.Items))
+	return playlists, nil
+}

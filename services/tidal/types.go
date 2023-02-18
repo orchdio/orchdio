@@ -470,3 +470,43 @@ type PlaylistItemAdditionResponse struct {
 	LastUpdated  int64 `json:"lastUpdated"`
 	AddedItemIds []int `json:"addedItemIds"`
 }
+
+type UserPlaylistResponse struct {
+	LastModifiedAt string `json:"lastModifiedAt"`
+	Items          []struct {
+		Trn            string      `json:"trn"`
+		ItemType       string      `json:"itemType"`
+		AddedAt        string      `json:"addedAt"`
+		LastModifiedAt string      `json:"lastModifiedAt"`
+		Name           string      `json:"name"`
+		Parent         interface{} `json:"parent"`
+		Data           struct {
+			UUID    string `json:"uuid"`
+			Type    string `json:"type"`
+			Creator struct {
+				ID      int         `json:"id"`
+				Name    string      `json:"name"`
+				Picture interface{} `json:"picture"`
+				Type    string      `json:"type"`
+			} `json:"creator"`
+			ContentBehavior string        `json:"contentBehavior"`
+			SharingLevel    string        `json:"sharingLevel"`
+			Title           string        `json:"title"`
+			Description     string        `json:"description"`
+			Image           string        `json:"image"`
+			SquareImage     string        `json:"squareImage"`
+			URL             string        `json:"url"`
+			Created         string        `json:"created"`
+			LastUpdated     string        `json:"lastUpdated"`
+			LastItemAddedAt string        `json:"lastItemAddedAt"`
+			Duration        int           `json:"duration"`
+			NumberOfTracks  int           `json:"numberOfTracks"`
+			NumberOfVideos  int           `json:"numberOfVideos"`
+			PromotedArtists []interface{} `json:"promotedArtists"`
+			Trn             string        `json:"trn"`
+			ItemType        string        `json:"itemType"`
+		} `json:"data,omitempty"`
+	} `json:"items"`
+	TotalNumberOfItems int    `json:"totalNumberOfItems"`
+	Cursor             string `json:"cursor"`
+}

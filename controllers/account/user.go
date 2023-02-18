@@ -711,14 +711,6 @@ func (c *UserController) FetchUserProfile(ctx *fiber.Ctx) error {
 	return util.SuccessResponse(ctx, http.StatusOK, user)
 }
 
-// FetchPlatformPlaylists fetches the all the playlists on a user's platform library
-//func (c *UserController) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
-//	log.Printf("[controller][user][FetchPlatformPlaylists] fetching platform playlists")
-//	app := ctx.Locals("app").(*blueprint.DeveloperApp)
-//
-//	return util.SuccessResponse(ctx, http.StatusOK, nil)
-//}
-
 // GenerateAPIKey generates API key for users
 //func (c *UserController) GenerateAPIKey(ctx *fiber.Ctx) error {
 //	/**

@@ -41,7 +41,7 @@ func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 	url := conversionBody["url"]
 
 	if url == "" {
-		log.Printf("\n[middleware][ExtractLinkInfoFromBody] warning - Link not detected. Skipping...\n")
+		log.Printf("\n[middleware][ExtractLinkInfoFromBody] warning - URL not detected. Skipping...\n")
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Bad request. Check you're using the '?conversionBody' query string")
 	}
 	linkInfo, err := services.ExtractLinkInfo(url)
@@ -62,7 +62,7 @@ func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 
 	if linkInfo == nil {
 		log.Printf("\n[middleware][ExtractLinkInfoFromBody] error - No linkInfo retrieved for conversionBody: %v: \n", conversionBody)
-		return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "Link info not found.")
+		return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "URL info not found.")
 	}
 
 	log.Printf("\n[middleware][ExtractLinkInfoFromBody] method - Extracted conversionBody info is: %v\n", linkInfo)
@@ -90,7 +90,7 @@ func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 func ExtractLinkInfo(ctx *fiber.Ctx) error {
 	link := ctx.Query("link")
 	if link == "" {
-		log.Printf("\n[middleware][ExtractLinkInfo] warning - Link not detected. Skipping...\n")
+		log.Printf("\n[middleware][ExtractLinkInfo] warning - URL not detected. Skipping...\n")
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Bad request. Check you're using the '?link' query string")
 	}
 	linkInfo, err := services.ExtractLinkInfo(link)
@@ -110,7 +110,7 @@ func ExtractLinkInfo(ctx *fiber.Ctx) error {
 
 	if linkInfo == nil {
 		log.Printf("\n[middleware][ExtractLinkInfo] error - No linkInfo retrieved for link: %v: \n", link)
-		return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "Link info not found.")
+		return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "URL info not found.")
 	}
 
 	log.Printf("\n[middleware][ExtractLinkInfo] method - Extracted link info is: %v\n", linkInfo)
