@@ -10,6 +10,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/vicanso/go-axios"
 	"log"
+	"net/http"
 	"net/url"
 	"orchdio/blueprint"
 	"orchdio/util"
@@ -517,4 +518,107 @@ func CreateNewPlaylist(title, description, musicToken string, tracks []string) (
 	log.Printf("[services][applemusic][CreateNewPlaylist] Successfully created playlist: %v\n", playlist.Data[0].Href)
 
 	return []byte(fmt.Sprintf("https://music.apple.com/us/playlist/%s", playlist.Data[0].Id)), nil
+}
+
+// FetchUserPlaylists fetches the user's playlists
+func FetchUserPlaylists(token string) ([]UserPlaylistResponse, error) {
+	log.Printf("[services][applemusic][FetchUserPlaylists] Fetching user playlists\n")
+	tp := applemusic.Transport{Token: os.Getenv("APPLE_MUSIC_API_KEY"), MusicUserToken: token}
+	client := applemusic.NewClient(tp.Client())
+	// get the user's playlists
+	p, _, err := client.Me.GetAllLibraryPlaylists(context.Background(), &applemusic.PageOptions{
+		Limit: 100,
+	})
+	if err != nil {
+		log.Printf("[services][applemusic][FetchUserPlaylists] Error getting user playlists: %v\n", err)
+		return nil, err
+	}
+	for {
+		if p.Next == "" {
+			break
+		}
+		pr, _, err := client.Me.GetAllLibraryPlaylists(context.Background(), &applemusic.PageOptions{
+			Offset: len(p.Data),
+		})
+		if err != nil {
+			log.Printf("[services][applemusic][FetchUserPlaylists] Error getting user playlists: %v\n", err)
+			return nil, err
+		}
+
+		log.Printf("[services][applemusic][FetchUserPlaylists] Playlist: %v\n", len(pr.Data))
+		if len(pr.Data) == 0 {
+			log.Printf("[services][applemusic][FetchUserPlaylists] Fetched all user playlist data\n")
+			break
+		}
+		p.Next = pr.Next
+		p.Data = append(p.Data, pr.Data...)
+	}
+
+	var playlists []UserPlaylistResponse
+	for _, playlist := range p.Data {
+		log.Printf("[services][applemusic][FetchUserPlaylists] Getting catalog info for: %v\n", playlist.Attributes.Name)
+		//playlistIds = append(playlistIds, playlist.Id)
+		inst := axios.NewInstance(&axios.InstanceConfig{
+			BaseURL: "https://api.music.apple.com/v1",
+			Headers: http.Header{
+				"Authorization":    []string{fmt.Sprintf("Bearer %s", os.Getenv("APPLE_MUSIC_API_KEY"))},
+				"Music-User-Token": []string{token},
+			},
+		})
+		link := fmt.Sprintf("/me/library/playlists/%s/catalog", playlist.Id)
+		resp, err := inst.Get(link, nil)
+		if err != nil {
+			log.Printf("[services][applemusic][FetchUserPlaylists] Error getting user playlist catalog info: %v\n", err)
+			return nil, err
+		}
+
+		var info PlaylistCatalogInfoResponse
+		err = json.Unmarshal(resp.Data, &info)
+		if err != nil {
+			log.Printf("[services][applemusic][FetchUserPlaylists] Error getting deserializing playlist catalog info: %v\n", err)
+			return nil, err
+		}
+		data := info.Data[0]
+
+		// get the playlist info itself
+		playlistResponse, err := inst.Get(fmt.Sprintf("/me/library/playlists/%s", playlist.Id), nil)
+		if err != nil {
+			log.Printf("[services][applemusic][FetchUserPlaylists] Error getting user playlist info: %v\n", err)
+			return nil, err
+		}
+		playlistInfo := &PlaylistInfoResponse{}
+		err = json.Unmarshal(playlistResponse.Data, playlistInfo)
+		if err != nil {
+			log.Printf("[services][applemusic][FetchUserPlaylists] Error getting deserializing playlist info: %v\n", err)
+			return nil, err
+		}
+
+		// get playlist tracks
+		playlistTracksResponse, err := inst.Get(fmt.Sprintf("/me/library/playlists/%s/tracks", playlist.Id), nil)
+		if err != nil {
+			log.Printf("[services][applemusic][FetchUserPlaylists] Error getting user playlist tracks: %v\n", err)
+			return nil, err
+		}
+		playlistTracks := &PlaylistTracksResponse{}
+		err = json.Unmarshal(playlistTracksResponse.Data, playlistTracks)
+		if err != nil {
+			log.Printf("[services][applemusic][FetchUserPlaylists] Error getting deserializing playlist tracks: %v\n", err)
+			return nil, err
+		}
+
+		r := UserPlaylistResponse{
+			ID:            data.ID,
+			Title:         data.Attributes.Name,
+			Public:        playlistInfo.Data[0].Attributes.IsPublic,
+			Description:   playlistInfo.Data[0].Attributes.Description.Standard,
+			Collaborative: playlistInfo.Data[0].Attributes.CanEdit,
+			Cover:         strings.ReplaceAll(data.Attributes.Artwork.URL, "{w}x{h}bb", "300x300bb"),
+			CreatedAt:     playlistInfo.Data[0].Attributes.DateAdded.String(),
+			Owner:         data.Attributes.CuratorName,
+			NbTracks:      playlistTracks.Meta.Total,
+			URL:           info.Data[0].Attributes.Url,
+		}
+		playlists = append(playlists, r)
+	}
+	return playlists, nil
 }

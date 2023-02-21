@@ -118,7 +118,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 		status = "failed"
 		// this is for when for example, apple music returns Not Found for a playlist thats visible but not public.
 		if err == blueprint.ENORESULT {
-			// create a new
+			// create a new payload
 			payload := blueprint.TaskErrorPayload{
 				Platform: info.Platform,
 				Status:   "failed",
@@ -286,31 +286,3 @@ func ConversionMiddleware(h asynq.Handler) asynq.Handler {
 		return nil
 	})
 }
-
-//func (o *OrchdioQueue) RetryOrphanedFailedTasks(inspector asynq.Inspector, queue, developer string) error {
-//	// get all failed tasks from asynq
-//	failedTasks, err := inspector.ListRetryTasks(queue, asynq.Page(1), asynq.PageSize(1000))
-//	if err != nil {
-//		return err
-//	}
-//	for _, t := range failedTasks {
-//		task := t
-//		if task.Queue == queue {
-//			payload := &blueprint.LinkInfo{}
-//			err := json.Unmarshal(task.Payload, payload)
-//			if err != nil {
-//				log.Printf("[queue][RetryOrphanedFailedTasks] - error unmarshalling task payload: %v", err)
-//				continue
-//			}
-//			// call the handler directly
-//			// create taskinfo
-//			info := &blueprint.LinkInfo{
-//				Platform:   developer,
-//				TargetLink: "",
-//				Entity:     "",
-//				EntityID:   "",
-//			}
-//			err = o.PlaylistHandler(context.Background(), task, developer)
-//		}
-//	}
-//}

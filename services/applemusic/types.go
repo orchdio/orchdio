@@ -1,5 +1,7 @@
 package applemusic
 
+import "time"
+
 const IDENTIFIER = "applemusic"
 
 type UnlimitedPlaylist struct {
@@ -44,4 +46,112 @@ type UnlimitedPlaylist struct {
 			} `json:"editorialNotes,omitempty"`
 		} `json:"attributes"`
 	} `json:"data"`
+}
+
+type PlaylistCatalogInfoResponse struct {
+	Data []struct {
+		ID         string `json:"id"`
+		Type       string `json:"type"`
+		Href       string `json:"href"`
+		Attributes struct {
+			CuratorName      string    `json:"curatorName"`
+			LastModifiedDate time.Time `json:"lastModifiedDate"`
+			Name             string    `json:"name"`
+			IsChart          bool      `json:"isChart"`
+			PlaylistType     string    `json:"playlistType"`
+			Description      struct {
+				Standard string `json:"standard"`
+				Short    string `json:"short"`
+			} `json:"description"`
+			Artwork struct {
+				Width      int    `json:"width"`
+				Height     int    `json:"height"`
+				URL        string `json:"url"`
+				BgColor    string `json:"bgColor"`
+				TextColor1 string `json:"textColor1"`
+				TextColor2 string `json:"textColor2"`
+				TextColor3 string `json:"textColor3"`
+				TextColor4 string `json:"textColor4"`
+			} `json:"artwork"`
+			PlayParams struct {
+				ID          string `json:"id"`
+				Kind        string `json:"kind"`
+				VersionHash string `json:"versionHash"`
+			} `json:"playParams"`
+			Url string `json:"url"`
+		} `json:"attributes"`
+	} `json:"data"`
+}
+
+type PlaylistInfoResponse struct {
+	Data []struct {
+		ID         string `json:"id"`
+		Type       string `json:"type"`
+		Href       string `json:"href"`
+		Attributes struct {
+			CanEdit     bool   `json:"canEdit"`
+			Name        string `json:"name"`
+			IsPublic    bool   `json:"isPublic"`
+			Description struct {
+				Standard string `json:"standard"`
+			} `json:"description"`
+			HasCatalog bool `json:"hasCatalog"`
+			PlayParams struct {
+				ID        string `json:"id"`
+				Kind      string `json:"kind"`
+				IsLibrary bool   `json:"isLibrary"`
+				GlobalID  string `json:"globalId"`
+			} `json:"playParams"`
+			DateAdded time.Time `json:"dateAdded"`
+		} `json:"attributes"`
+	} `json:"data"`
+}
+
+type PlaylistTracksResponse struct {
+	Data []struct {
+		ID         string `json:"id"`
+		Type       string `json:"type"`
+		Href       string `json:"href"`
+		Attributes struct {
+			DiscNumber       int      `json:"discNumber"`
+			AlbumName        string   `json:"albumName"`
+			GenreNames       []string `json:"genreNames"`
+			TrackNumber      int      `json:"trackNumber"`
+			HasLyrics        bool     `json:"hasLyrics"`
+			ReleaseDate      string   `json:"releaseDate"`
+			DurationInMillis int      `json:"durationInMillis"`
+			Name             string   `json:"name"`
+			ArtistName       string   `json:"artistName"`
+			ContentRating    string   `json:"contentRating"`
+			Artwork          struct {
+				Width  int    `json:"width"`
+				Height int    `json:"height"`
+				URL    string `json:"url"`
+			} `json:"artwork"`
+			PlayParams struct {
+				ID          string `json:"id"`
+				Kind        string `json:"kind"`
+				IsLibrary   bool   `json:"isLibrary"`
+				Reporting   bool   `json:"reporting"`
+				CatalogID   string `json:"catalogId"`
+				ReportingID string `json:"reportingId"`
+			} `json:"playParams"`
+		} `json:"attributes,omitempty"`
+	} `json:"data"`
+	Meta struct {
+		Total int `json:"total"`
+	} `json:"meta"`
+}
+
+type UserPlaylistResponse struct {
+	ID            string `json:"id"`
+	Title         string `json:"title"`
+	Public        bool   `json:"public"`
+	Collaborative bool   `json:"collaborative"`
+	NbTracks      int    `json:"nb_tracks"`
+	URL           string `json:"url"`
+	Cover         string `json:"cover"`
+	CreatedAt     string `json:"created_at"`
+	Owner         string `json:"owner"`
+	Description   string `json:"description"`
 }
