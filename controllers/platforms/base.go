@@ -3,6 +3,12 @@ package platforms
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
+	"github.com/go-redis/redis/v8"
+	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
+	"github.com/jmoiron/sqlx"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
@@ -12,14 +18,6 @@ import (
 	"orchdio/util"
 	"os"
 	"strings"
-	"time"
-
-	"github.com/davecgh/go-spew/spew"
-	"github.com/go-redis/redis/v8"
-	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
-	"github.com/hibiken/asynq"
-	"github.com/jmoiron/sqlx"
 )
 
 // Platforms represents the structure for the platforms
@@ -41,7 +39,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 
 	// make sure we're actually handling for track alone, not playlist.
 	if strings.Contains(linkInfo.Entity, "track") {
-		log.Printf("\n[controllers][platforms][deezer][ConvertEntity] error - %v\n", "It is a track URL")
+		log.Printf("\n[controllers][platforms][deezer][ConvertEntity] [info] - It is a track URL")
 
 		conversion, err := universal.ConvertTrack(linkInfo, p.Redis)
 		if err != nil {
@@ -110,6 +108,9 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 			log.Printf("[controller][conversion][EchoConversion] - not a playlist")
 			return ctx.Status(http.StatusBadRequest).JSON("not a playlist")
 		}
+
+		orchdioQueue := queue.NewOrchdioQueue(p.AsynqClient, p.DB, p.Redis, p.AsynqMux)
+
 		// create new task and set the handler. the handler will create or update a new task in the db
 		// in the case where the conversion fails, it sets the status to failed and ditto for success
 		// serialize linkInfo
@@ -119,13 +120,8 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 			return ctx.Status(http.StatusInternalServerError).JSON("error marshalling link info")
 		}
 		// create new task
-		conversionTask := asynq.NewTask(fmt.Sprintf("playlist:conversion:%s", taskData.TaskID), ser, asynq.Retention(time.Hour*24*7*4), asynq.Queue(queue.PlaylistConversionTask))
-
-		//conversionCtx := context.WithValue(context.Background(), "payload", taskData)
-		//log.Printf("[controller][conversion][EchoConversion] - conversionCtx: %v", conversionCtx)
-		// enqueue the task
-		// enquedTask, enqErr := c.Asynq.EnqueueContext(conversionCtx, conversionTask, asynq.Queue(queue.PlaylistConversionQueue), asynq.TaskID(taskData.TaskID), asynq.Unique(time.Second*60))
-		enquedTask, enqErr := p.AsynqClient.Enqueue(conversionTask, asynq.Queue(queue.PlaylistConversionQueue), asynq.TaskID(taskData.TaskID), asynq.Unique(time.Second*60))
+		conversionTask, err := orchdioQueue.NewTask(fmt.Sprintf("playlist:conversion:%s", taskData.TaskID), queue.PlaylistConversionTask, 1, ser)
+		enqErr := orchdioQueue.EnqueueTask(conversionTask, queue.PlaylistConversionQueue, taskData.TaskID)
 		if enqErr != nil {
 			log.Printf("[controller][conversion][EchoConversion] - error enqueuing task: %v", enqErr)
 			return ctx.Status(http.StatusInternalServerError).JSON("error enqueuing task")
@@ -139,12 +135,11 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 		}
 
 		// we were saving the task developer as user before but now we save the app
-		_taskId, dbErr := database.CreateOrUpdateTask(enquedTask.ID, string(shortURL), app.UID.String(), linkInfo.EntityID)
+		_taskId, dbErr := database.CreateOrUpdateTask(uniqueId, string(shortURL), app.UID.String(), linkInfo.EntityID)
 		if dbErr != nil {
 			log.Printf("[controller][conversion][EchoConversion] - error creating task: %v", dbErr)
 			return ctx.Status(http.StatusInternalServerError).JSON("error creating task")
 		}
-		orchdioQueue := queue.NewOrchdioQueue(p.AsynqClient, p.DB, p.Redis)
 
 		// Conversion task response to be polled later
 		res := &blueprint.TaskResponse{
@@ -165,7 +160,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 				log.Printf("[controller][conversion][EchoConversion] - task already queued%v", r)
 				inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
 				// get the task
-				_, err := inspector.GetTaskInfo(queue.PlaylistConversionQueue, enquedTask.ID)
+				_, err := inspector.GetTaskInfo(queue.PlaylistConversionQueue, uniqueId)
 				if err != nil {
 					log.Printf("[controller][conversion][EchoConversion] - error getting task info: %v", err)
 					return err
@@ -180,7 +175,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 				// update the task to success. because this seems to be a race condition in production where
 				// it duplicates task scheduling even though the task is already queued
 				// update task to success
-				err = database.UpdateTaskStatus(enquedTask.ID, "pending")
+				err = database.UpdateTaskStatus(uniqueId, "pending")
 				if err != nil {
 					log.Printf("[controller][conversion][EchoConversion] - error unmarshalling task data: %v", err)
 				}
@@ -205,7 +200,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 
 			return util.SuccessResponse(ctx, http.StatusOK, res)
 		}()
-		p.AsynqMux.HandleFunc("playlist:conversion:", orchdioQueue.PlaylistTaskHandler)
+		orchdioQueue.RunTask(fmt.Sprintf("playlist:conversion:%s", uniqueId), orchdioQueue.PlaylistTaskHandler)
 		log.Printf("[controller][conversion][EchoConversion] - task handler attached")
 		return util.SuccessResponse(ctx, http.StatusCreated, res)
 	}

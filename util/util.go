@@ -339,3 +339,8 @@ func TidalIsCollaborative(level string) bool {
 func TidalIsPrivate(level string) bool {
 	return level == "PRIVATE"
 }
+
+// IsTaskType checks if a task type is a type of specific task
+func IsTaskType(tasktype, task string) bool {
+	return strings.Contains(tasktype, task)
+}

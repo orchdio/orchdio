@@ -6,6 +6,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
+	sendinblue "github.com/sendinblue/APIv3-go-library/v2/lib"
 	"github.com/vicanso/go-axios"
 	"log"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"orchdio/db"
 	"orchdio/universal"
 	"orchdio/util"
+	"os"
 	"strings"
 	"time"
 )
@@ -20,6 +22,8 @@ import (
 const (
 	PlaylistConversionQueue = "playlist-conversion"
 	PlaylistConversionTask  = "playlist:conversion"
+	EmailQueue              = "email"
+	EmailTask               = "email:send"
 )
 
 type OrchQueue struct {
@@ -27,15 +31,17 @@ type OrchQueue struct {
 }
 type OrchdioQueue struct {
 	AsynqClient *asynq.Client
+	AsynqRouter *asynq.ServeMux
 	DB          *sqlx.DB
 	Red         *redis.Client
 }
 
-func NewOrchdioQueue(asynqClient *asynq.Client, db *sqlx.DB, red *redis.Client) *OrchdioQueue {
+func NewOrchdioQueue(asynqClient *asynq.Client, db *sqlx.DB, red *redis.Client, router *asynq.ServeMux) *OrchdioQueue {
 	return &OrchdioQueue{
 		AsynqClient: asynqClient,
 		DB:          db,
 		Red:         red,
+		AsynqRouter: router,
 	}
 }
 
@@ -74,6 +80,83 @@ func (o *OrchdioQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task
 		return cErr
 	}
 
+	return nil
+}
+
+func (o *OrchdioQueue) EnqueueTask(task *asynq.Task, queue, taskId string) error {
+	log.Printf("[queue][EnqueueTask] - enqueuing task: %v", taskId)
+	_, err := o.AsynqClient.Enqueue(task, asynq.Queue(queue), asynq.TaskID(taskId), asynq.Unique(time.Second*60))
+	if err != nil {
+		log.Printf("[queue][EnqueueTask] - error enqueuing task: %v", err)
+		return err
+	}
+	log.Printf("[queue][EnqueueTask] - enqueued task: %v", taskId)
+	return nil
+}
+
+func (o *OrchdioQueue) RunTask(pattern string, handler func(ctx context.Context, task *asynq.Task) error) {
+	log.Printf("[queue][RunTask] - attaching handler to task")
+	// create a new server
+	o.AsynqRouter.HandleFunc(pattern, handler)
+	log.Printf("[queue][RunTask] - attached handler to task")
+}
+
+// NewTask creates a new task and returns it.
+func (o *OrchdioQueue) NewTask(taskType, queue string, retry int, payload []byte) (*asynq.Task, error) {
+	return asynq.NewTask(taskType, payload, asynq.Queue(queue), asynq.Retention(time.Hour*24), asynq.MaxRetry(retry)), nil
+}
+
+// SendEmail sends the email using sendinblue.
+func (o *OrchdioQueue) SendEmail(emailData *blueprint.EmailTaskData) error {
+	// create new sendinblue config
+	config := sendinblue.NewConfiguration()
+	config.AddDefaultHeader("api-key", os.Getenv("SENDINBLUE_API_KEY"))
+	client := sendinblue.NewAPIClient(config)
+
+	result, resp, err := client.TransactionalEmailsApi.SendTransacEmail(context.Background(), sendinblue.SendSmtpEmail{
+		Sender: &sendinblue.SendSmtpEmailSender{
+			Name:  "Orchdio Alert",
+			Email: emailData.From,
+		},
+		To: []sendinblue.SendSmtpEmailTo{
+			{
+				Email: emailData.To,
+				Name:  "",
+			},
+		},
+		Params:     emailData.Payload,
+		Subject:    "App access",
+		TemplateId: int64(emailData.TemplateID),
+	})
+
+	if err != nil {
+		log.Printf("[queue][SendEmailHandler][send-email] error sending email: %v", err)
+		return err
+	}
+
+	if resp.StatusCode >= 400 {
+		log.Printf("[queue][SendEmailHandler][send-email] error sending email: %v", resp.StatusCode)
+		return err
+	}
+	log.Printf("[queue][SendEmailHandler][send-email] email sent: %v", result.MessageId)
+	return nil
+}
+
+// SendEmailHandler is the handler for sending emails in queues.
+func (o *OrchdioQueue) SendEmailHandler(ctx context.Context, task *asynq.Task) error {
+	log.Printf("[queue][SendEmailHandler][send-email] sending email in queue")
+	var emailData blueprint.EmailTaskData
+	err := json.Unmarshal(task.Payload(), &emailData)
+	if err != nil {
+		log.Printf("[queue][SendEmailHandler][send-email] error unmarshalling task payload: %v", err)
+		return err
+	}
+
+	err = o.SendEmail(&emailData)
+	if err != nil {
+		log.Printf("[queue][SendEmailHandler][send-email] error sending email: %v", err)
+		return err
+	}
 	return nil
 }
 

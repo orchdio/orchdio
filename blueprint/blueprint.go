@@ -478,3 +478,16 @@ type UserPlaylist struct {
 	// use the name as the owner for now
 	Owner string `json:"owner"`
 }
+
+type AppTaskData struct {
+	Name string `json:"name"`
+	UUID string `json:"uuid"`
+}
+type EmailTaskData struct {
+	App        *AppTaskData           `json:"app"`
+	From       string                 `json:"from"`
+	To         string                 `json:"to"`
+	Payload    map[string]interface{} `json:"payload"`
+	TaskID     string                 `json:"task_id"`
+	TemplateID int                    `json:"template_id"`
+}
