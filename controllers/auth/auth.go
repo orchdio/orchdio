@@ -7,29 +7,37 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
 	"orchdio/db"
 	"orchdio/db/queries"
+	"orchdio/queue"
 	"orchdio/services/deezer"
 	"orchdio/services/spotify"
 	"orchdio/util"
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 type AuthController struct {
-	DB *sqlx.DB
+	DB          *sqlx.DB
+	AsyncClient *asynq.Client
+	AsynqServer *asynq.Server
+	AsynqRouter *asynq.ServeMux
+	Redis       *redis.Client
 }
 
-func NewAuthController(db *sqlx.DB) *AuthController {
-	return &AuthController{DB: db}
+func NewAuthController(db *sqlx.DB, asynqClient *asynq.Client, asynqServer *asynq.Server, asyqRouter *asynq.ServeMux, r *redis.Client) *AuthController {
+	return &AuthController{DB: db, AsyncClient: asynqClient, AsynqServer: asynqServer, AsynqRouter: asyqRouter, Redis: r}
 }
 
 func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
@@ -104,7 +112,6 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 		authURL := spotify.FetchAuthURL(string(encryptedToken))
-		log.Printf("[controllers][AppAuthRedirect] developer -  redirecting to spotify auth url: %s\n", string(authURL))
 
 		response["url"] = string(authURL)
 		return util.SuccessResponse(ctx, fiber.StatusOK, response)
@@ -124,7 +131,6 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 
 		deezerAuth := deezer.NewDeezerAuth(deezerClientID, deezerSecret, deezerRedirectURL)
 		authURL := deezerAuth.FetchAuthURL(string(encryptedToken))
-		log.Printf("[controllers][AppAuthRedirect] developer -  redirecting to deezer auth url: %s\n", string(encryptedToken))
 		response["url"] = authURL
 		return util.SuccessResponse(ctx, fiber.StatusOK, response)
 
@@ -165,6 +171,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 
 	// decode state
 	decodedState, err := util.DecodeAuthJwt(state)
+	redirectURL := ""
 	if err != nil {
 		log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: could not decode the auth token: %v\n", err)
 		if errors.Is(err, jwt.ErrTokenExpired) {
@@ -172,6 +179,8 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		}
 		return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "unable to decode state")
 	}
+
+	var authedUserEmail string
 
 	switch decodedState.Platform {
 	// spotify auth flow
@@ -195,9 +204,10 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 				log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: invalid auth code\n")
 				return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "invalid auth code")
 			}
-
+			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to complete spotify user auth: %v\n", err)
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
+
 		encryptedRefreshToken, err := util.Encrypt(refreshToken, []byte(encryptionSecretKey))
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to encrypt refresh token: %v\n", err)
@@ -207,6 +217,10 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		user, err := client.CurrentUser(ctx.Context())
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to get current user during auth: %v\n", err)
+			if strings.Contains(err.Error(), "User not registered") {
+				log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: user not registered\n")
+				return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "You have not been added to the waitlist for access to spotify. Please join the waitlist and try again.")
+			}
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
@@ -229,14 +243,12 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
-		log.Printf("spotify user: %v\n", user)
-
-		log.Printf("[controllers][HandleAppAuthRedirect] developer -  user platform usernames updated")
 		_, err = a.DB.Exec(queries.UpdateUserPlatformToken, encryptedRefreshToken, "spotify", user.Email)
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to update user spotify refresh platform token: %v\n", err)
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
+		log.Printf("[controllers][HandleAppAuthRedirect] developer -  user platform usernames updated")
 
 		// if the developer is Orchdio Labs, we want to redirect to the respective redirect urls for the apps and a fallback from env incase
 		// TODO: implement checking for orchdio and getting the redirect urls for the apps and handle fallback in .env
@@ -262,10 +274,9 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign spotify auth jwt: %v\n", err)
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
-
+		authedUserEmail = userProfile.Email
 		// if developer is orchdio labs, create jwt token and redirect to the app url
-		devURL := fmt.Sprintf("%s?token=%s", appToken.RedirectURL, string(authToken))
-		return ctx.Redirect(devURL, fiber.StatusTemporaryRedirect)
+		redirectURL = fmt.Sprintf("%s?token=%s", appToken.RedirectURL, string(authToken))
 
 		// deezer auth flow
 	case "deezer":
@@ -340,10 +351,10 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign deezer auth jwt: %v\n", err)
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
+		authedUserEmail = deezerUser.Email
 
-		redirectURL := fmt.Sprintf("%s?token=%s", appToken.RedirectURL, string(authToken))
+		redirectURL = fmt.Sprintf("%s?token=%s", appToken.RedirectURL, string(authToken))
 
-		return ctx.Redirect(redirectURL, fiber.StatusTemporaryRedirect)
 		// apple music auth flow
 	case "applemusic":
 		log.Printf("[controllers][HandleAppAuthRedirect] developer -  apple music auth flow")
@@ -425,13 +436,60 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign apple music auth jwt: %v\n", err)
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
+		authedUserEmail = body.Email
 
-		redirectURL := fmt.Sprintf("%v?token=%v", appToken.RedirectURL, authToken)
-		log.Printf("[controllers][HandleAppAuthRedirect] developer -  redirecting to: %v\n", redirectURL)
-		// redirect to the redirect url from the state token.
-		return ctx.Redirect(redirectURL, fiber.StatusTemporaryRedirect)
+		redirectURL = fmt.Sprintf("%v?token=%v", appToken.RedirectURL, authToken)
+	// redirect to the redirect url from the state token.
+	default:
+		log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: invalid platform: %v\n", decodedState.Platform)
+		return util.ErrorResponse(ctx, fiber.StatusNotImplemented, "unauthorized", "invalid platform")
+	}
+	// fetch the app that made the auth request in order to add to the task data, used for sending customized email
+	// informing user that the app has been authorized.
+	database := db.NewDB{DB: a.DB}
+	app, err := database.FetchAppByAppId(decodedState.App)
+	if err != nil {
+		log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch app from database: %v\n", err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 	}
 
-	// not supported yet??
-	return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "invalid platform")
+	log.Printf("[controllers][HandleAppAuthRedirect][debug] app authing user is -  app: %v\n", app.Name)
+	taskID := uuid.New().String()
+	taskApp := &blueprint.AppTaskData{
+		Name: app.Name,
+		UUID: app.UID.String(),
+	}
+	emailTaskData := &blueprint.EmailTaskData{
+		App:        taskApp,
+		From:       "alert@orchdio.com", // TODO: make this configurable
+		To:         authedUserEmail,
+		Payload:    map[string]interface{}{"APP_NAME": app.Name, "PLATFORM": strings.Title(decodedState.Platform)},
+		TaskID:     taskID,
+		TemplateID: 1,
+	}
+	// schedule a job to send notification email
+	emailQueue := queue.NewOrchdioQueue(a.AsyncClient, a.DB, a.Redis, a.AsynqRouter)
+	// serialize the task data
+	serializedEmailTaskData, err := json.Marshal(emailTaskData)
+	if err != nil {
+		log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to serialize email task data: %v\n", err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+	}
+
+	emailTask, err := emailQueue.NewTask(fmt.Sprintf("send:appauth:email:%s", taskID), queue.EmailTask, 3, serializedEmailTaskData)
+	if err != nil {
+		log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to create email task: %v\n", err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+	}
+	err = emailQueue.EnqueueTask(emailTask, queue.EmailQueue, taskID)
+	if err != nil {
+		log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to enqueue email task: %v\n", err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+	}
+
+	// we dont really need to create a new task in the db since it is not a task that contains the data needed by a developer
+	// set the task handler
+	emailQueue.RunTask(fmt.Sprintf("send:appauth:email:%s", taskID), emailQueue.SendEmailHandler)
+	log.Printf("[controllers][HandleAppAuthRedirect] app auth email scheduled.\n")
+	return util.SuccessResponse(ctx, fiber.StatusOK, redirectURL)
 }

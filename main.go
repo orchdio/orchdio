@@ -226,64 +226,108 @@ func main() {
 			ShutdownTimeout: 3 * time.Second,
 			Queues: map[string]int{
 				"playlist-conversion": 5,
+				"email":               2,
+				"default":             1,
 			},
 			// NB: from the queue ConversionMiddleware, when we handle orphaned task and we return a blueprint.ENORESULT error, the execution
 			// jumps here, so when the middleware runs and we return a blueprint.ENORESULT error, it'll run this block and reprocess the task
 			// if the handler has successfully been attached or do nothing (and let the queue retry later) if there was an error
 			ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
 				log.Printf("[main][QueueErrorHandler] Running queue server error handler...")
-				log.Printf("[main][QueueErrorHandler][info] This middleware is called when the queue server encounters an error and rescheduling the queues")
-				// check that the queue isnt paused
-				queueInfo, qErr := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
-				if qErr != nil {
-					log.Printf("[main] [QueueErrorHandler] Error getting queue info %v", qErr)
-					return
-				}
+				// handle for each task here
+				isEmailQueue := util.IsTaskType(task.Type(), "send:appauth")
+				if isEmailQueue {
+					queueInfo, qErr := inspector.GetQueueInfo(queue.EmailQueue)
+					if qErr != nil {
+						log.Printf("[main] [QueueErrorHandler] Error getting queue info %v", qErr)
+						return
+					}
+					if queueInfo.Paused {
+						log.Printf("[main] [QueueErrorHandler] Email queue is paused.. Unpausing")
+						err = inspector.UnpauseQueue(queue.EmailQueue)
+						return
+					}
+					notFound := asynq.NotFound(context.Background(), task)
 
-				var taskData blueprint.PlaylistTaskData
-				err = json.Unmarshal(task.Payload(), &taskData)
-				if err != nil {
-					log.Printf("[main] [QueueErrorHandler] Error unmarshalling task payload %v", err)
-					return
-				}
-				log.Printf("[main] [QueueErrorHandler] Queue info %v", queueInfo)
-				if queueInfo.Paused {
-					log.Printf("[main][QueueErrorHandler] Queue is paused")
-					err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
-					return
-				}
-
-				// check if task has already been scheduled (has an handler), by fetching task from queue
-				notFound := asynq.NotFound(context.Background(), task)
-				if notFound != nil {
-					log.Printf("[main] [QueueErrorHandler][warning] Task not scheduled")
-					asynqMux.Handle(task.Type(), asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
-						log.Printf("[main] [QueueErrorHandler] Custom running handler here%v", err)
-						// create new taskHandler that will then process this job. From the ```queue.LoggerMiddleware``` method,
-						// we check for "orphaned" tasks, these tasks are tasks that were created but were never fully processed,
-						// for example during server restart or shutdown during task processing, even though we detect queue pauses and pause them
-						// when we do this, the next task the queue server picks up the task, we'll attach this handler to it and just process it.
-						taskHandler := queue.NewOrchdioQueue(asyncClient, db, redisClient)
-						err = taskHandler.PlaylistHandler(t.ResultWriter().TaskID(), taskData.ShortURL, taskData.LinkInfo, taskData.App.UID.String())
+					if notFound != nil {
+						log.Printf("[main] [QueueErrorHandler] Task not found in queue. Seems this task is orphaned.. Going to retry the handler needed to be run")
+						emailQueue := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
+						var emailData blueprint.EmailTaskData
+						err = json.Unmarshal(task.Payload(), &emailData)
 						if err != nil {
-							log.Printf("[main] [QueueErrorHandler] Error processing task %v", err)
-							return err
+							log.Printf("[main][QueueErrorHandler] error - could not unmarshal email task data %v", err)
+							return
 						}
-						log.Printf("[main] [QueueErrorHandler] Task processed successfully")
-						return nil
-					}))
-					log.Printf("[main] [QueueErrorHandler][warning] Queue is not paused but an error occured")
+						// schedule the email
+						err = emailQueue.SendEmail(&emailData)
+						if err != nil {
+							log.Printf("[main][QueueErrorHandler] error - could not schedule email %v", err)
+							return
+						}
+						log.Printf("[main][QueueErrorHandler] info - successfully scheduled email")
+						return
+					}
+					// the task is found...
+					log.Printf("[main] [QueueErrorHandler] Task found in queue. Seems this task is not orphaned. Doing nothing")
 					return
 				}
 
-				taskHandler := queue.NewOrchdioQueue(asyncClient, db, redisClient)
-				err = taskHandler.PlaylistHandler(task.ResultWriter().TaskID(), taskData.ShortURL, taskData.LinkInfo, taskData.App.UID.String())
-				if err != nil {
-					log.Printf("[main] [QueueErrorHandler] Error processing task %v", err)
-					return
-				}
+				// conversion queue
+				isConversionQueue := util.IsTaskType(task.Type(), "playlist:conversion")
+				if isConversionQueue {
+					log.Printf("[main][QueueErrorHandler][info] This middleware is called when the queue server encounters an error and rescheduling the queues")
+					// check that the queue isnt paused
+					queueInfo, qErr := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
+					if qErr != nil {
+						log.Printf("[main] [QueueErrorHandler] Error getting queue info %v", qErr)
+						return
+					}
 
-				log.Printf("[main] [QueueErrorHandler] Task already has a handler")
+					var taskData blueprint.PlaylistTaskData
+					err = json.Unmarshal(task.Payload(), &taskData)
+					if err != nil {
+						log.Printf("[main] [QueueErrorHandler] Error unmarshalling task payload %v", err)
+						return
+					}
+					log.Printf("[main] [QueueErrorHandler] Queue info %v", queueInfo)
+					if queueInfo.Paused {
+						log.Printf("[main][QueueErrorHandler] Queue is paused")
+						err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
+						return
+					}
+
+					// check if task has already been scheduled (has an handler), by fetching task from queue
+					notFound := asynq.NotFound(context.Background(), task)
+					if notFound != nil {
+						log.Printf("[main] [QueueErrorHandler][warning] Task not scheduled")
+						asynqMux.Handle(task.Type(), asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
+							log.Printf("[main] [QueueErrorHandler] Custom running handler here%v", err)
+							// create new taskHandler that will then process this job. From the ```queue.LoggerMiddleware``` method,
+							// we check for "orphaned" tasks, these tasks are tasks that were created but were never fully processed,
+							// for example during server restart or shutdown during task processing, even though we detect queue pauses and pause them
+							// when we do this, the next task the queue server picks up the task, we'll attach this handler to it and just process it.
+							taskHandler := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
+							err = taskHandler.PlaylistHandler(t.ResultWriter().TaskID(), taskData.ShortURL, taskData.LinkInfo, taskData.App.UID.String())
+							if err != nil {
+								log.Printf("[main] [QueueErrorHandler] Error processing task %v", err)
+								return err
+							}
+							log.Printf("[main] [QueueErrorHandler] Task processed successfully")
+							return nil
+						}))
+						log.Printf("[main] [QueueErrorHandler][warning] Queue is not paused but an error occured")
+						return
+					}
+
+					taskHandler := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
+					err = taskHandler.PlaylistHandler(task.ResultWriter().TaskID(), taskData.ShortURL, taskData.LinkInfo, taskData.App.UID.String())
+					if err != nil {
+						log.Printf("[main] [QueueErrorHandler] Error processing task %v", err)
+						return
+					}
+
+					log.Printf("[main] [QueueErrorHandler] Task already has a handler")
+				}
 			}),
 		})
 
@@ -446,7 +490,7 @@ func main() {
 
 	//baseRouter.Use(defaultFiberConfig)
 
-	authController := auth.NewAuthController(db)
+	authController := auth.NewAuthController(db, asyncClient, asynqServer, asynqMux, redisClient)
 	// connect endpoints
 	orchRouter.Get("/auth/:platform/connect", authController.AppAuthRedirect)
 	// the callback that the auth platform will redirect to and this is where we handle the redirect and generate an auth token for the user, as response

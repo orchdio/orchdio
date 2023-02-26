@@ -384,8 +384,6 @@ func FetchPlaylist(id string, red *redis.Client) (*PlaylistInfo, *blueprint.Play
 		pages = 1
 	}
 
-	log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - pages - %v\n", pages)
-
 	instance := axios.NewInstance(&axios.InstanceConfig{
 		BaseURL:     ApiUrl,
 		EnableTrace: true,
@@ -445,7 +443,6 @@ func FetchPlaylist(id string, red *redis.Client) (*PlaylistInfo, *blueprint.Play
 		Owner:   "", // info.Creator.Id // TODO: implement fetching the user with this ID and populating it here,
 		Cover:   util.BuildTidalAssetURL(info.SquareImage),
 	}
-	log.Printf("Response: %v\n", result)
 	ser, _ := json.Marshal(result)
 	// cache the result
 	err = red.Set(context.Background(), identifierHash, ser, 0).Err()

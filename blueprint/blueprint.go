@@ -465,16 +465,29 @@ type UserPlaylist struct {
 	ID            string `json:"id"`
 	Title         string `json:"title"`
 	Description   string `json:"description,omitempty"`
-	Duration      string `json:"duration"`
-	DurationMilis int    `json:"duration_millis"`
+	Duration      string `json:"duration,omitempty"`
+	DurationMilis int    `json:"duration_millis,omitempty"`
 	Public        bool   `json:"public"`
 	Collaborative bool   `json:"collaborative"`
-	NbTracks      int    `json:"nb_tracks"`
+	NbTracks      int    `json:"nb_tracks,omitempty"`
 	Fans          int    `json:"fans,omitempty"`
 	URL           string `json:"link"`
 	Cover         string `json:"cover"`
 	CreatedAt     string `json:"created_at"`
-	Checksum      string `json:"checksum"`
+	Checksum      string `json:"checksum,omitempty"`
 	// use the name as the owner for now
 	Owner string `json:"owner"`
+}
+
+type AppTaskData struct {
+	Name string `json:"name"`
+	UUID string `json:"uuid"`
+}
+type EmailTaskData struct {
+	App        *AppTaskData           `json:"app"`
+	From       string                 `json:"from"`
+	To         string                 `json:"to"`
+	Payload    map[string]interface{} `json:"payload"`
+	TaskID     string                 `json:"task_id"`
+	TemplateID int                    `json:"template_id"`
 }

@@ -86,6 +86,9 @@ func (a *AuthMiddleware) AddReadOnlyDeveloperToContext(ctx *fiber.Ctx) error {
 	developer, err := database.FetchDeveloperAppWithPublicKey(pubKey)
 	if err != nil {
 		log.Printf("[db][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app developer with public key")
+		if errors.Is(err, sql.ErrNoRows) {
+			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "invalid x-orchdio-public-key header. App does not exist")
+		}
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred")
 	}
 	log.Printf("[db][AddReadOnlyDevAccessToContext] developer - making read only request")
@@ -133,6 +136,9 @@ func (a *AuthMiddleware) AddReadWriteDeveloperToContext(ctx *fiber.Ctx) error {
 	app, err := database.FetchAppBySecretKey([]byte(key))
 	if err != nil {
 		log.Printf("[db][AddReadWriteDevAccessToContext] developer -  error: could not fetch app with private key")
+		if errors.Is(err, sql.ErrNoRows) {
+			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "invalid x-orchdio-key header. App does not exist")
+		}
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred")
 	}
 	// set the app to the context

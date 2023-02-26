@@ -96,13 +96,13 @@ func (d *NewDB) DeleteApp(appId string) error {
 
 // FetchDeveloperAppWithSecretKey fetches a developer for an authorized app, meaning the app is active.
 func (d *NewDB) FetchDeveloperAppWithSecretKey(secretKey string) (*blueprint.User, error) {
-	log.Printf("[db][FetchAuthorizedDeveloperApp] developer -  fetching authorized developer app:\n")
+	log.Printf("[db][FetchAuthorizedDeveloperApp] developer -  fetching authorized developer app by secret key:\n")
 	var developer blueprint.User
 	err := d.DB.QueryRowx(queries.FetchAuthorizedAppDeveloperBySecretKey, secretKey).StructScan(&developer)
 	if err != nil {
 		log.Printf("[db][FetchAuthorizedDeveloperApp] developer -  error: could not fetch authorized developer app: %v\n", err)
 		if errors.Is(err, sql.ErrNoRows) {
-			log.Printf("[db][FetchAuthorizedDeveloperApp] developer - App does not exist%v\n", err)
+			log.Printf("[db][FetchAuthorizedDeveloperApp][fetchbysecret] developer - App does not exist %v\n", err)
 			return nil, sql.ErrNoRows
 		}
 		return nil, err
@@ -113,7 +113,7 @@ func (d *NewDB) FetchDeveloperAppWithSecretKey(secretKey string) (*blueprint.Use
 
 // FetchDeveloperAppWithPublicKey fetches a developer for an authorized app, meaning the app is active.
 func (d *NewDB) FetchDeveloperAppWithPublicKey(publicKey string) (*blueprint.User, error) {
-	log.Printf("[db][FetchAuthorizedDeveloperApp] developer -  fetching authorized developer app:\n")
+	log.Printf("[db][FetchAuthorizedDeveloperApp][fetchbypublickey] developer -  fetching authorized developer by pubkey:\n")
 	var developer blueprint.User
 	err := d.DB.QueryRowx(queries.FetchAuthorizedAppDeveloperByPublicKey, publicKey).StructScan(&developer)
 	if err != nil {
