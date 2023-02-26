@@ -23,7 +23,7 @@ const DeleteApp = `DELETE FROM apps WHERE uuid = $1`
 
 const DisableApp = `UPDATE apps SET authorized = false WHERE uuid = $1;`
 const EnableApp = `UPDATE apps SET authorized = true WHERE uuid = $1;`
-const FetchAppKeysByID = `SELECT COALESCE(public_key, uuid_nil()), COALESCE(secret_key, uuid_nil()), COALESCE(verify_token, uuid_nil()) FROM apps WHERE uuid = $1;`
+const FetchAppKeysByID = `SELECT public_key, secret_key, verify_token FROM apps WHERE uuid = $1;`
 
 const FetchAppsByDeveloper = `SELECT * FROM apps WHERE developer = $1`
 const UpdateAppKeys = `UPDATE apps SET public_key = $1, secret_key = $2, verify_token = $3 WHERE uuid = $4`
