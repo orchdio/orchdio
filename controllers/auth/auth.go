@@ -491,5 +491,5 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 	// set the task handler
 	emailQueue.RunTask(fmt.Sprintf("send:appauth:email:%s", taskID), emailQueue.SendEmailHandler)
 	log.Printf("[controllers][HandleAppAuthRedirect] app auth email scheduled.\n")
-	return util.SuccessResponse(ctx, fiber.StatusOK, redirectURL)
+	return ctx.Redirect(redirectURL, fiber.StatusTemporaryRedirect)
 }
