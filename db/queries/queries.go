@@ -11,12 +11,12 @@ SET email=EXCLUDED.email, username=EXCLUDED.username, refresh_token=$4, platform
 //                   deezer_token = (case when $1 = 'deezer' then deezer_token = $2 end),
 //                   tidal_token = (case when $1 = 'tidal' then tidal_token = $2 end) WHERE uuid = $3`
 
-const UpdatePlatformUsernames = `UPDATE users SET usernames = COALESCE(usernames::JSONB, '{}') || $2 WHERE email = $1;`
+const UpdatePlatformUsernamesAndIds = `UPDATE users SET usernames = COALESCE(usernames::JSONB, '{}') || $2, platform_ids = COALESCE(platform_ids::JSONB, '{}') || $3 WHERE email = $1;`
 
 // FindUserByEmail returns a  user the email. it fetches the refresh token for the user based on platform passed. if no platform passed, it'll return refresh_token
 const FindUserByEmail = `SELECT id, email, coalesce(username, '') AS username, uuid, created_at, updated_at, usernames, platform_id, 
        (case when $2 ILIKE '%spotify%' then spotify_token when $2 ILIKE '%deezer%' then deezer_token when $2 ILIKE '%applemusic%' then applemusic_token else refresh_token end) AS refresh_token  FROM users where email = $1`
-const FindUserByUUID = `SELECT id, email, coalesce(username, '') AS username, uuid, created_at, updated_at, usernames, (case when $2 ILIKE '%spotify%' then spotify_token when $2 ILIKE '%deezer%' then deezer_token when $2 ILIKE '%applemusic%' then applemusic_token end) AS refresh_token  FROM users where uuid = $1 AND platform_id IS NOT NULL`
+const FindUserByUUID = `SELECT id, email, coalesce(username, '') AS username, uuid, created_at, updated_at, usernames, (case when $2 ILIKE '%spotify%' then spotify_token when $2 ILIKE '%deezer%' then deezer_token when $2 ILIKE '%applemusic%' then applemusic_token end) AS refresh_token, platform_ids  FROM users where uuid = $1 AND platform_id IS NOT NULL`
 
 // FindUserProfileByEmail is similar to FindUserByEmail with the fact that they both fetch profile info for a user except this one fetches just the user profile we want to return
 // without including the refreshtoken and other fields. the above is currently used in the code and it has its own usecases. They are similar, but it seems there are more fields needed

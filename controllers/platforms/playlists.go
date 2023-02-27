@@ -3,6 +3,7 @@ package platforms
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"github.com/gofiber/fiber/v2"
 	"github.com/zmb3/spotify/v2"
@@ -219,7 +220,7 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
 		}
 		log.Printf("[platforms][FetchPlatformPlaylists] deezer playlists fetched successfully")
-		// create a slice of UserPlaylist
+		// create a slice of UserLibraryPlaylists
 		var userPlaylists []blueprint.UserPlaylist
 		for _, playlist := range playlists.Data {
 			userPlaylists = append(userPlaylists, blueprint.UserPlaylist{
@@ -238,7 +239,11 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 				Owner:         playlist.Creator.Name,
 			})
 		}
-		return util.SuccessResponse(ctx, http.StatusOK, userPlaylists)
+		var response = blueprint.UserLibraryPlaylists{
+			Total: playlists.Total,
+			Data:  userPlaylists,
+		}
+		return util.SuccessResponse(ctx, http.StatusOK, response)
 	case "spotify":
 		// get the spotify playlists
 		playlists, err := spotify2.FetchUserPlaylist(refreshToken)
@@ -247,9 +252,9 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
 		}
 		log.Printf("[platforms][FetchPlatformPlaylists] spotify playlists fetched successfully")
-		// create a slice of UserPlaylist
+		// create a slice of UserLibraryPlaylists
 		var userPlaylists []blueprint.UserPlaylist
-		for _, playlist := range playlists {
+		for _, playlist := range playlists.Playlists {
 			log.Printf("[platforms][FetchPlatformPlaylists] playlist info url is- %v\n", playlist.Endpoint)
 			pix := playlist.Images
 			var cover string
@@ -268,11 +273,15 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 				Owner:         playlist.Owner.DisplayName,
 			})
 		}
-		return util.SuccessResponse(ctx, http.StatusOK, userPlaylists)
+		var response = blueprint.UserLibraryPlaylists{
+			Total: playlists.Total,
+			Data:  userPlaylists,
+		}
+		return util.SuccessResponse(ctx, http.StatusOK, response)
 
 	case tidal.IDENTIFIER:
 		// get the tidal playlists
-		playlists, err := tidal.FetchUserPlaylists(refreshToken)
+		playlists, err := tidal.FetchUserPlaylists()
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching tidal playlists %v\n", err)
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
@@ -284,7 +293,7 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 		}
 
 		log.Printf("[platforms][FetchPlatformPlaylists] tidal playlists fetched successfully")
-		// create a slice of UserPlaylist
+		// create a slice of UserLibraryPlaylists
 		var userPlaylists []blueprint.UserPlaylist
 		for _, playlist := range playlists.Items {
 			if playlist.ItemType != "PLAYLIST" {
@@ -305,7 +314,11 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 				Owner:         playlist.Data.Creator.Name,
 			})
 		}
-		return util.SuccessResponse(ctx, http.StatusOK, userPlaylists)
+		var response = blueprint.UserLibraryPlaylists{
+			Total: playlists.TotalNumberOfItems,
+			Data:  userPlaylists,
+		}
+		return util.SuccessResponse(ctx, http.StatusOK, response)
 
 	case applemusic.IDENTIFIER:
 		// get the apple music playlists
@@ -320,7 +333,7 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
 		}
 
-		// create a slice of UserPlaylist
+		// create a slice of UserLibraryPlaylists
 		var userPlaylists []blueprint.UserPlaylist
 		for _, playlist := range playlists {
 			userPlaylists = append(userPlaylists, blueprint.UserPlaylist{
@@ -336,13 +349,101 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 				Owner:         playlist.Owner,
 			})
 		}
-		return util.SuccessResponse(ctx, http.StatusOK, userPlaylists)
+		var response = blueprint.UserLibraryPlaylists{
+			Total: len(playlists),
+			Data:  userPlaylists,
+		}
+		return util.SuccessResponse(ctx, http.StatusOK, response)
 	}
 	return util.ErrorResponse(ctx, http.StatusNotImplemented, "not implemented", "This platform is not yet supported")
 }
 
-func FetchPlatformAlbums(ctx *fiber.Ctx) error {
+// FetchPlatformArtists fetches the artists from a given platform
+func (p *Platforms) FetchPlatformArtists(ctx *fiber.Ctx) error {
 	log.Printf("[platforms][FetchPlatformAlbums] fetching platform albums\n")
+	app := ctx.Locals("app").(*blueprint.DeveloperApp)
+	userId := ctx.Params("userId")
+	platform := ctx.Params("platform")
+	refreshToken := ""
 
+	if userId == "" {
+		log.Printf("[platforms][FetchPlatformArtists] error - no user id provided\n")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "No user id provided")
+	}
+
+	if platform == "" {
+		log.Printf("[platforms][FetchPlatformArtists] error - no platform provided\n")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "No platform provided")
+	}
+
+	log.Printf("[platforms][FetchPlatformAlbums] app %s is trying to fetch %s's library artists on %s", app.Name, userId, platform)
+
+	// get the user
+	database := db.NewDB{DB: p.DB}
+	user, err := database.FindUserByUUID(userId, platform)
+	if err != nil {
+		log.Printf("[platforms][FetchPlatformArtists] error - error fetching user %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+	}
+
+	if user.RefreshToken == nil && platform != "tidal" {
+		log.Printf("[platforms][FetchPlatformArtists] error - no refresh token found for user %v\n", err)
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "unauthorized", "No refresh token found for user")
+	}
+
+	if user.RefreshToken != nil {
+		r, err := util.Decrypt(user.RefreshToken, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if err != nil {
+			log.Printf("[platforms][FetchPlatformArtists] error - error decrypting refresh token %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		}
+		refreshToken = string(r)
+	}
+
+	switch platform {
+	case applemusic.IDENTIFIER:
+		// get the apple music artists
+		log.Printf("[platforms][FetchPlatformArtists] fetching apple music artists\n")
+		artists, err := applemusic.FetchUserArtists(refreshToken)
+		if err != nil {
+			log.Printf("[platforms][FetchPlatformArtists] error - error fetching apple music artists %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		}
+		return util.SuccessResponse(ctx, http.StatusOK, artists)
+	case deezer.IDENTIFIER:
+		// get the deezer artists
+		log.Printf("[platforms][FetchPlatformArtists] fetching deezer artists\n")
+		artists, err := deezer.FetchUserArtists(refreshToken)
+		if err != nil {
+			log.Printf("[platforms][FetchPlatformArtists] error - error fetching deezer artists %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		}
+		return util.SuccessResponse(ctx, http.StatusOK, artists)
+	case spotify2.IDENTIFIER:
+		// get the spotify artists
+		log.Printf("[platforms][FetchPlatformArtists] fetching spotify artists\n")
+		artists, err := spotify2.FetchUserArtists(refreshToken)
+		if err != nil {
+			log.Printf("[platforms][FetchPlatformArtists] error - error fetching spotify artists %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		}
+		return util.SuccessResponse(ctx, http.StatusOK, artists)
+	case tidal.IDENTIFIER:
+		// get the tidal artists
+		log.Printf("[platforms][FetchPlatformArtists] fetching tidal artists\n")
+		// deserialize the user platform ids
+		var platformIds map[string]string
+		err := json.Unmarshal(user.PlatformIDs.([]byte), &platformIds)
+		if err != nil {
+			log.Printf("[platforms][FetchPlatformArtists] error - error deserializing platform ids %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		}
+		artists, err := tidal.FetchUserArtists(platformIds["tidal"])
+		if err != nil {
+			log.Printf("[platforms][FetchPlatformArtists] error - error fetching tidal artists %v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		}
+		return util.SuccessResponse(ctx, http.StatusOK, artists)
+	}
 	return util.ErrorResponse(ctx, http.StatusNotImplemented, "not implemented", "This platform is not yet supported")
 }

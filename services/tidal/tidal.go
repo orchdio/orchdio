@@ -150,7 +150,7 @@ func FetchSingleTrack(id string) (*Track, error) {
 //		return false
 //	}
 //	var playlist PlaylistInfo
-//	err = json.Unmarshal(response.Data, &playlist)
+//	err = json.Unmarshal(response.Payload, &playlist)
 //	if err != nil {
 //		log.Printf("\n[controllers][platforms][tidal][CheckPlaylistHasBeenUpdated] - Error unmarshalling playlist from TIDAL.  - %v\n", err)
 //		return false
@@ -639,7 +639,7 @@ func CreateNewPlaylist(title, description, musicToken string, tracks []string) (
 }
 
 // FetchUserPlaylists - fetches the user's playlists
-func FetchUserPlaylists(token string) (*UserPlaylistResponse, error) {
+func FetchUserPlaylists() (*UserPlaylistResponse, error) {
 	log.Printf("\n[services][tidal][FetchUserPlaylists] - fetching user playlists\n")
 
 	accessToken, err := FetchNewAuthToken()
@@ -712,4 +712,59 @@ func FetchUserPlaylists(token string) (*UserPlaylistResponse, error) {
 	}
 	log.Printf("\n[services][tidal][FetchUserPlaylists] - fetched %d playlists\n", len(playlists.Items))
 	return playlists, nil
+}
+
+// FetchUserArtists - fetches the user's artists
+func FetchUserArtists(userId string) (*blueprint.UserLibraryArtists, error) {
+	// for tidal, we're fetching maximum of 500 artists. this is due to the fact that there's no
+	// tidal access for now except for me and also makes implementation easier (even if we get tidal users today)
+	// also the tidal api itself uses 500 as the limit in the browser.
+	log.Printf("\n[services][tidal][FetchUserArtists] - fetching user artists\n")
+	accessToken, err := FetchNewAuthToken()
+	if err != nil {
+		log.Printf("\n[services][tidal][FetchUserArtists] - error fetching new auth token - %v\n", err)
+		return nil, err
+	}
+	instance := axios.NewInstance(&axios.InstanceConfig{
+		BaseURL: "https://listen.tidal.com",
+		Headers: map[string][]string{
+			"Content-Type":  {"application/x-www-form-urlencoded"},
+			"Authorization": {fmt.Sprintf("Bearer %s", accessToken)},
+		},
+	})
+
+	link := fmt.Sprintf("/v1/users/%s/favorites/artists?offset=0&limit=50&order=DATE&orderDirection=DESC&countryCode=US&locale=en_US&deviceType=BROWSER", userId)
+	resp, err := instance.Get(link, nil)
+	if err != nil {
+		log.Printf("\n[services][tidal][FetchUserArtists] - error fetching user artists - %v\n", err)
+		return nil, err
+	}
+
+	if resp.Status >= 400 {
+		log.Printf("\n[services][tidal][FetchUserArtists] - error fetching user artists - %v\n", string(resp.Data))
+		return nil, err
+	}
+
+	artistResponse := UserArtistsResponse{}
+	err = json.Unmarshal(resp.Data, &artistResponse)
+	if err != nil {
+		log.Printf("\n[services][tidal][FetchUserArtists] - error parsing user artists response - %v\n", err)
+		return nil, err
+	}
+
+	var artists []blueprint.UserArtist
+	for _, artist := range artistResponse.Items {
+		artists = append(artists, blueprint.UserArtist{
+			Name:    artist.Item.Name,
+			ID:      strconv.Itoa(artist.Item.Id),
+			Picture: artist.Item.Picture,
+			URL:     artist.Item.Url,
+		})
+	}
+
+	response := blueprint.UserLibraryArtists{
+		Payload: artists,
+		Total:   artistResponse.TotalNumberOfItems,
+	}
+	return &response, nil
 }

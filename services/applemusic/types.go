@@ -155,3 +155,57 @@ type UserPlaylistResponse struct {
 	Owner         string `json:"owner"`
 	Description   string `json:"description"`
 }
+
+type UserArtistsResponse struct {
+	Data []struct {
+		Id         string `json:"id"`
+		Type       string `json:"type"`
+		Href       string `json:"href"`
+		Attributes struct {
+			Name string `json:"name"`
+		} `json:"attributes"`
+	} `json:"data"`
+	Meta struct {
+		Total int `json:"total"`
+		Sorts []struct {
+			Name        string `json:"name"`
+			DisplayName string `json:"displayName"`
+		} `json:"sorts"`
+		CurrentSort string `json:"currentSort"`
+	} `json:"meta"`
+	Next string `json:"next,omitempty"`
+}
+
+type UserArtistInfoResponse struct {
+	Data []struct {
+		Id         string `json:"id"`
+		Type       string `json:"type"`
+		Href       string `json:"href"`
+		Attributes struct {
+			GenreNames []string `json:"genreNames"`
+			Name       string   `json:"name"`
+			Artwork    struct {
+				Width      int    `json:"width"`
+				Height     int    `json:"height"`
+				Url        string `json:"url"`
+				BgColor    string `json:"bgColor"`
+				TextColor1 string `json:"textColor1"`
+				TextColor2 string `json:"textColor2"`
+				TextColor3 string `json:"textColor3"`
+				TextColor4 string `json:"textColor4"`
+			} `json:"artwork"`
+			Url string `json:"url"`
+		} `json:"attributes"`
+		Relationships struct {
+			Albums struct {
+				Href string `json:"href"`
+				Next string `json:"next"`
+				Data []struct {
+					Id   string `json:"id"`
+					Type string `json:"type"`
+					Href string `json:"href"`
+				} `json:"data"`
+			} `json:"albums"`
+		} `json:"relationships"`
+	} `json:"data"`
+}

@@ -236,8 +236,11 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		serialized, err := json.Marshal(map[string]string{
 			"spotify": user.DisplayName,
 		})
+		platformIds, err := json.Marshal(map[string]string{
+			"spotify": user.ID,
+		})
 
-		_, err = a.DB.Exec(queries.UpdatePlatformUsernames, user.Email, string(serialized))
+		_, err = a.DB.Exec(queries.UpdatePlatformUsernamesAndIds, user.Email, string(serialized), string(platformIds))
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to update platform usernames: %v\n", err)
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
@@ -320,7 +323,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		serialed, err := json.Marshal(map[string]string{
 			"deezer": deezerUser.Name,
 		})
-		_, err = a.DB.Exec(queries.UpdatePlatformUsernames, deezerUser.Email, string(serialed))
+		_, err = a.DB.Exec(queries.UpdatePlatformUsernamesAndIds, deezerUser.Email, string(serialed))
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to update deezer platform usernames: %v\n", err)
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
@@ -411,7 +414,11 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		serialized, err := json.Marshal(map[string]string{
 			"applemusic": displayName,
 		})
-		_, err = a.DB.Exec(queries.UpdatePlatformUsernames, hashedEmail, string(serialized))
+		platformIds, _ := json.Marshal(map[string]string{
+			"applemusic": hashedEmail,
+		})
+
+		_, err = a.DB.Exec(queries.UpdatePlatformUsernamesAndIds, hashedEmail, string(serialized), string(platformIds))
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to update apple music platform usernames: %v\n", err)
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")

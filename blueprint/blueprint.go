@@ -54,6 +54,7 @@ type User struct {
 	RefreshToken []byte      `json:"refresh_token" db:"refresh_token,omitempty"`
 	PlatformID   string      `json:"platform_id" db:"platform_id"`
 	Authorized   bool        `json:"authorized,omitempty" db:"authorized,omitempty"`
+	PlatformIDs  interface{} `json:"platform_ids,omitempty" db:"platform_ids,omitempty"`
 }
 
 type UserProfile struct {
@@ -478,6 +479,10 @@ type UserPlaylist struct {
 	// use the name as the owner for now
 	Owner string `json:"owner"`
 }
+type UserLibraryPlaylists struct {
+	Total int            `json:"total"`
+	Data  []UserPlaylist `json:"data"`
+}
 
 type AppTaskData struct {
 	Name string `json:"name"`
@@ -490,4 +495,16 @@ type EmailTaskData struct {
 	Payload    map[string]interface{} `json:"payload"`
 	TaskID     string                 `json:"task_id"`
 	TemplateID int                    `json:"template_id"`
+}
+
+type UserArtist struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Picture string `json:"picture"`
+	URL     string `json:"url"`
+}
+
+type UserLibraryArtists struct {
+	Payload []UserArtist `json:"payload"`
+	Total   int          `json:"total"`
 }

@@ -505,6 +505,7 @@ func main() {
 	orchRouter.Post("/playlist/:platform/add", authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.AddPlaylistToAccount)
 	orchRouter.Get("/account/", authMiddleware.AddReadWriteDeveloperToContext, userController.FetchUserProfile)
 	orchRouter.Get("/account/:userId/:platform/playlists", authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformPlaylists)
+	orchRouter.Get("/account/:userId/:platform/artists", authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformArtists)
 
 	orchRouter.Post("/follow", authMiddleware.AddReadWriteDeveloperToContext, followController.FollowPlaylist)
 	orchRouter.Post("/waitlist/add", authMiddleware.AddReadWriteDeveloperToContext, userController.AddToWaitlist)

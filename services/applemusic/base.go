@@ -555,6 +555,7 @@ func FetchUserPlaylists(token string) ([]UserPlaylistResponse, error) {
 	}
 
 	var playlists []UserPlaylistResponse
+	// get each of the playlist information for all the playlists in the user's library
 	for _, playlist := range p.Data {
 		log.Printf("[services][applemusic][FetchUserPlaylists] Getting catalog info for: %v\n", playlist.Attributes.Name)
 		//playlistIds = append(playlistIds, playlist.Id)
@@ -621,4 +622,87 @@ func FetchUserPlaylists(token string) ([]UserPlaylistResponse, error) {
 		playlists = append(playlists, r)
 	}
 	return playlists, nil
+}
+
+// FetchUserArtists fetches the user's artists
+func FetchUserArtists(token string) (*blueprint.UserLibraryArtists, error) {
+	// get the user's artists
+	inst := axios.NewInstance(&axios.InstanceConfig{
+		BaseURL: "https://api.music.apple.com/v1",
+		Headers: http.Header{
+			"Authorization":    []string{fmt.Sprintf("Bearer %s", os.Getenv("APPLE_MUSIC_API_KEY"))},
+			"Music-User-Token": []string{token},
+		},
+	})
+
+	// first, fetch all artists. the limit is 100 and since we want to fetch all of them, we need to loop
+	// TODO: change to pagination instead of looping if/when the need arises
+	resp, err := inst.Get("/me/library/artists?limit=100", nil)
+	if err != nil {
+		log.Printf("[services][applemusic][FetchUserArtists] Error getting user artists: %v\n", err)
+		return nil, err
+	}
+
+	var artists UserArtistsResponse
+	err = json.Unmarshal(resp.Data, &artists)
+	if err != nil {
+		log.Printf("[services][applemusic][FetchUserArtists] Error deserializing user artists: %v\n", err)
+		return nil, err
+	}
+
+	// fetch the remaining artists
+	if artists.Meta.Total > len(artists.Data) {
+		log.Printf("[services][applemusic][FetchUserArtists] Fetching remaining artists\n")
+		for {
+			if artists.Next == "" {
+				break
+			}
+			moreResp, err := inst.Get(fmt.Sprintf("/me/library/artists?limit=100&offset=%d", len(artists.Data)), nil)
+			if err != nil {
+				log.Printf("[services][applemusic][FetchUserArtists] Error getting user artists: %v\n", err)
+				return nil, err
+			}
+			var remainingArtists UserArtistsResponse
+			err = json.Unmarshal(moreResp.Data, &remainingArtists)
+			if err != nil {
+				log.Printf("[services][applemusic][FetchUserArtists] Error deserializing user artists: %v\n", err)
+				return nil, err
+			}
+			artists.Data = append(artists.Data, remainingArtists.Data...)
+			if len(remainingArtists.Data) == 0 {
+				log.Printf("[services][applemusic][FetchUserArtists] No more artists to fetch\n")
+				break
+			}
+			artists.Next = remainingArtists.Next
+			artists.Data = append(artists.Data, remainingArtists.Data...)
+		}
+	}
+
+	var userArtists []blueprint.UserArtist
+	for _, a := range artists.Data {
+		// get the artist info itself
+		artistResponse, err := inst.Get(fmt.Sprintf("/me/library/artists/%s/catalog", a.Id), nil)
+		if err != nil {
+			log.Printf("[services][applemusic][FetchUserArtists] Error getting user artist info: %v\n", err)
+			return nil, err
+		}
+		artistInfo := &UserArtistInfoResponse{}
+		err = json.Unmarshal(artistResponse.Data, artistInfo)
+		if err != nil {
+			log.Printf("[services][applemusic][FetchUserArtists] Error getting deserializing artist info: %v")
+		}
+		data := artistInfo.Data[0]
+		artist := blueprint.UserArtist{
+			ID:      data.Id,
+			Name:    data.Attributes.Name,
+			Picture: strings.ReplaceAll(data.Attributes.Artwork.Url, "{w}x{h}bb", "300x300bb"),
+			URL:     data.Attributes.Url,
+		}
+		userArtists = append(userArtists, artist)
+	}
+	userArtistResponse := blueprint.UserLibraryArtists{
+		Payload: userArtists,
+		Total:   artists.Meta.Total,
+	}
+	return &userArtistResponse, nil
 }

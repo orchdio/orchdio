@@ -540,3 +540,57 @@ func FetchUserPlaylists(token string) (*UserPlaylistsResponse, error) {
 
 	return out, nil
 }
+
+// FetchUserArtists fetches all the artists for a user
+func FetchUserArtists(token string) (*blueprint.UserLibraryArtists, error) {
+	// DEEZER ARTIST LIMIT IS 250 FOR NOW. THIS IS ORCHDIO IMPOSED AND IT IS to make implementation easier
+	// plus not as much deezer users and even so, we could make it premium in the future
+	deezerApiBase := os.Getenv("DEEZER_API_BASE")
+	reqURL := fmt.Sprintf("%s/user/me/artists?access_token=%s", deezerApiBase, token)
+	instance := axios.NewInstance(&axios.InstanceConfig{
+		BaseURL: deezerApiBase,
+		Headers: map[string][]string{
+			"Content-Type": {"application/json"},
+		},
+	})
+
+	resp, err := instance.Get(reqURL, nil)
+	if err != nil {
+		log.Printf("\n[services][deezer][FetchUserArtists] error - Could not fetch user artists: %v\n", err)
+		return nil, err
+	}
+
+	if resp.Status == http.StatusBadRequest {
+		log.Printf("\n[services][deezer][FetchUserArtists] error - Could not fetch user artists. Bad request: %v\n", err)
+		return nil, err
+	}
+
+	if resp.Status >= 400 {
+		log.Printf("\n[services][deezer][FetchUserArtists] error - Could not fetch user artists. Bad request: %v\n", err)
+		return nil, err
+	}
+
+	var artistsResponse UserArtistsResponse
+	err = json.Unmarshal(resp.Data, &artistsResponse)
+	if err != nil {
+		log.Printf("\n[services][deezer][FetchUserArtists] error - Could not deserialize the body into the out response: %v\n", err)
+		return nil, err
+	}
+
+	var artists []blueprint.UserArtist
+	for _, artist := range artistsResponse.Data {
+		artists = append(artists, blueprint.UserArtist{
+			ID:      strconv.Itoa(artist.Id),
+			Name:    artist.Name,
+			Picture: artist.Picture,
+			URL:     artist.Link,
+		})
+	}
+
+	response := blueprint.UserLibraryArtists{
+		Payload: artists,
+		Total:   artistsResponse.Total,
+	}
+	log.Printf("\n[services][deezer][FetchUserArtists] Fetched user deezer artists: %v\n", response)
+	return &response, nil
+}

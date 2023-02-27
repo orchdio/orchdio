@@ -510,3 +510,28 @@ type UserPlaylistResponse struct {
 	TotalNumberOfItems int    `json:"totalNumberOfItems"`
 	Cursor             string `json:"cursor"`
 }
+
+type UserArtistsResponse struct {
+	Limit              int `json:"limit"`
+	Offset             int `json:"offset"`
+	TotalNumberOfItems int `json:"totalNumberOfItems"`
+	Items              []struct {
+		Created string `json:"created"`
+		Item    struct {
+			Id          int      `json:"id"`
+			Name        string   `json:"name"`
+			ArtistTypes []string `json:"artistTypes"`
+			Url         string   `json:"url"`
+			Picture     string   `json:"picture"`
+			Popularity  int      `json:"popularity"`
+			ArtistRoles []struct {
+				CategoryId int    `json:"categoryId"`
+				Category   string `json:"category"`
+			} `json:"artistRoles"`
+			Mixes struct {
+				MASTERARTISTMIX string `json:"MASTER_ARTIST_MIX"`
+				ARTISTMIX       string `json:"ARTIST_MIX"`
+			} `json:"mixes"`
+		} `json:"item"`
+	} `json:"items"`
+}

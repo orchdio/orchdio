@@ -198,7 +198,10 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 	// update the usernames the user has on various playlist.
 	// NB: I wasn't sure how to really handle this, if its better to do it in the createUserQuery above or split here
 	// decided to split here because its just easier for me to bother with right now.
-	_, err = c.DB.Exec(queries.UpdatePlatformUsernames, user.Email, string(serialized))
+	platformIds, _ := json.Marshal(map[string]string{
+		"spotify": user.ID,
+	})
+	_, err = c.DB.Exec(queries.UpdatePlatformUsernamesAndIds, user.Email, string(serialized), string(platformIds))
 
 	// update user platform token
 	_, err = c.DB.Exec(queries.UpdateUserPlatformToken, encryptedRefreshToken, "spotify", user.Email)
@@ -239,128 +242,131 @@ func (c *UserController) AuthSpotifyUser(ctx *fiber.Ctx) error {
 
 	return ctx.Redirect(redirectTo + "?token=" + string(token))
 }
-func (c *UserController) AuthOrchdioSpotifyUser(ctx *fiber.Ctx) error {
-	// swagger:route GET /spotify/auth AuthSpotifyUser
-	//
-	// Authorizes a user with spotify account. This is connects a user with a spotify account, with Orchdio.
-	//
-	// ---
-	// Consumes:
-	//  - application/json
-	//
-	// Produces:
-	//  - application/json
-	//
-	// Schemes: https
-	//
-	// Responses:
-	//  200: redirectAuthResponse
-	var uniqueID, _ = uuid.NewUUID()
-	state := ctx.Query("state")
-	errorCode := ctx.Query("error")
 
-	if errorCode == "access_denied" {
-		return util.ErrorResponse(ctx, http.StatusUnauthorized, "unauthorized", "App denied access")
-	}
-
-	encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
-	if state == "" {
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "State is not present")
-	}
-
-	// create a new net/http instance since *fasthttp.Request() cannot be passed
-	r, err := http.NewRequest("GET", string(ctx.Request().RequestURI()), nil)
-
-	if err != nil {
-		log.Printf("[controllers][account][user] Error - error creating a new http request - %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An unexpected error occurred.")
-	}
-	// recover from panic
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("[controller][account][user][error] %v\n", r)
-		}
-	}()
-
-	client, refreshToken, err := spotify.CompleteUserAuth(context.Background(), r)
-	if err != nil {
-		log.Printf("[controllers][account][user] Error - error completing user auth - %v\n", err)
-		if err == blueprint.EINVALIDAUTHCODE {
-			log.Printf("[controllers][account][user] Error - invalid auth code - %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusBadRequest, err.Error(), "code has expired")
-		}
-
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An unexpected error")
-	}
-	encryptedRefreshToken, encErr := util.Encrypt(refreshToken, []byte(encryptionSecretKey))
-	if encErr != nil {
-		log.Printf("\n[controllers][account][user] Error - could not encrypt refreshToken - %v\n", encErr)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not encrypt refresh token")
-	}
-
-	log.Printf("[account][auth] encrypted refresh token: %v\n", encryptedRefreshToken)
-
-	user, err := client.CurrentUser(context.Background())
-	if err != nil {
-		log.Printf("\n[controllers][account][user] Error - could not fetch current spotify user- %v\n", err)
-
-		// THIS IS THE BEGINING OF A SUPPOSEDLY CURSED IMPLEMENTATION
-		// since we might need to request token quota extension for users
-		// AQB7csFtf_58P-Rq-jqrfFMhBXDJnC2xwFjLMwXr439vxbXCZdFxKpwTrnDLzJvFrY3nc2B4YeCRLOs5zgrMA4zwWZROc4P7qPt_ySlTi-qHM5w5y_eQ27PUJzLKQae5SJs
-		// when the user just auths for the first time, it seems that the refresh token is gotten (for some reason, during dev)
-
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An unexpected error occurred")
-	}
-	log.Printf("%v", user)
-
-	userProfile := &blueprint.User{}
-
-	query := queries.CreateUserQuery
-	newUser := c.DB.QueryRowx(
-		query,
-		user.Email,
-		user.DisplayName,
-		uniqueID,
-		encryptedRefreshToken,
-		user.ID,
-	)
-
-	dbErr := newUser.StructScan(userProfile)
-
-	if dbErr != nil {
-		log.Printf("\n[controller][account][user][spotify]: [AuthUser] Error executing query: %v\n", dbErr)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred and could not updated user profile in database")
-	}
-
-	serialized, err := json.Marshal(map[string]string{
-		"spotify": user.DisplayName,
-	})
-
-	// update the usernames the user has on various playlist.
-	// NB: I wasn't sure how to really handle this, if it's better to do it in the createUserQuery above or split here
-	// decided to split here because it's just easier for me to bother with right now.
-	_, err = c.DB.Exec(queries.UpdatePlatformUsernames, user.Email, string(serialized))
-
-	// update user platform token
-	_, err = c.DB.Exec(queries.UpdateUserPlatformToken, encryptedRefreshToken, "spotify", user.Email)
-	if err != nil {
-		log.Printf("[db][UpdateUserPlatformToken] error updating user platform token. %v\n", err)
-		return err
-	}
-
-	log.Printf("\n[user][controller][AuthUser] Method - App with the email %s just signed up or logged in with their Spotify account.\n", user.Email)
-	// create a jwt
-	claim := &blueprint.OrchdioUserToken{
-		Email:    user.Email,
-		Username: user.DisplayName,
-		UUID:     userProfile.UUID,
-		Platform: "spotify",
-	}
-	token, err := util.SignJwt(claim)
-	redirectTo := os.Getenv("ORCHDIO_REDIRECT_URI")
-
-	return ctx.Redirect(redirectTo + "?token=" + string(token))
-}
+//func (c *UserController) AuthOrchdioSpotifyUser(ctx *fiber.Ctx) error {
+//	// swagger:route GET /spotify/auth AuthSpotifyUser
+//	//
+//	// Authorizes a user with spotify account. This is connects a user with a spotify account, with Orchdio.
+//	//
+//	// ---
+//	// Consumes:
+//	//  - application/json
+//	//
+//	// Produces:
+//	//  - application/json
+//	//
+//	// Schemes: https
+//	//
+//	// Responses:
+//	//  200: redirectAuthResponse
+//	var uniqueID, _ = uuid.NewUUID()
+//	state := ctx.Query("state")
+//	errorCode := ctx.Query("error")
+//
+//	if errorCode == "access_denied" {
+//		return util.ErrorResponse(ctx, http.StatusUnauthorized, "unauthorized", "App denied access")
+//	}
+//
+//	encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
+//	if state == "" {
+//		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "State is not present")
+//	}
+//
+//	// create a new net/http instance since *fasthttp.Request() cannot be passed
+//	r, err := http.NewRequest("GET", string(ctx.Request().RequestURI()), nil)
+//
+//	if err != nil {
+//		log.Printf("[controllers][account][user] Error - error creating a new http request - %v\n", err)
+//		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An unexpected error occurred.")
+//	}
+//	// recover from panic
+//	defer func() {
+//		if r := recover(); r != nil {
+//			log.Printf("[controller][account][user][error] %v\n", r)
+//		}
+//	}()
+//
+//	client, refreshToken, err := spotify.CompleteUserAuth(context.Background(), r)
+//	if err != nil {
+//		log.Printf("[controllers][account][user] Error - error completing user auth - %v\n", err)
+//		if err == blueprint.EINVALIDAUTHCODE {
+//			log.Printf("[controllers][account][user] Error - invalid auth code - %v\n", err)
+//			return util.ErrorResponse(ctx, http.StatusBadRequest, err.Error(), "code has expired")
+//		}
+//
+//		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An unexpected error")
+//	}
+//	encryptedRefreshToken, encErr := util.Encrypt(refreshToken, []byte(encryptionSecretKey))
+//	if encErr != nil {
+//		log.Printf("\n[controllers][account][user] Error - could not encrypt refreshToken - %v\n", encErr)
+//		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not encrypt refresh token")
+//	}
+//
+//	log.Printf("[account][auth] encrypted refresh token: %v\n", encryptedRefreshToken)
+//
+//	user, err := client.CurrentUser(context.Background())
+//	if err != nil {
+//		log.Printf("\n[controllers][account][user] Error - could not fetch current spotify user- %v\n", err)
+//
+//		// THIS IS THE BEGINING OF A SUPPOSEDLY CURSED IMPLEMENTATION
+//		// since we might need to request token quota extension for users
+//		// AQB7csFtf_58P-Rq-jqrfFMhBXDJnC2xwFjLMwXr439vxbXCZdFxKpwTrnDLzJvFrY3nc2B4YeCRLOs5zgrMA4zwWZROc4P7qPt_ySlTi-qHM5w5y_eQ27PUJzLKQae5SJs
+//		// when the user just auths for the first time, it seems that the refresh token is gotten (for some reason, during dev)
+//
+//		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An unexpected error occurred")
+//	}
+//	log.Printf("%v", user)
+//
+//	userProfile := &blueprint.User{}
+//
+//	query := queries.CreateUserQuery
+//	newUser := c.DB.QueryRowx(
+//		query,
+//		user.Email,
+//		user.DisplayName,
+//		uniqueID,
+//		encryptedRefreshToken,
+//		user.ID,
+//	)
+//
+//	dbErr := newUser.StructScan(userProfile)
+//
+//	if dbErr != nil {
+//		log.Printf("\n[controller][account][user][spotify]: [AuthUser] Error executing query: %v\n", dbErr)
+//		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred and could not updated user profile in database")
+//	}
+//
+//	serialized, err := json.Marshal(map[string]string{
+//		"spotify": user.DisplayName,
+//	})
+//	platformIds, _ := json.Marshal(map[string]string{
+//		"spotify": user.ID,
+//	})
+//	// update the usernames the user has on various playlist.
+//	// NB: I wasn't sure how to really handle this, if it's better to do it in the createUserQuery above or split here
+//	// decided to split here because it's just easier for me to bother with right now.
+//	_, err = c.DB.Exec(queries.UpdatePlatformUsernamesAndIds, user.Email, string(serialized))
+//
+//	// update user platform token
+//	_, err = c.DB.Exec(queries.UpdateUserPlatformToken, encryptedRefreshToken, "spotify", user.Email)
+//	if err != nil {
+//		log.Printf("[db][UpdateUserPlatformToken] error updating user platform token. %v\n", err)
+//		return err
+//	}
+//
+//	log.Printf("\n[user][controller][AuthUser] Method - App with the email %s just signed up or logged in with their Spotify account.\n", user.Email)
+//	// create a jwt
+//	claim := &blueprint.OrchdioUserToken{
+//		Email:    user.Email,
+//		Username: user.DisplayName,
+//		UUID:     userProfile.UUID,
+//		Platform: "spotify",
+//	}
+//	token, err := util.SignJwt(claim)
+//	redirectTo := os.Getenv("ORCHDIO_REDIRECT_URI")
+//
+//	return ctx.Redirect(redirectTo + "?token=" + string(token))
+//}
 
 // AuthDeezerUser authorizes a user with deezer account. It generates a JWT token for
 // a new user
@@ -388,7 +394,7 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 	//	// Example: "https://connect.deezer.com/oauth/auth.php?app_id=&redirect_uri=&perms=basic_access,email"
 	//	//
 	//	// Required: true
-	//	Data interface{} `json:"data"`
+	//	Payload interface{} `json:"data"`
 	//}
 
 	var uniqueID, _ = uuid.NewUUID()
@@ -449,8 +455,10 @@ func (c *UserController) AuthDeezerUser(ctx *fiber.Ctx) error {
 	serialized, err := json.Marshal(map[string]string{
 		"deezer": user.Name,
 	})
-
-	_, err = c.DB.Exec(queries.UpdatePlatformUsernames, user.Email, string(serialized))
+	platformIds, _ := json.Marshal(map[string]string{
+		"deezer": deezerID,
+	})
+	_, err = c.DB.Exec(queries.UpdatePlatformUsernamesAndIds, user.Email, string(serialized), string(platformIds))
 	if err != nil {
 		log.Printf("[user][controller][AuthDeezerUser] could not upsert createUserQuery. %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
@@ -533,11 +541,14 @@ func (c *UserController) AuthAppleMusicUser(ctx *fiber.Ctx) error {
 	serialized, err := json.Marshal(map[string]string{
 		"applemusic": displayname,
 	})
+	platformIds, _ := json.Marshal(map[string]string{
+		"applemusic": hashedEmail,
+	})
 
 	// update the usernames the user has on various playlist.
 	// NB: I wasn't sure how to really handle this, if its better to do it in the createUserQuery above or split here
 	// decided to split here because its just easier for me to bother with right now.
-	_, err = c.DB.Exec(queries.UpdatePlatformUsernames, bod.Email, string(serialized))
+	_, err = c.DB.Exec(queries.UpdatePlatformUsernamesAndIds, bod.Email, string(serialized), string(platformIds))
 	if err != nil {
 		log.Printf("[user][controller][AuthAppleMusicUser] Method - Error updating platform usernames: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not update platform usernames")
@@ -861,7 +872,7 @@ func (c *UserController) FetchUserProfile(ctx *fiber.Ctx) error {
 //		// Example: c8e51d6c-4d6f-42f6-bcb6-9da19fc5b848
 //		//
 //		// Required: true
-//		Data interface{} `json:"data"`
+//		Payload interface{} `json:"data"`
 //	}
 //
 //	log.Printf("[controller][user][RetrieveKey] - Retrieving API key")

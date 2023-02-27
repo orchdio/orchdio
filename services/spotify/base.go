@@ -12,6 +12,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 	"log"
+	"net/url"
 	"orchdio/blueprint"
 	"orchdio/util"
 	"os"
@@ -526,8 +527,7 @@ func FetchPlaylistHash(playlistId string) []byte {
 }
 
 // FetchUserPlaylist fetches the user's playlist
-func FetchUserPlaylist(token string) ([]spotify.SimplePlaylist, error) {
-	log.Printf("\n[services][spotify][base][FetchUserPlaylist] - token is: %v\n", token)
+func FetchUserPlaylist(token string) (*spotify.SimplePlaylistPage, error) {
 	httpClient := spotifyauth.New().Client(context.Background(), &oauth2.Token{RefreshToken: token})
 	client := spotify.New(httpClient)
 	playlists, err := client.CurrentUsersPlaylists(context.Background())
@@ -549,5 +549,56 @@ func FetchUserPlaylist(token string) ([]spotify.SimplePlaylist, error) {
 		playlists.Playlists = append(playlists.Playlists, out.Playlists...)
 	}
 
-	return playlists.Playlists, nil
+	return playlists, nil
+}
+
+func FetchUserArtists(token string) (*blueprint.UserLibraryArtists, error) {
+	log.Printf("\n[services][spotify][base][FetchUserArtists] - fetching user's libraryArtists\n")
+	httpClient := spotifyauth.New().Client(context.Background(), &oauth2.Token{RefreshToken: token})
+	client := spotify.New(httpClient)
+	values := url.Values{}
+	values.Set("limit", "50")
+	libraryArtists, err := client.CurrentUsersFollowedArtists(context.Background(), spotify.Limit(50))
+	if err != nil {
+		log.Printf("\n[services][spotify][base][FetchUserArtists] error - could not fetch libraryArtists: %v\n", err)
+		return nil, err
+	}
+	for {
+		if libraryArtists.Next == "" {
+			log.Printf("\n[services][spotify][base][FetchUserArtists][warning] - no more pages. User's full artist list retrieved\n")
+			break
+		}
+		out := spotify.FullArtistPage{}
+		paginationErr := client.NextPage(context.Background(), &out)
+		if paginationErr == spotify.ErrNoMorePages {
+			log.Printf("\n[services][spotify][base][FetchUserArtists] - no more pages. User's full artist list retrieved\n")
+			break
+		}
+		if paginationErr != nil {
+			log.Printf("\n[services][spotify][base][FetchUserArtists] error - could not fetch libraryArtists: %v\n", err)
+			return nil, paginationErr
+		}
+		libraryArtists.Artists = append(libraryArtists.Artists, out.Artists...)
+		libraryArtists.Next = out.Next
+	}
+
+	var artists []blueprint.UserArtist
+	for _, artist := range libraryArtists.Artists {
+		pix := ""
+		if len(artist.Images) > 0 {
+			pix = artist.Images[0].URL
+		}
+		artists = append(artists, blueprint.UserArtist{
+			ID:      string(artist.ID),
+			Name:    artist.Name,
+			Picture: pix,
+			URL:     artist.ExternalURLs["spotify"],
+		})
+	}
+
+	response := blueprint.UserLibraryArtists{
+		Payload: artists,
+		Total:   libraryArtists.Total,
+	}
+	return &response, nil
 }
