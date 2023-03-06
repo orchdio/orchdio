@@ -70,14 +70,14 @@ func (a *AuthMiddleware) AddReadOnlyDeveloperToContext(ctx *fiber.Ctx) error {
 	log.Printf("[db][middleware][AddReadOnlyDevAccessToContext] developer -  fetching app developer with public key\n")
 	pubKey := ctx.Get("x-orchdio-public-key")
 	if pubKey == "" {
-		log.Printf("[db][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app developer with public key")
+		log.Printf("[db][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app developer with public key. No header passed")
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "missing x-orchdio-public-key header")
 	}
 
 	// check if the key is valid
 	isValid := util.IsValidUUID(pubKey)
 	if !isValid {
-		log.Printf("[db][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app developer with public key")
+		log.Printf("[db][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app developer with public key. Header passed is %s\n", pubKey)
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "invalid x-orchdio-public-key header")
 	}
 
