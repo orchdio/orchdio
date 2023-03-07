@@ -161,10 +161,11 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 	uniqueId := uuid.NewString()
 	state := ctx.Query("state")
 	code := ctx.Query("code")
+	ctxPlatform := ctx.Params("platform")
 	// this is for the error code that may be returned for deezer (only)
 	errorCode := ctx.Query("error")
 	encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
-	if state == "" {
+	if state == "" && ctxPlatform != "applemusic" {
 		log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: no state provided\n")
 		return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "no state present. please pass a state")
 	}
