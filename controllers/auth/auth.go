@@ -170,17 +170,21 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "no state present. please pass a state")
 	}
 
-	// decode state
-	decodedState, err := util.DecodeAuthJwt(state)
+	decodedState := &blueprint.AppAuthToken{}
 	redirectURL := ""
-	if err != nil {
-		log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: could not decode the auth token: %v\n", err)
-		if errors.Is(err, jwt.ErrTokenExpired) {
-			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "token expired")
-		}
-		return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "unable to decode state")
-	}
+	if ctxPlatform != "applemusic" {
+		dec, err := util.DecodeAuthJwt(state)
 
+		// decode state
+		if err != nil {
+			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: could not decode the auth token: %v\n", err)
+			if errors.Is(err, jwt.ErrTokenExpired) {
+				return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "token expired")
+			}
+			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "unable to decode state")
+		}
+		decodedState = dec
+	}
 	var authedUserEmail string
 
 	switch decodedState.Platform {
