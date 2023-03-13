@@ -504,7 +504,23 @@ type UserArtist struct {
 	URL     string `json:"url"`
 }
 
+type LibraryAlbum struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	URL         string `json:"url"`
+	ReleaseDate string `json:"release_date"`
+	Explicit    bool   `json:"explicit"`
+	TrackCount  int    `json:"track_count"`
+	Artist      string `json:"artist"`
+}
+
 type UserLibraryArtists struct {
 	Payload []UserArtist `json:"payload"`
 	Total   int          `json:"total"`
+}
+
+type AuthMiddlewareUserInfo struct {
+	Platform     string            `json:"platform"`
+	PlatformIDs  map[string]string `json:"platform_ids"`
+	RefreshToken string            `json:"refresh_token"`
 }

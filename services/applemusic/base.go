@@ -706,3 +706,83 @@ func FetchUserArtists(token string) (*blueprint.UserLibraryArtists, error) {
 	}
 	return &userArtistResponse, nil
 }
+
+// FetchLibraryAlbums fetches the user's library albums
+func FetchLibraryAlbums(token string) ([]blueprint.LibraryAlbum, error) {
+	inst := axios.NewInstance(&axios.InstanceConfig{
+		BaseURL: "https://api.music.apple.com/v1",
+		Headers: http.Header{
+			"Authorization":    []string{fmt.Sprintf("Bearer %s", os.Getenv("APPLE_MUSIC_API_KEY"))},
+			"Music-User-Token": []string{token},
+		},
+	})
+
+	// fetch first 100 albums
+	resp, err := inst.Get("/me/library/albums?limit=100", nil)
+	if err != nil {
+		log.Printf("[services][applemusic][FetchLibraryAlbums] Error getting user albums: %v\n", err)
+		return nil, err
+	}
+
+	var albums UserAlbumsResponse
+	err = json.Unmarshal(resp.Data, &albums)
+	if err != nil {
+		log.Printf("[services][applemusic][FetchLibraryAlbums] Error deserializing user albums: %v\n", err)
+		return nil, err
+	}
+
+	// fetch the remaining albums
+	if albums.Meta.Total > len(albums.Data) {
+		log.Printf("[services][applemusic][FetchLibraryAlbums] Fetching remaining albums\n")
+		for {
+			if len(albums.Data) == albums.Meta.Total {
+				break
+			}
+			moreResp, err := inst.Get(fmt.Sprintf("/me/library/albums?limit=100&offset=%d", len(albums.Data)), nil)
+			if err != nil {
+				log.Printf("[services][applemusic][FetchLibraryAlbums] Error getting user albums: %v\n", err)
+				return nil, err
+			}
+			var remainingAlbums UserAlbumsResponse
+			err = json.Unmarshal(moreResp.Data, &remainingAlbums)
+			if err != nil {
+				log.Printf("[services][applemusic][FetchLibraryAlbums] Error deserializing user albums: %v\n", err)
+				return nil, err
+			}
+			albums.Data = append(albums.Data, remainingAlbums.Data...)
+			if len(remainingAlbums.Data) == 0 {
+				log.Printf("[services][applemusic][FetchLibraryAlbums] No more albums to fetch\n")
+				break
+			}
+			albums.Data = append(albums.Data, remainingAlbums.Data...)
+		}
+	}
+
+	var userAlbums []blueprint.LibraryAlbum
+	for _, a := range albums.Data {
+		// get playlist catalog info
+		catResponse, err := inst.Get(fmt.Sprintf("/me/library/albums/%s/catalog", a.Id), nil)
+		if err != nil {
+			log.Printf("[services][applemusic][FetchLibraryAlbums] Error getting user album info: %v\n", err)
+			return nil, err
+		}
+
+		var catInfo UserAlbumsCatalogResponse
+		err = json.Unmarshal(catResponse.Data, &catInfo)
+		if err != nil {
+			log.Printf("[services][applemusic][FetchLibraryAlbums] Error deserializing user album info: %v\n", err)
+			return nil, err
+		}
+
+		userAlbums = append(userAlbums, blueprint.LibraryAlbum{
+			ID:          a.Id,
+			Title:       a.Attributes.Name,
+			URL:         catInfo.Data[0].Attributes.Url,
+			ReleaseDate: a.Attributes.ReleaseDate,
+			Explicit:    false,
+			TrackCount:  a.Attributes.TrackCount,
+			Artist:      catInfo.Data[0].Attributes.ArtistName})
+	}
+
+	return userAlbums, nil
+}

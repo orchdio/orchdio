@@ -209,3 +209,113 @@ type UserArtistInfoResponse struct {
 		} `json:"relationships"`
 	} `json:"data"`
 }
+
+type UserAlbumsResponse struct {
+	Data []struct {
+		Id         string `json:"id"`
+		Type       string `json:"type"`
+		Href       string `json:"href"`
+		Attributes struct {
+			TrackCount  int      `json:"trackCount"`
+			GenreNames  []string `json:"genreNames"`
+			ReleaseDate string   `json:"releaseDate"`
+			Name        string   `json:"name"`
+			ArtistName  string   `json:"artistName"`
+			Artwork     struct {
+				Width  int    `json:"width"`
+				Height int    `json:"height"`
+				Url    string `json:"url"`
+			} `json:"artwork"`
+			DateAdded  time.Time `json:"dateAdded"`
+			PlayParams struct {
+				Id        string `json:"id"`
+				Kind      string `json:"kind"`
+				IsLibrary bool   `json:"isLibrary"`
+			} `json:"playParams"`
+		} `json:"attributes"`
+		Relationships struct {
+			Tracks struct {
+				Href string `json:"href"`
+				Data []struct {
+					Id         string `json:"id"`
+					Type       string `json:"type"`
+					Href       string `json:"href"`
+					Attributes struct {
+						DiscNumber       int      `json:"discNumber"`
+						AlbumName        string   `json:"albumName"`
+						GenreNames       []string `json:"genreNames"`
+						HasLyrics        bool     `json:"hasLyrics"`
+						TrackNumber      int      `json:"trackNumber"`
+						ReleaseDate      string   `json:"releaseDate"`
+						DurationInMillis int      `json:"durationInMillis"`
+						Name             string   `json:"name"`
+						ContentRating    string   `json:"contentRating"`
+						ArtistName       string   `json:"artistName"`
+						Artwork          struct {
+							Width  int    `json:"width"`
+							Height int    `json:"height"`
+							Url    string `json:"url"`
+						} `json:"artwork"`
+						PlayParams struct {
+							Id          string `json:"id"`
+							Kind        string `json:"kind"`
+							IsLibrary   bool   `json:"isLibrary"`
+							Reporting   bool   `json:"reporting"`
+							CatalogId   string `json:"catalogId"`
+							ReportingId string `json:"reportingId"`
+						} `json:"playParams"`
+					} `json:"attributes"`
+				} `json:"data"`
+				Meta struct {
+					Total int `json:"total"`
+				} `json:"meta"`
+			} `json:"tracks"`
+		} `json:"relationships"`
+	} `json:"data"`
+	Meta struct {
+		Total int `json:"total"`
+		Sorts []struct {
+			Name        string `json:"name"`
+			DisplayName string `json:"displayName"`
+		} `json:"sorts"`
+		CurrentSort string `json:"currentSort"`
+	} `json:"meta"`
+}
+
+type UserAlbumsCatalogResponse struct {
+	Data []struct {
+		Id         string `json:"id"`
+		Type       string `json:"type"`
+		Href       string `json:"href"`
+		Attributes struct {
+			Copyright           string   `json:"copyright"`
+			GenreNames          []string `json:"genreNames"`
+			ReleaseDate         string   `json:"releaseDate"`
+			Upc                 string   `json:"upc"`
+			IsMasteredForItunes bool     `json:"isMasteredForItunes"`
+			Artwork             struct {
+				Width      int    `json:"width"`
+				Height     int    `json:"height"`
+				Url        string `json:"url"`
+				BgColor    string `json:"bgColor"`
+				TextColor1 string `json:"textColor1"`
+				TextColor2 string `json:"textColor2"`
+				TextColor3 string `json:"textColor3"`
+				TextColor4 string `json:"textColor4"`
+			} `json:"artwork"`
+			PlayParams struct {
+				Id   string `json:"id"`
+				Kind string `json:"kind"`
+			} `json:"playParams"`
+			Url           string `json:"url"`
+			RecordLabel   string `json:"recordLabel"`
+			IsCompilation bool   `json:"isCompilation"`
+			TrackCount    int    `json:"trackCount"`
+			IsSingle      bool   `json:"isSingle"`
+			Name          string `json:"name"`
+			ContentRating string `json:"contentRating"`
+			ArtistName    string `json:"artistName"`
+			IsComplete    bool   `json:"isComplete"`
+		} `json:"attributes"`
+	} `json:"data"`
+}

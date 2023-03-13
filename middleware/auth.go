@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"github.com/gofiber/fiber/v2"
 	"github.com/jmoiron/sqlx"
@@ -12,6 +13,7 @@ import (
 	"orchdio/db/queries"
 	"orchdio/services/spotify"
 	"orchdio/util"
+	"os"
 	"strings"
 	"time"
 )
@@ -254,5 +256,64 @@ func (a *AuthMiddleware) CheckOrInitiateUserAuthStatus(ctx *fiber.Ctx) error {
 		}
 	}
 
+	return ctx.Next()
+}
+
+// VerifyUserActionDeveloper verifies that the developer app is valid and that the user is authorized to perform the action. It attaches the user
+// context information to the locals. this is then used in controllers where user is making user action requests, for example fetching user library playlists.
+func (a *AuthMiddleware) VerifyUserActionDeveloper(ctx *fiber.Ctx) error {
+	log.Printf("[middleware][auth][AuthDeveloperApp] - authenticating developer app")
+	// extract the app id from the header
+	app := ctx.Locals("app").(*blueprint.DeveloperApp)
+	userId := ctx.Params("userId")
+	platform := ctx.Params("platform")
+	refreshToken := ""
+	if userId == "" {
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing user id")
+	}
+
+	if platform == "" {
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing platform")
+	}
+
+	if app == nil {
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing app")
+	}
+	database := db.NewDB{DB: a.DB}
+	user, err := database.FindUserByUUID(userId, platform)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User not found")
+		}
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An internal error occurred")
+	}
+
+	if user.RefreshToken == nil && platform != "tidal" {
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "unauthorized", "User not authorized")
+	}
+	if user.RefreshToken != nil {
+		r, err := util.Decrypt(user.RefreshToken, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if err != nil {
+			log.Printf("[middleware][auth][AuthDeveloperApp] - could not decrypt refresh token")
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An internal error occurred")
+		}
+		refreshToken = string(r)
+	}
+
+	var platformIDs map[string]string
+
+	err = json.Unmarshal(user.PlatformIDs.([]byte), &platformIDs)
+	if err != nil {
+		log.Printf("[middleware][auth][AuthDeveloperApp] - could not unmarshal platform ids")
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An internal error occurred")
+	}
+
+	userMiddlewareInfo := blueprint.AuthMiddlewareUserInfo{
+		Platform:     platform,
+		PlatformIDs:  platformIDs,
+		RefreshToken: refreshToken,
+	}
+
+	ctx.Locals("userCtx", &userMiddlewareInfo)
 	return ctx.Next()
 }
