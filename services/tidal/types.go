@@ -535,3 +535,49 @@ type UserArtistsResponse struct {
 		} `json:"item"`
 	} `json:"items"`
 }
+
+type UserLibraryAlbumResponse struct {
+	Limit              int `json:"limit"`
+	Offset             int `json:"offset"`
+	TotalNumberOfItems int `json:"totalNumberOfItems"`
+	Items              []struct {
+		Created string `json:"created"`
+		Item    struct {
+			Id                   int         `json:"id"`
+			Title                string      `json:"title"`
+			Duration             int         `json:"duration"`
+			StreamReady          bool        `json:"streamReady"`
+			StreamStartDate      string      `json:"streamStartDate"`
+			AllowStreaming       bool        `json:"allowStreaming"`
+			PremiumStreamingOnly bool        `json:"premiumStreamingOnly"`
+			NumberOfTracks       int         `json:"numberOfTracks"`
+			NumberOfVideos       int         `json:"numberOfVideos"`
+			NumberOfVolumes      int         `json:"numberOfVolumes"`
+			ReleaseDate          string      `json:"releaseDate"`
+			Copyright            string      `json:"copyright"`
+			Type                 string      `json:"type"`
+			Version              interface{} `json:"version"`
+			Url                  string      `json:"url"`
+			Cover                string      `json:"cover"`
+			VibrantColor         string      `json:"vibrantColor"`
+			VideoCover           *string     `json:"videoCover"`
+			Explicit             bool        `json:"explicit"`
+			Upc                  string      `json:"upc"`
+			Popularity           int         `json:"popularity"`
+			AudioQuality         string      `json:"audioQuality"`
+			AudioModes           []string    `json:"audioModes"`
+			Artist               struct {
+				Id      int    `json:"id"`
+				Name    string `json:"name"`
+				Type    string `json:"type"`
+				Picture string `json:"picture"`
+			} `json:"artist"`
+			Artists []struct {
+				Id      int    `json:"id"`
+				Name    string `json:"name"`
+				Type    string `json:"type"`
+				Picture string `json:"picture"`
+			} `json:"artists"`
+		} `json:"item"`
+	} `json:"items"`
+}

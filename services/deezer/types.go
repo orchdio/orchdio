@@ -336,3 +336,50 @@ type UserArtistsResponse struct {
 	Checksum string `json:"checksum"`
 	Total    int    `json:"total"`
 }
+
+type UserLibraryAlbumResponse struct {
+	Data []struct {
+		Id             int    `json:"id"`
+		Title          string `json:"title"`
+		Link           string `json:"link"`
+		Cover          string `json:"cover"`
+		CoverSmall     string `json:"cover_small"`
+		CoverMedium    string `json:"cover_medium"`
+		CoverBig       string `json:"cover_big"`
+		CoverXl        string `json:"cover_xl"`
+		Md5Image       string `json:"md5_image"`
+		NbTracks       int    `json:"nb_tracks"`
+		ReleaseDate    string `json:"release_date"`
+		RecordType     string `json:"record_type"`
+		Available      bool   `json:"available"`
+		Tracklist      string `json:"tracklist"`
+		ExplicitLyrics bool   `json:"explicit_lyrics"`
+		TimeAdd        int    `json:"time_add"`
+		Artist         struct {
+			Id            int    `json:"id"`
+			Name          string `json:"name"`
+			Picture       string `json:"picture"`
+			PictureSmall  string `json:"picture_small"`
+			PictureMedium string `json:"picture_medium"`
+			PictureBig    string `json:"picture_big"`
+			PictureXl     string `json:"picture_xl"`
+			Tracklist     string `json:"tracklist"`
+			Type          string `json:"type"`
+		} `json:"artist"`
+		Type        string `json:"type"`
+		Alternative struct {
+			Id        int    `json:"id"`
+			Link      string `json:"link"`
+			Md5Image  string `json:"md5_image"`
+			Available bool   `json:"available"`
+			Tracklist string `json:"tracklist"`
+			Artist    struct {
+				Tracklist string `json:"tracklist"`
+				Type      string `json:"type"`
+			} `json:"artist"`
+			Type string `json:"type"`
+		} `json:"alternative,omitempty"`
+	} `json:"data"`
+	Checksum string `json:"checksum"`
+	Total    int    `json:"total"`
+}

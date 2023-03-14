@@ -27,10 +27,6 @@ type Platform interface {
 	FetchSingleTrack(id string) (*Track, error)
 }
 
-type tidal struct {
-	red *redis.Client
-}
-
 // SearchWithID searches for a track on tidal using the tidal ID
 func SearchWithID(id string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
 	cacheKey := "tidal:track:" + id
@@ -126,38 +122,6 @@ func FetchSingleTrack(id string) (*Track, error) {
 	}
 	return singleTrack, nil
 }
-
-//func CheckPlaylistHasBeenUpdated(playlistId string) bool {
-//	token, err := FetchNewAuthToken()
-//	if err != nil {
-//		log.Printf("\n[controllers][platforms][tidal][CheckPlaylistHasBeenUpdated] - Error fetching new token from TIDAL.  - %v\n", err)
-//		log.Printf("\n[controllers][platforms][tidal][CheckPlaylistHasBeenUpdated] - FATAL ERROR. PLEASE AUDIT- %v\n", err)
-//		return false
-//	}
-//
-//	instance := axios.NewInstance(&axios.InstanceConfig{
-//		BaseURL:     ApiUrl,
-//		EnableTrace: true,
-//		Headers: map[string][]string{
-//			"Accept":        {"application/json"},
-//			"Authorization": {"Bearer " + token},
-//		},
-//	})
-//	// https://listen.tidal.com/v1/playlists/1b46cea3-e06a-49d9-b21e-b1a1603a44bf?countryCode=US&locale=en_US&deviceType=BROWSER
-//	response, err := instance.Get(fmt.Sprintf("/playlists/%s?countryCode=US&locale=en_US&deviceType=BROWSER", playlistId))
-//	if err != nil {
-//		log.Printf("\n[controllers][platforms][tidal][CheckPlaylistHasBeenUpdated] - Error fetching playlist from TIDAL.  - %v\n", err)
-//		return false
-//	}
-//	var playlist PlaylistInfo
-//	err = json.Unmarshal(response.Payload, &playlist)
-//	if err != nil {
-//		log.Printf("\n[controllers][platforms][tidal][CheckPlaylistHasBeenUpdated] - Error unmarshalling playlist from TIDAL.  - %v\n", err)
-//		return false
-//	}
-//
-//	if
-//}
 
 // SearchTrackWithTitle will perform a search on tidal for the track we want
 func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
@@ -555,6 +519,117 @@ func FetchNewAuthToken() (string, error) {
 	return refresh.AccessToken, nil
 }
 
+type TidalRequest struct {
+	Base    string
+	Headers map[string][]string
+	Method  string
+}
+
+func NewTidalRequest(baseURL string, headers map[string][]string, method string) *TidalRequest {
+	return &TidalRequest{
+		Base:    baseURL,
+		Headers: headers,
+		Method:  method,
+	}
+}
+
+func (t *TidalRequest) MakeRequest(link string, response interface{}) error {
+	accessToken, err := FetchNewAuthToken()
+	if err != nil {
+		log.Printf("\n[services][tidal][MakeRequest] - error fetching new auth token - %v\n", err)
+		return err
+	}
+	axiosInstance := axios.NewInstance(&axios.InstanceConfig{
+		BaseURL: t.Base,
+		Headers: map[string][]string{
+			"Content-Type":  {"application/json"},
+			"Authorization": {"Bearer " + accessToken},
+		},
+	})
+
+	resp, err := axiosInstance.Get(link)
+	if err != nil {
+		log.Printf("\n[services][tidal][MakeRequest] - error making request - %v\n", err)
+		return err
+	}
+	if resp.Status >= 400 {
+		log.Printf("\n[services][tidal][MakeRequest] - error making request - %v\n", resp.Status)
+		return err
+	}
+	err = json.Unmarshal(resp.Data, response)
+	if err != nil {
+		log.Printf("\n[services][tidal][MakeRequest] - error parsing response - %v\n", err)
+		return err
+	}
+	return nil
+}
+
+func (t *TidalRequest) Axios() (*axios.Instance, error) {
+	accessToken, err := FetchNewAuthToken()
+	if err != nil {
+		log.Printf("\n[services][tidal][MakeRequest] - error fetching new auth token - %v\n", err)
+		return nil, err
+	}
+
+	e := axios.NewInstance(&axios.InstanceConfig{
+		BaseURL: t.Base,
+		Headers: map[string][]string{
+			"Content-Type":  t.Headers["Content-Type"],
+			"Authorization": {"Bearer " + accessToken},
+		},
+	})
+	return e, nil
+}
+
+func (t *TidalRequest) MakeRequestWithParams(link string, params map[string]string, response interface{}) error {
+	accessToken, err := FetchNewAuthToken()
+	if err != nil {
+		log.Printf("\n[services][tidal][MakeRequest] - error fetching new auth token - %v\n", err)
+		return err
+	}
+
+	instance := axios.NewInstance(&axios.InstanceConfig{
+		BaseURL: t.Base,
+		Headers: map[string][]string{
+			"Content-Type":  t.Headers["Content-Type"],
+			"Authorization": {"Bearer " + accessToken},
+		},
+	})
+	p := url.Values{}
+	if params != nil || len(params) > 0 {
+		for k, v := range params {
+			p.Add(k, v)
+		}
+	}
+
+	var resp *axios.Response
+	if t.Method == "GET" {
+		resp, err = instance.Put(link, p)
+	}
+
+	if t.Method == "PUT" {
+		resp, err = instance.Put(link, p)
+	}
+
+	if t.Method == "POST" {
+		resp, err = instance.Post(link, p)
+	}
+	if err != nil {
+		log.Printf("\n[services][tidal][MakeRequest] - error making request - %v\n", err)
+		return err
+	}
+	if resp.Status >= 400 {
+		log.Printf("\n[services][tidal][MakeRequest] - error making request - %v\n", resp.Status)
+	}
+
+	err = json.Unmarshal(resp.Data, response)
+	if err != nil {
+		log.Printf("\n[services][tidal][MakeRequest] - error parsing response - %v\n", err)
+		return err
+	}
+	return nil
+}
+
 // https://listen.tidal.com/v2/my-collection/playlists/folders/create-playlist?description=&folderId=root&isPublic=false&name=xxxxx&countryCode=US&locale=en_US&deviceType=BROWSER - create playlist PUT
 // https://listen.tidal.com/v2/my-collection/playlists/folders/remove?trns=trn:playlist:a4a41a8c-a14e-4e60-b671-5f23f07a8a7d&countryCode=US&locale=en_US&deviceType=BROWSER - delete playlist. params in the format, encoded: trns:playlist:playlist_id PUT
 
@@ -720,35 +795,16 @@ func FetchUserArtists(userId string) (*blueprint.UserLibraryArtists, error) {
 	// tidal access for now except for me and also makes implementation easier (even if we get tidal users today)
 	// also the tidal api itself uses 500 as the limit in the browser.
 	log.Printf("\n[services][tidal][FetchUserArtists] - fetching user artists\n")
-	accessToken, err := FetchNewAuthToken()
-	if err != nil {
-		log.Printf("\n[services][tidal][FetchUserArtists] - error fetching new auth token - %v\n", err)
-		return nil, err
-	}
-	instance := axios.NewInstance(&axios.InstanceConfig{
-		BaseURL: "https://listen.tidal.com",
-		Headers: map[string][]string{
-			"Content-Type":  {"application/x-www-form-urlencoded"},
-			"Authorization": {fmt.Sprintf("Bearer %s", accessToken)},
-		},
-	})
 
 	link := fmt.Sprintf("/v1/users/%s/favorites/artists?offset=0&limit=50&order=DATE&orderDirection=DESC&countryCode=US&locale=en_US&deviceType=BROWSER", userId)
-	resp, err := instance.Get(link, nil)
+
+	artistResponse := &UserArtistsResponse{}
+	err := NewTidalRequest("https://listen.tidal.com", map[string][]string{
+		"Content-Type": {"application/x-www-form-urlencoded"},
+	}, "GET").MakeRequest(link, artistResponse)
+
 	if err != nil {
 		log.Printf("\n[services][tidal][FetchUserArtists] - error fetching user artists - %v\n", err)
-		return nil, err
-	}
-
-	if resp.Status >= 400 {
-		log.Printf("\n[services][tidal][FetchUserArtists] - error fetching user artists - %v\n", string(resp.Data))
-		return nil, err
-	}
-
-	artistResponse := UserArtistsResponse{}
-	err = json.Unmarshal(resp.Data, &artistResponse)
-	if err != nil {
-		log.Printf("\n[services][tidal][FetchUserArtists] - error parsing user artists response - %v\n", err)
 		return nil, err
 	}
 

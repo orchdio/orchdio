@@ -505,13 +505,14 @@ type UserArtist struct {
 }
 
 type LibraryAlbum struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	URL         string `json:"url"`
-	ReleaseDate string `json:"release_date"`
-	Explicit    bool   `json:"explicit"`
-	TrackCount  int    `json:"track_count"`
-	Artist      string `json:"artist"`
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	URL         string   `json:"url"`
+	ReleaseDate string   `json:"release_date"`
+	Explicit    bool     `json:"explicit"`
+	TrackCount  int      `json:"track_count"`
+	Artists     []string `json:"artists"`
+	Cover       string   `json:"cover"`
 }
 
 type UserLibraryArtists struct {

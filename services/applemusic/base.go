@@ -781,7 +781,9 @@ func FetchLibraryAlbums(token string) ([]blueprint.LibraryAlbum, error) {
 			ReleaseDate: a.Attributes.ReleaseDate,
 			Explicit:    false,
 			TrackCount:  a.Attributes.TrackCount,
-			Artist:      catInfo.Data[0].Attributes.ArtistName})
+			Cover:       strings.ReplaceAll(catInfo.Data[0].Attributes.Artwork.Url, "{w}x{h}bb", "300x300bb"),
+			Artists:     []string{a.Attributes.ArtistName},
+		})
 	}
 
 	return userAlbums, nil
