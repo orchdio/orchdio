@@ -602,3 +602,67 @@ func FetchUserArtists(token string) (*blueprint.UserLibraryArtists, error) {
 	}
 	return &response, nil
 }
+
+func FetchTrackListeningHistory(token string) ([]blueprint.TrackSearchResult, error) {
+	httpClient := spotifyauth.New().Client(context.Background(), &oauth2.Token{RefreshToken: token})
+	client := spotify.New(httpClient)
+	values := url.Values{}
+	values.Set("limit", "50")
+	libraryArtists, err := client.CurrentUsersTopTracks(context.Background(), spotify.Limit(50), spotify.Timerange("short_term"))
+	if err != nil {
+		log.Printf("\n[services][spotify][base][FetchUserArtists] error - could not fetch libraryArtists: %v\n", err)
+		if strings.Contains(err.Error(), "401") {
+			return nil, errors.New("unauthorized")
+		}
+
+		if strings.Contains(err.Error(), "403") {
+			return nil, errors.New("forbidden")
+		}
+
+		return nil, err
+	}
+
+	// each page returns 50 items. so theoretically, this should return the 250 tracks. this is similar to deezer's implementation so
+	// 250 can be considered the default limit for this endpoint
+	for i := 0; i < 5; i++ {
+		out := spotify.FullTrackPage{}
+		paginationErr := client.NextPage(context.Background(), &out)
+		if paginationErr == spotify.ErrNoMorePages {
+			log.Printf("\n[services][spotify][base][FetchUserArtists] - no more pages. User's full artist list retrieved\n")
+			break
+		}
+		if paginationErr != nil {
+			log.Printf("\n[services][spotify][base][FetchUserArtists] error - could not fetch libraryArtists: %v\n", err)
+			return nil, err
+		}
+		libraryArtists.Tracks = append(libraryArtists.Tracks, out.Tracks...)
+	}
+
+	var tracks []blueprint.TrackSearchResult
+	for _, track := range libraryArtists.Tracks {
+		var artists []string
+		for _, artist := range track.Artists {
+			artists = append(artists, artist.Name)
+		}
+
+		cover := ""
+		if len(track.Album.Images) > 0 {
+			cover = track.Album.Images[0].URL
+		}
+
+		tracks = append(tracks, blueprint.TrackSearchResult{
+			URL:           track.ExternalURLs["spotify"],
+			Artists:       artists,
+			Released:      track.Album.ReleaseDate,
+			Duration:      util.GetFormattedDuration(track.Duration / 1000),
+			DurationMilli: track.Duration,
+			Explicit:      track.Explicit,
+			Title:         track.Name,
+			Preview:       track.PreviewURL,
+			Album:         track.Album.Name,
+			ID:            track.ID.String(),
+			Cover:         cover,
+		})
+	}
+	return tracks, nil
+}

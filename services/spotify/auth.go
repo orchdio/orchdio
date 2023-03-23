@@ -26,6 +26,7 @@ func FetchAuthURL(state string) []byte {
 			spotifyauth.ScopeUserFollowRead,
 			spotifyauth.ScopePlaylistModifyPrivate,
 			spotifyauth.ScopePlaylistModifyPublic,
+			spotifyauth.ScopeUserTopRead,
 			spotifyauth.ScopeUserReadEmail))
 	url := auth.AuthURL(state)
 	return []byte(url)

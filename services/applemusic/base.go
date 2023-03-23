@@ -788,3 +788,70 @@ func FetchLibraryAlbums(token string) ([]blueprint.LibraryAlbum, error) {
 
 	return userAlbums, nil
 }
+
+// FetchTrackListeningHistory fetches all the recently listened to tracks for a user
+func FetchTrackListeningHistory(token string) ([]blueprint.TrackSearchResult, error) {
+	inst := axios.NewInstance(&axios.InstanceConfig{
+		BaseURL: "https://api.music.apple.com/v1",
+		Headers: http.Header{
+			"Authorization":    []string{fmt.Sprintf("Bearer %s", os.Getenv("APPLE_MUSIC_API_KEY"))},
+			"Music-User-Token": []string{token},
+		},
+	})
+
+	resp, err := inst.Get("/me/recent/played/tracks", nil)
+	if err != nil {
+		log.Printf("[services][applemusic][FetchListeningHistory] Error getting listening history: %v\n", err)
+		return nil, err
+	}
+
+	var historyResponse UserTracksListeningHistoryResponse
+	err = json.Unmarshal(resp.Data, &historyResponse)
+	if err != nil {
+		log.Printf("[services][applemusic][FetchListeningHistory] Error deserializing listening history: %v\n", err)
+		return nil, err
+	}
+
+	// limit it to 10 iterations. that should fetch about 100 and a few tracks
+	for i := 0; i < 4; i++ {
+		if historyResponse.Next == "" {
+			break
+		}
+		nextResp, err := inst.Get(historyResponse.Next, nil)
+		if err != nil {
+			log.Printf("[services][applemusic][FetchListeningHistory] Error getting listening history: %v\n", err)
+			return nil, err
+		}
+		var nextHistoryResponse UserTracksListeningHistoryResponse
+		err = json.Unmarshal(nextResp.Data, &nextHistoryResponse)
+		if err != nil {
+			log.Printf("[services][applemusic][FetchListeningHistory] Error deserializing tracks listening history: %v\n", err)
+			return nil, err
+		}
+		historyResponse.Data = append(historyResponse.Data, nextHistoryResponse.Data...)
+		historyResponse.Next = nextHistoryResponse.Next
+	}
+
+	var tracks []blueprint.TrackSearchResult
+	for _, t := range historyResponse.Data {
+		preview := ""
+		if len(t.Attributes.Previews) > 0 {
+			preview = t.Attributes.Previews[0].Url
+		}
+		tracks = append(tracks, blueprint.TrackSearchResult{
+			URL:           t.Attributes.Url,
+			Artists:       []string{t.Attributes.ArtistName},
+			Released:      t.Attributes.ReleaseDate,
+			Duration:      util.GetFormattedDuration(t.Attributes.DurationInMillis / 1000),
+			DurationMilli: t.Attributes.DurationInMillis,
+			Explicit:      t.Attributes.ContentRating == "explicit",
+			Title:         t.Attributes.Name,
+			Preview:       preview,
+			Album:         t.Attributes.AlbumName,
+			ID:            t.Id,
+			Cover:         strings.ReplaceAll(t.Attributes.Artwork.Url, "{w}x{h}bb", "300x300bb"),
+		})
+	}
+
+	return tracks, nil
+}

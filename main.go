@@ -507,6 +507,8 @@ func main() {
 	orchRouter.Get("/account/:userId/:platform/playlists", authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformPlaylists)
 	orchRouter.Get("/account/:userId/:platform/artists", authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformArtists)
 	orchRouter.Get("/account/:userId/:platform/albums", authMiddleware.AddReadWriteDeveloperToContext, authMiddleware.VerifyUserActionDeveloper, platformsControllers.FetchPlatformAlbums)
+	// TODO: implement for tidal
+	orchRouter.Get("/account/:userId/:platform/history/tracks", authMiddleware.AddReadWriteDeveloperToContext, authMiddleware.VerifyUserActionDeveloper, platformsControllers.FetchTrackListeningHistory)
 
 	orchRouter.Post("/follow", authMiddleware.AddReadWriteDeveloperToContext, followController.FollowPlaylist)
 	orchRouter.Post("/waitlist/add", authMiddleware.AddReadWriteDeveloperToContext, userController.AddToWaitlist)

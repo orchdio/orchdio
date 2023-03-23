@@ -383,3 +383,45 @@ type UserLibraryAlbumResponse struct {
 	Checksum string `json:"checksum"`
 	Total    int    `json:"total"`
 }
+
+type UserTrackListeningHistoryResponse struct {
+	Data []struct {
+		Id                    int    `json:"id"`
+		Readable              bool   `json:"readable"`
+		Title                 string `json:"title"`
+		TitleShort            string `json:"title_short"`
+		TitleVersion          string `json:"title_version,omitempty"`
+		Link                  string `json:"link"`
+		Duration              int    `json:"duration"`
+		Rank                  int    `json:"rank"`
+		ExplicitLyrics        bool   `json:"explicit_lyrics"`
+		ExplicitContentLyrics int    `json:"explicit_content_lyrics"`
+		ExplicitContentCover  int    `json:"explicit_content_cover"`
+		Preview               string `json:"preview"`
+		Md5Image              string `json:"md5_image"`
+		Timestamp             int    `json:"timestamp"`
+		Artist                struct {
+			Id        int    `json:"id"`
+			Name      string `json:"name"`
+			Link      string `json:"link"`
+			Tracklist string `json:"tracklist"`
+			Type      string `json:"type"`
+		} `json:"artist"`
+		Album struct {
+			Id          int    `json:"id"`
+			Title       string `json:"title"`
+			Link        string `json:"link"`
+			Cover       string `json:"cover"`
+			CoverSmall  string `json:"cover_small"`
+			CoverMedium string `json:"cover_medium"`
+			CoverBig    string `json:"cover_big"`
+			CoverXl     string `json:"cover_xl"`
+			Md5Image    string `json:"md5_image"`
+			Tracklist   string `json:"tracklist"`
+			Type        string `json:"type"`
+		} `json:"album"`
+		Type string `json:"type"`
+	} `json:"data"`
+	Total int    `json:"total"`
+	Next  string `json:"next"`
+}

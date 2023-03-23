@@ -179,6 +179,9 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 		trackResultIdentifier: serviceResult,
 	}
 
+	// for each of the cache keys (track result identifier hash which is in format ytmusic:track:VIDEO_ID, and the new hash identifier which is in format ytmusic-ARTISTE-TRACK_TITLE)
+	// set the value to the serviceResult (which is the marshalled track result) and set the expiration to 24 hours
+	// the former is used to search for the track by its video id, and the latter is used to search for the track by its title and artiste
 	for k, v := range keys {
 		err = red.Set(context.Background(), k, v, time.Hour*24).Err()
 		if err != nil {

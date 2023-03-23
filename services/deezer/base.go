@@ -641,3 +641,60 @@ func FetchLibraryAlbums(token string) ([]blueprint.LibraryAlbum, error) {
 
 	return albums, nil
 }
+
+func MakeRequest(token, url string, result interface{}) error {
+	deezerApiBase := os.Getenv("DEEZER_API_BASE")
+	instance := axios.NewInstance(&axios.InstanceConfig{
+		BaseURL: deezerApiBase,
+		Headers: map[string][]string{
+			"Content-Type": {"application/json"},
+		},
+	})
+	resp, err := instance.Get(url, nil)
+	if err != nil {
+		log.Printf("\n[services][deezer][MakeRequest] error - Could not fetch result: %v\n", err)
+		return err
+	}
+
+	if resp.Status >= 201 {
+		log.Printf("\n[services][deezer][MakeRequest] error - Could not fetch result. Bad request: %v\n", err)
+		return err
+	}
+
+	err = json.Unmarshal(resp.Data, &result)
+	if err != nil {
+		log.Printf("\n[services][deezer][MakeRequest] error - Could not deserialize the body into the out response: %v\n", err)
+		return err
+	}
+	return nil
+}
+
+// FetchTracksListeningHistory fetches all the deezer tracks listening history for a user
+func FetchTracksListeningHistory(token string) ([]blueprint.TrackSearchResult, error) {
+	log.Printf("\n[services][deezer][FetchTracksListeningHistory] Fetching user deezer tracks listening history\n")
+	link := fmt.Sprintf("user/me/history?access_token=%s", token)
+	var history UserTrackListeningHistoryResponse
+	err := MakeRequest(token, link, &history)
+	if err != nil {
+		log.Printf("\n[services][deezer][FetchTracksListeningHistory] error - Could not fetch user tracks listening history: %v\n", err)
+		return nil, err
+	}
+
+	var tracks []blueprint.TrackSearchResult
+	for _, track := range history.Data {
+		tracks = append(tracks, blueprint.TrackSearchResult{
+			URL:           track.Link,
+			Artists:       []string{track.Artist.Name},
+			Duration:      util.GetFormattedDuration(track.Duration),
+			DurationMilli: track.Duration * 1000,
+			Explicit:      track.ExplicitLyrics,
+			Title:         track.Title,
+			Preview:       track.Preview,
+			Album:         track.Album.Title,
+			ID:            strconv.Itoa(track.Id),
+			Cover:         track.Album.Cover,
+		})
+	}
+
+	return tracks, nil
+}
