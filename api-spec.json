@@ -38,11 +38,28 @@
               "format": "uuid",
               "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
             }
+          },
+          {
+            "name": "scopes",
+            "in": "query",
+            "description": "The scopes to request from the platform. This is a comma separated list of scopes and is optional only for Deezer. You can get the scopes from the platform's documentation. <Here> is a link to the Spotify scopes.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "example": "user-read-private,user-read-email"
+            }
           }
         ],
         "responses": {
           "200": {
-            "$ref": "#/components/responses/ConnectResponse"
+            "description": "Successful response",
+            "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/responses/ConnectResponse"
+                    }
+                }
+            }
           },
           "500": {
             "description": "Internal server error",
@@ -117,6 +134,433 @@
               }
             }
           }
+        }
+      }
+    },
+    "/v1/playlist/{platform}/add": {
+      "description": "Adds a playlist to the user's library on the specified platform",
+        "post": {
+            "requestBody": {
+            "$ref": "#/components/requestBodies/AddPlaylistRequestBody"
+            },
+            "parameters": [
+            {
+                "name": "platform",
+                "in": "path",
+                "description": "The platform to add the playlist to",
+                "required": true,
+                "schema": {
+                "type": "string",
+                "enum": [
+                    "spotify",
+                    "deezer",
+                    "applemusic"
+                ]
+                }
+            },
+            {
+                "name": "x-orchdio-key",
+                "in": "header",
+                "description": "Your private key",
+                "required": true,
+                "schema": {
+                "type": "string",
+                "format": "uuid",
+                "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+                }
+            }
+            ],
+            "responses": {
+            "200": {
+                "description": "Successful response",
+                "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/responses/AddPlaylistResponse"
+                    }
+                }
+                }
+            },
+            "500": {
+                "description": "Internal server error",
+                "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/responses/ErrorResponse"
+                    }
+                }
+                }
+            },
+            "401": {
+                "description": "Unauthorized",
+                "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/responses/ErrorResponse"
+                    }
+                }
+                }
+            }
+            }
+        }
+    },
+    "/v1/account/{userId}/{platform}/playlists": {
+      "description": "Returns the playlists of the user on the specified platform. This includes the playlists that are private. The response contains a field to indicate if the playlist is private and this should be respected when integrating this endpoint.",
+      "get": {
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "description": "The Orchdio ID of the user",
+            "required": true,
+            "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+          },
+          {
+            "name": "platform",
+            "in": "path",
+            "description": "The platform to get the playlists from",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "spotify",
+                "deezer",
+                "applemusic"
+              ]
+            },
+            "example": "spotify"
+          },
+          {
+            "name": "x-orchdio-key",
+            "in": "header",
+            "description": "Your private key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/GetPlaylistsResponse"
+                }
+              }
+            }
+          },
+            "500": {
+                "description": "Internal server error",
+                "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/responses/ErrorResponse"
+                    }
+                }
+                }
+            },
+            "401": {
+                "description": "Unauthorized",
+                "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/responses/ErrorResponse"
+                    }
+                }
+                }
+            }
+        }
+      }
+    },
+    "/v1/account/{userId}/{platform}/albums": {
+      "description": "Returns the albums of the user on the specified platform",
+      "get": {
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "description": "The Orchdio ID of the user",
+            "required": true,
+            "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+          },
+          {
+            "name": "platform",
+            "in": "path",
+            "description": "The platform to get the albums from",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "spotify",
+                "deezer",
+                "applemusic"
+              ]
+            },
+            "example": "spotify"
+          },
+          {
+            "name": "x-orchdio-key",
+            "in": "header",
+            "description": "Your private key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+            }
+          }
+        ],
+        "description": "Returns the albums of the user on the specified platform",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/GetAlbumsResponse"
+                }
+              }
+            }
+          },
+            "500": {
+                "description": "Internal server error",
+                "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/responses/ErrorResponse"
+                    }
+                }
+                }
+            },
+            "401": {
+                "description": "Unauthorized",
+                "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/responses/ErrorResponse"
+                    }
+                }
+                }
+            }
+        }
+      }
+    },
+    "/v1/account/{userId}/{platform}/artists": {
+      "description": "Returns the artists of the user on the specified platform",
+      "get": {
+        "description": "Returns the artists of the user on the specified platform",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "description": "The Orchdio ID of the user",
+            "required": true,
+            "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+          },
+          {
+            "name": "platform",
+            "in": "path",
+            "description": "The platform to get the artists from",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "spotify",
+                "deezer",
+                "applemusic"
+              ]
+            },
+            "example": "spotify"
+          },
+          {
+            "name": "x-orchdio-key",
+            "in": "header",
+            "description": "Your private key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/GetArtistsResponse"
+                }
+              }
+            }
+          },
+            "500": {
+                "description": "Internal server error",
+                "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/responses/ErrorResponse"
+                    }
+                }
+                }
+            },
+            "401": {
+                "description": "Unauthorized",
+                "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/responses/ErrorResponse"
+                    }
+                }
+                }
+            }
+        }
+      }
+    },
+    "/v1/account/{userId}/{platform}/history/tracks": {
+      "description": "Returns the listening history of the user on the specified platform",
+      "get": {
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "description": "The Orchdio ID of the user",
+            "required": true,
+            "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+          },
+          {
+            "name": "platform",
+            "in": "path",
+            "description": "The platform to get the albums from",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "spotify",
+                "deezer",
+                "applemusic"
+              ]
+            },
+            "example": "spotify"
+          },
+          {
+            "name": "x-orchdio-key",
+            "in": "header",
+            "description": "Your private key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/GetTracksHistoryResponse"
+                }
+              }
+            }
+          },
+            "500": {
+                "description": "Internal server error",
+                "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/responses/ErrorResponse"
+                    }
+                }
+                }
+            },
+            "401": {
+                "description": "Unauthorized",
+                "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/responses/ErrorResponse"
+                    }
+                }
+                }
+            }
+        }
+      }
+    },
+    "/v1/account/": {
+      "description": "Returns the profile informations on all the platforms the user has authorized an app",
+      "get": {
+        "parameters": [
+          {
+            "name": "x-orchdio-key",
+            "in": "header",
+            "description": "Your private key",
+            "required": true,
+            "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "identifier",
+            "in": "query",
+            "description": "The identifier of the user. This can be an email address or uuid",
+            "required": true,
+            "example": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+            "schema": {
+              "type": "string",
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "email"
+                },
+                {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/responses/GetProfileResponse"
+                }
+              }
+            }
+          },
+            "500": {
+                "description": "Internal server error",
+                "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/responses/ErrorResponse"
+                    }
+                }
+                }
+            },
+            "401": {
+                "description": "Unauthorized",
+                "content": {
+                "application/json": {
+                    "schema": {
+                    "$ref": "#/components/responses/ErrorResponse"
+                    }
+                }
+                }
+            }
         }
       }
     },
@@ -485,6 +929,8 @@
       }
     }
   },
+
+
   "components": {
     "responses": {
       "ConnectResponse": {
@@ -1070,6 +1516,583 @@
             }
           }
         }
+      },
+      "AddPlaylistResponse": {
+        "description": "Add a playlist to the user's library",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "string",
+                  "description": "The link to the newly created playlist.",
+                    "example": "https://open.spotify.com/playlist/123456789",
+                    "format": "uri"
+                },
+                "message": {
+                  "type": "string",
+                  "example": "Playlist added successfully"
+                },
+                "success": {
+                  "type": "integer",
+                  "example": 201,
+                  "description": "The HTTP status code"
+                }
+              }
+            }
+          }
+        }
+      },
+      "GetTracksHistoryResponse": {
+        "description": "Get the user's tracks history",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                    "properties": {
+                        "payload": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                              "url": {
+                                "type": "string",
+                                "example": "https://open.spotify.com/track/3Qm86XLflmIXVm1wcwkgDK?si=6a6e6f6d6e6f6f6d"
+                              },
+                              "artists": {
+                              "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                              "example": ["The Beatles", "John Lennon"]
+                            },
+                              "release_date": {
+                                "type": "string",
+                                "example": "1969-09-26"
+                              },
+                              "duration": {
+                                "type": "string",
+                                "example": "2:54"
+                              },
+                              "duration_milli": {
+                                "type": "integer",
+                                "example": 174000
+                              },
+                              "title": {
+                                "type": "string",
+                                "example": "Come Together"
+                              },
+                              "preview": {
+                                "type": "string",
+                                "example": "https://p.scdn.co/mp3-preview/123456789",
+                                "required": false,
+                                "description": "The URL to the preview of the track. This may be unavailable for a track."
+                              },
+                              "album": {
+                                "type": "string",
+                                "example": "Abbey Road"
+                            },
+                              "explicit": {
+                                "type": "boolean",
+                                "example": false
+                              },
+                              "id": {
+                                "type": "string",
+                                "example": "3Qm86XLflmIXVm1wcwkgDK"
+                              }
+                            }
+                        }
+                        }
+                    }
+                },
+                "message": {
+                  "type": "string",
+                  "example": "Tracks history retrieved successfully"
+                },
+                "status": {
+                  "type": "integer",
+                  "example": 200,
+                  "description": "The HTTP status code"
+                }
+              }
+            }
+          }
+        }
+      },
+      "GetArtistsResponse": {
+        "description": "User's library artists for specified platform",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data":{
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "number",
+                        "example": 1,
+                        "description": "The total number of artists the user has",
+                        "format": "int"
+                    },
+                    "payload": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "example": "123456789",
+                            "description": "The artist's ID"
+                          },
+                          "name": {
+                            "type": "string",
+                            "example": "Pink Floyd",
+                            "description": "The artist's name"
+                          },
+                          "cover": {
+                            "type": "string",
+                            "example": "https://i.scdn.co/image/123456789",
+                            "description": "The artist's image"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "message": {
+                  "type": "string",
+                  "example": "Artists retrieved successfully"
+                },
+                "status": {
+                  "type": "integer",
+                  "example": 200,
+                  "description": "The HTTP status code"
+                }
+              }
+            }
+          }
+        }
+      },
+      "GetAlbumsResponse": {
+        "description": "User's library albums for specified platform",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data":{
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "number",
+                        "example": 1,
+                        "description": "The total number of albums the user has",
+                        "format": "int"
+                    },
+                    "payload": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "example": "123456789",
+                            "description": "The album's ID"
+                          },
+                          "title": {
+                            "type": "string",
+                            "example": "The Dark Side of the Moon",
+                            "description": "The album's title"
+                          },
+                          "artists": {
+                            "type": "array",
+                            "items": [
+                              {
+                              "type": "string",
+                              "example": "Pink Floyd"
+                              },
+                              {
+                                "type": "string",
+                                "example": "David Gilmour"
+                              }
+                            ]
+                          },
+                          "cover": {
+                            "type": "string",
+                            "example": "https://i.scdn.co/image/ab67616d0000b273f2f4d7b2f2f4d7b2f2f4d7b2",
+                            "description": "The album's image"
+                          },
+                          "release_date": {
+                            "type": "string",
+                            "example": "1973-03-01",
+                            "description": "The album's release date"
+                          },
+                          "nb_tracks": {
+                            "type": "string",
+                            "example": "spotify",
+                            "description": "The platform the album is from"
+                          },
+                          "url": {
+                            "type": "string",
+                            "example": "https://open.spotify.com/album/3Qm86XLflmIXVm1wcwkgDK?si=6a6e6f6d6e6f6f6d",
+                            "description": "The album's URL"
+                          },
+                          "explicit": {
+                            "type": "boolean",
+                            "example": false,
+                            "description": "Whether the album contains explicit content"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "message": {
+                  "type": "string",
+                  "example": "Albums retrieved successfully"
+                },
+                "status": {
+                  "type": "integer",
+                  "example": 200,
+                  "description": "The HTTP status code"
+                }
+              }
+            }
+          }
+        }
+      },
+      "GetPlaylistsResponse": {
+        "description": "User's library playlists for specified platform",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "number",
+                        "example": 1,
+                        "description": "The total number of playlists the user has",
+                        "format": "int"
+                    },
+                    "payload": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "example": "123456789",
+                            "description": "The playlist's ID",
+                            "required": true
+                          },
+                          "title": {
+                            "type": "string",
+                            "example": "House Mix",
+                            "description": "The playlist's title"
+                          },
+                          "public": {
+                            "type": "boolean",
+                            "example": true,
+                            "description": "Whether the playlist is public or not"
+                          },
+                          "collaborative": {
+                            "type": "boolean",
+                            "example": false,
+                            "description": "Whether the playlist is collaborative or not"
+                          },
+                          "nb_tracks": {
+                            "type": "number",
+                            "example": 10,
+                            "description": "The number of tracks in the playlist",
+                            "format": "int"
+                          },
+                          "cover": {
+                            "type": "string",
+                            "example": "https://i.scdn.co/image/ab67616d0000b273f8f8f8f8f8f8f8f8f8f8f8f8",
+                            "description": "The playlist's cover image"
+                          },
+                          "owner": {
+                            "type": "string",
+                            "example": "martin",
+                            "description": "The playlist's owner username"
+                          },
+                          "name": {
+                            "type": "string",
+                            "example": "My Playlist"
+                          },
+                          "url": {
+                            "type": "string",
+                            "example": "https://open.spotify.com/playlist/123456789",
+                            "format": "uri"
+                          },
+                          "duration": {
+                            "type": "string",
+                            "required": false,
+                            "example": "2:15"
+                          },
+                          "duration_millis": {
+                            "type": "number",
+                            "required": false,
+                            "example": 135000,
+                            "format": "int64"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "example": {
+                    "data":{
+                      "total":52,
+                      "payload":[
+                        {
+                          "id":"3uGVf9pmQe3b5VJXdgtUxu",
+                          "title":"House Mix",
+                          "public":true,
+                          "collaborative":false,
+                          "nb_tracks":50,
+                          "link":"https://open.spotify.com/playlist/3uGVf9pmQe3b5VJXdgtUxu",
+                          "cover":"https://mosaic.scdn.co/640/ab67616d0000b27345e61dc802ecd73217eb5cfcab67616d0000b273786201dca187d2b0c956c24bab67616d0000b273babf8c4ec73859b9ca95613fab67616d0000b273c3f072b383d10f76e61d3002",
+                          "created_at":"",
+                          "checksum":"MyxhYzg2MzhmMTNmYTM1NDE4NjkxMTg5OWViYmZiODYxOGZlOTM4ZWI3",
+                          "owner":"youngthebe"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "message": {
+                  "type": "string",
+                  "example": "Playlists retrieved successfully"
+                },
+                "status": {
+                  "type": "integer",
+                  "example": 200,
+                  "description": "The HTTP status code"
+                }
+              },
+              "example": {
+                "data":{
+                  "total":52,
+                  "data":[
+                    {
+                      "id":"3uGVf9pmQe3b5VJXdgtUxu",
+                      "title":"House Mix",
+                      "public":true,
+                      "collaborative":false,
+                      "nb_tracks":50,
+                      "url":"https://open.spotify.com/playlist/3uGVf9pmQe3b5VJXdgtUxu",
+                      "cover":"https://mosaic.scdn.co/640/ab67616d0000b27345e61dc802ecd73217eb5cfcab67616d0000b273786201dca187d2b0c956c24bab67616d0000b273babf8c4ec73859b9ca95613fab67616d0000b273c3f072b383d10f76e61d3002",
+                      "created_at":"",
+                      "checksum":"MyxhYzg2MzhmMTNmYTM1NDE4NjkxMTg5OWViYmZiODYxOGZlOTM4ZWI3",
+                      "owner":"youngthebe",
+                      "description": "Deep house mixes"
+                    }
+                  ]
+                },
+                "message": "Spotify library playlists fetched",
+                "status": 200
+              }
+            }
+          }
+        }
+      },
+      "GetProfileResponse": {
+        "description": "The response returned when fetching a user's profile",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "email": {
+                      "type": "string",
+                      "example": "rome@orchdio.com"
+                    },
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                        "example": "d290f1ee-6c54-4b01-90e6-d701748f0851"
+                    },
+                    "spotify": {
+                      "type": "object",
+                        "properties": {
+                          "username": {
+                            "type": "string",
+                            "example": "martin"
+                          },
+                          "profile_picture": {
+                            "type": "string",
+                            "example": "https://i.scdn.co/image/ab6775700000ee85f8f8f8f8f8f8f8f8f8f8f8f8"
+                          },
+                          "followers": {
+                            "type": "number",
+                            "example": 10,
+                            "format": "int"
+                          },
+                          "platform_id": {
+                            "type": "string",
+                            "example": "123456789"
+                          },
+                          "subscription_plan":{
+                            "type": "string",
+                            "example": "premium"
+                          },
+                          "url": {
+                            "type": "string",
+                            "example": "https://open.spotify.com/user/martin"
+                          }
+                        },
+                      "required": false,
+                    },
+                    "deezer": {
+                      "type": "object",
+                        "properties": {
+                          "username": {
+                            "type": "string",
+                            "example": "martin"
+                          },
+                          "profile_picture": {
+                            "type": "string",
+                            "example": "https://deezer.com/api/user/123456789/image"
+                          },
+                          "followers": {
+                            "type": "number",
+                            "example": 10,
+                            "format": "int"
+                          },
+                          "platform_id": {
+                            "type": "string",
+                            "example": "123456789"
+                          },
+                          "subscription_plan":{
+                            "type": "string",
+                            "example": "premium"
+                          },
+                          "url": {
+                            "type": "string",
+                            "example": "https://deezer.com/profile/martin"
+                          }
+                        },
+                      "required": false,
+                    },
+                    "applemusic": {
+                        "type": "object",
+                            "properties": {
+                            "username": {
+                                "type": "string",
+                                "example": "martin"
+                            },
+                            "profile_picture": {
+                                "type": "string",
+                                "example": "https://cdn2.iconfinder.com/data/icons/social-media-2285/512/1_Apple_colored_svg-512.png"
+                            },
+                            "followers": {
+                                "type": "number",
+                                "example": 10,
+                                "format": "int"
+                            },
+                            "platform_id": {
+                                "type": "string",
+                                "example": "123456789"
+                            },
+                            "subscription_plan":{
+                                "type": "string",
+                                "example": "premium"
+                            },
+                            "url": {
+                                "type": "string",
+                                "example": "https://music.apple.com/profile/martin"
+                            }
+                            },
+                      "required": false
+                    },
+                    "ytmusic": {
+                        "type": "object",
+                            "properties": {
+                            "username": {
+                                "type": "string",
+                                "example": "martin"
+                            },
+                            "profile_picture": {
+                                "type": "string",
+                                "example": "https://storage.googleapis.com/pr-newsroom-wp/1/2018/11/orchdio.png"
+                            },
+                            "followers": {
+                                "type": "number",
+                                "example": 10,
+                                "format": "int"
+                            },
+                            "platform_id": {
+                                "type": "string",
+                                "example": "123456789"
+                            },
+                            "subscription_plan":{
+                                "type": "string",
+                                "example": "premium"
+                            },
+                            "url": {
+                                "type": "string",
+                                "example": "https://youtube.com/user/martin"
+                            }
+                            },
+                      "required": false
+                    },
+                    "tidal": {
+                        "type": "object",
+                            "properties": {
+                            "username": {
+                                "type": "string",
+                                "example": "martin"
+                            },
+                            "profile_picture": {
+                                "type": "string",
+                                "example": "https://static.tidal.com/images/5b6e5e2f/0b7e/4b7d/9b0a/2a0b0b0a5b6e-1600x1600.jpg"
+                            },
+                            "followers": {
+                                "type": "number",
+                                "example": 10,
+                                "format": "int"
+                            },
+                            "platform_id": {
+                                "type": "string",
+                                "example": "123456789"
+                            },
+                            "subscription_plan":{
+                                "type": "string",
+                                "example": "premium"
+                            },
+                            "url": {
+                                "type": "string",
+                                "example": "https://tidal.com/user/martin"
+                            }
+                            },
+                      "required": false
+                    }
+                  }
+                },
+                "message": {
+                  "type": "string",
+                  "example": "Profile retrieved successfully"
+                },
+                "status": {
+                  "type": "integer",
+                  "example": 200,
+                  "description": "The HTTP status code"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "requestBodies": {
@@ -1149,6 +2172,39 @@
                 }
             }
             }
+        },
+        "AddPlaylistRequestBody": {
+          "description": "Add a playlist to a user's library",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "user": {
+                    "type": "string",
+                    "example": "martin@drking.com",
+                    "description": "The user's email or their Orchdio user ID",
+                    "required": true
+                  },
+                  "title": {
+                    "type": "string",
+                    "example": "My Playlist",
+                    "description": "The title of the playlist",
+                    "required": true
+                  },
+                  "tracks": {
+                    "type": "array",
+                    "description": "An array of track IDs to add. This depends on the platform and their formats might be different. For example, a Deezer ID looks like 123456789 while a Spotify ID looks like 11dFghVXANMlKmJXsNCbNl. If all the IDs are not the same format, Orchdio will return an error.",
+                    "items": {
+                      "type": "string",
+                        "example": "11dFghVXANMlKmJXsNCbNl|123456789"
+                    },
+                    "required": true
+                  }
+                }
+              }
+            }
+          }
         }
     }
   }

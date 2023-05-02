@@ -9,9 +9,11 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/jmoiron/sqlx"
 	"github.com/samber/lo"
+	spotifyauth "github.com/zmb3/spotify/v2/auth"
 	"log"
 	"net/url"
 	"orchdio/blueprint"
+	"orchdio/db"
 	"orchdio/services/deezer"
 	"orchdio/services/spotify"
 	"orchdio/services/tidal"
@@ -290,7 +292,7 @@ func NewFollowTask(db *sqlx.DB, red *redis.Client) *SyncFollowTask {
 //  - a boolean indicating if the playlist has been updated.
 //  - a slice of byte representing the platform which we checked for the update.
 //  - an error, if any
-func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId string) ([]byte, bool, []byte, error) {
+func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId, appID string) ([]byte, bool, []byte, error) {
 	// first check the hash in redis
 	snapshotID := fmt.Sprintf("%s:snapshot:%s", platform, entityId)
 	log.Printf("\n[services][SyncFollowTask][info] Checking if playlist has been updated with snapshot id: %s\n", snapshotID)
@@ -310,6 +312,30 @@ func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId strin
 		log.Printf("[follow][FetchPlaylistHash] - error getting playlist hash from redis: %v", cacheErr)
 		return nil, false, nil, cacheErr
 	}
+	database := db.NewDB{DB: s.DB}
+	// fetch the app that owns this request
+	app, err := database.FetchAppByAppIdWithoutDevId(appID)
+	if err != nil {
+		log.Printf("[follow][FetchPlaylistHash] - error fetching app: could not fetch app with the ID - %s %v", err, appID)
+		return nil, false, nil, err
+	}
+
+	var outBytes []byte
+	switch platform {
+	case spotify.IDENTIFIER:
+		outBytes = app.SpotifyCredentials
+	case tidal.IDENTIFIER:
+		outBytes = app.TidalCredentials
+	case deezer.IDENTIFIER:
+		outBytes = app.DeezerCredentials
+	}
+
+	var creds blueprint.IntegrationCredentials
+	err = json.Unmarshal(outBytes, &creds)
+	if err != nil {
+		log.Printf("[follow][FetchPlaylistHash] - error deserializing platform credentials: %v", err)
+		return nil, false, nil, err
+	}
 
 	// if we got a cached snapshot, we want to get the latest snapshot for a playlist by making a request
 	// to the platform's api
@@ -320,7 +346,8 @@ func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId strin
 		// TODO: implement other platforms
 		case "spotify":
 			log.Printf("[follow][FetchPlaylistHash] - checking if playlist has been updated")
-			ent := string(spotify.FetchPlaylistHash(entityId))
+			spotifyService := spotify.NewService(creds.AppID, creds.AppSecret, s.Red)
+			ent := string(spotifyService.FetchPlaylistHash(entityId, creds.AppID, creds.AppSecret))
 			if ent == "" {
 				return nil, false, nil, fmt.Errorf("could not get playlist hash")
 			}
@@ -359,4 +386,62 @@ func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId strin
 		return serializesHash, false, nil, nil
 	}
 	return serializesHash, true, platformBytes, nil
+}
+
+// BuildScopesExplanation builds a string that explains the scopes that the user is granting access to
+func BuildScopesExplanation(scopes []string, platform string) string {
+	var spotifyScopes = map[string]string{
+		spotifyauth.ScopeUserLibraryRead:           "Access your saved content",
+		spotifyauth.ScopePlaylistReadPrivate:       "Access your private playlists",
+		spotifyauth.ScopePlaylistReadCollaborative: "Access your collaborative playlists",
+		spotifyauth.ScopeUserFollowRead:            "Access your followers and who you follow",
+		spotifyauth.ScopePlaylistModifyPublic:      "Manage your public playlists",
+		spotifyauth.ScopePlaylistModifyPrivate:     "Manage your private playlists",
+		spotifyauth.ScopeUserTopRead:               "Read your top artists and tracks",
+		spotifyauth.ScopeUserReadEmail:             "Get your real email address",
+	}
+
+	var deezScopes = map[string]string{
+		"basic_access":      "Access your basic information",
+		"email":             "Access your email address",
+		"offline_access":    "Access your user data on Deezer anytime",
+		"manage_library":    "Manage your library",
+		"listening_history": "Access your listening history",
+		"delete_library":    "Delete your library",
+	}
+
+	platScopes := map[string]map[string]string{
+		spotify.IDENTIFIER: spotifyScopes,
+		deezer.IDENTIFIER:  deezScopes,
+	}
+
+	var explanation string
+	scopes = deleteEmpty(scopes)
+
+	platformScopes := platScopes[platform]
+	for i, scope := range scopes {
+		if i == len(scopes)-1 {
+			explanation += "and lastly, " + strings.ToLower(platformScopes[scope]) + "."
+		} else if i == len(scopes)-2 {
+			explanation += strings.ToLower(platformScopes[scope]) + " "
+		} else {
+			if i == 0 {
+				explanation += platformScopes[scope] + ", "
+			} else {
+				explanation += strings.ToLower(platformScopes[scope]) + ", "
+			}
+		}
+	}
+	return explanation
+}
+
+// deleteEmpty removes empty strings from a slice of strings
+func deleteEmpty(s []string) []string {
+	var r []string
+	for _, str := range s {
+		if str != "" {
+			r = append(r, str)
+		}
+	}
+	return r
 }

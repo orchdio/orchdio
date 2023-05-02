@@ -12,6 +12,9 @@ import (
 	"net/http"
 	"orchdio/blueprint"
 	"orchdio/db"
+	"orchdio/services/deezer"
+	"orchdio/services/spotify"
+	"orchdio/services/tidal"
 	"orchdio/universal"
 	"orchdio/util"
 	"os"
@@ -83,9 +86,11 @@ func (o *OrchdioQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task
 	return nil
 }
 
-func (o *OrchdioQueue) EnqueueTask(task *asynq.Task, queue, taskId string) error {
+// EnqueueTask enqueues the task passed in.
+func (o *OrchdioQueue) EnqueueTask(task *asynq.Task, queue, taskId string, processIn time.Duration) error {
 	log.Printf("[queue][EnqueueTask] - enqueuing task: %v", taskId)
-	_, err := o.AsynqClient.Enqueue(task, asynq.Queue(queue), asynq.TaskID(taskId), asynq.Unique(time.Second*60))
+	_, err := o.AsynqClient.Enqueue(task, asynq.Queue(queue), asynq.TaskID(taskId), asynq.Unique(time.Second*60),
+		asynq.ProcessIn(processIn))
 	if err != nil {
 		log.Printf("[queue][EnqueueTask] - error enqueuing task: %v", err)
 		return err
@@ -94,6 +99,7 @@ func (o *OrchdioQueue) EnqueueTask(task *asynq.Task, queue, taskId string) error
 	return nil
 }
 
+// RunTask runs the task passed in by sending it to the router server handlefunc.
 func (o *OrchdioQueue) RunTask(pattern string, handler func(ctx context.Context, task *asynq.Task) error) {
 	log.Printf("[queue][RunTask] - attaching handler to task")
 	// create a new server
@@ -113,7 +119,7 @@ func (o *OrchdioQueue) SendEmail(emailData *blueprint.EmailTaskData) error {
 	config.AddDefaultHeader("api-key", os.Getenv("SENDINBLUE_API_KEY"))
 	client := sendinblue.NewAPIClient(config)
 
-	result, resp, err := client.TransactionalEmailsApi.SendTransacEmail(context.Background(), sendinblue.SendSmtpEmail{
+	_, resp, err := client.TransactionalEmailsApi.SendTransacEmail(context.Background(), sendinblue.SendSmtpEmail{
 		Sender: &sendinblue.SendSmtpEmailSender{
 			Name:  "Orchdio Alert",
 			Email: emailData.From,
@@ -138,12 +144,11 @@ func (o *OrchdioQueue) SendEmail(emailData *blueprint.EmailTaskData) error {
 		log.Printf("[queue][SendEmailHandler][send-email] error sending email: %v", resp.StatusCode)
 		return err
 	}
-	log.Printf("[queue][SendEmailHandler][send-email] email sent: %v", result.MessageId)
 	return nil
 }
 
 // SendEmailHandler is the handler for sending emails in queues.
-func (o *OrchdioQueue) SendEmailHandler(ctx context.Context, task *asynq.Task) error {
+func (o *OrchdioQueue) SendEmailHandler(_ context.Context, task *asynq.Task) error {
 	log.Printf("[queue][SendEmailHandler][send-email] sending email in queue")
 	var emailData blueprint.EmailTaskData
 	err := json.Unmarshal(task.Payload(), &emailData)
@@ -157,6 +162,7 @@ func (o *OrchdioQueue) SendEmailHandler(ctx context.Context, task *asynq.Task) e
 		log.Printf("[queue][SendEmailHandler][send-email] error sending email: %v", err)
 		return err
 	}
+	log.Printf("[queue][SendEmailHandler][send-email] email sent to %v", emailData.To)
 	return nil
 }
 
@@ -167,14 +173,29 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 	log.Printf("[queue][PlaylistHandler] - processing playlist: %v %v %v\n", database, info.TargetLink, appId)
 
 	// fetch app from db
-	app, err := database.FetchAppByAppId(appId)
+	app, err := database.FetchAppByAppIdWithoutDevId(appId)
 	if err != nil {
 		log.Printf("[queue][PlaylistHandler] - could not find user: %v", err)
 		return err
 	}
 
-	//_taskId, dbErr := database.CreateOrUpdateTask(uid, shorturl, user.UUID.String(), info.EntityID)
-	//taskId := string(_taskId)
+	var outBytes []byte
+	switch info.Platform {
+	case spotify.IDENTIFIER:
+		outBytes = app.SpotifyCredentials
+	case tidal.IDENTIFIER:
+		outBytes = app.TidalCredentials
+	case deezer.IDENTIFIER:
+		outBytes = app.DeezerCredentials
+	}
+
+	var creds blueprint.IntegrationCredentials
+	err = json.Unmarshal(outBytes, &creds)
+	if err != nil {
+		log.Printf("[queue][PlaylistHandler] - could not deserialize the app integration credentials. Maybe this job was created without a meta field in the task data or database. %v", err)
+		return err
+	}
+
 	// get task from db
 	task, dbErr := database.FetchTask(uid)
 	if dbErr != nil {
@@ -190,7 +211,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 
 	log.Printf("[queue][PlaylistHandler] - created or updated task: %v", taskId)
 
-	h, err := universal.ConvertPlaylist(info, o.Red)
+	h, err := universal.ConvertPlaylist(info, o.Red, creds.AppID, creds.AppSecret)
 	var status string
 	// for now, we dont want to bother about retrying and all of that. we're simply going to mark a task as failed if it fails
 	// the reason is that it's hard handling the retry for it to worth it. In the future, we might add a proper retry system
@@ -199,7 +220,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 	if err != nil {
 		log.Printf("[queue][EnqueueTask] - error converting playlist: %v", err)
 		status = "failed"
-		// this is for when for example, apple music returns Not Found for a playlist thats visible but not public.
+		// this is for when for example, apple music returns Not Found for a playlist thats visible but not public. (needs citation)
 		if err == blueprint.ENORESULT {
 			// create a new payload
 			payload := blueprint.TaskErrorPayload{
@@ -264,6 +285,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 		return nil
 	}
 
+	// these seem to be for backwards compatibility and stuff. keep note and remove at a later date
 	if h != nil {
 		status = "completed"
 	}
@@ -276,16 +298,14 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 	h.Meta.ShortURL = shorturl
 	h.Meta.Entity = "playlist"
 
-	log.Printf("[queue][PlaylistHandler] -shortlink gen is %v", status)
 	// serialize h
 	ser, mErr := json.Marshal(h)
 	if mErr != nil {
 		log.Printf("[queue][EnqueueTask] - error marshalling playlist conversion: %v", mErr)
 		return mErr
 	}
-	log.Printf("[queue][PlaylistHandler] - serialized data")
+	log.Printf("[queue][PlaylistHandler] - serialized conversion data")
 	result, rErr := database.UpdateTaskResult(taskId, string(ser))
-
 	if rErr != nil {
 		log.Printf("[queue][EnqueueTask] - error updating task status: %v", rErr)
 		return rErr
@@ -299,7 +319,6 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 	}
 
 	// post to the developer webhook
-
 	r := blueprint.WebhookMessage{
 		Message: "playlist conversion done",
 		Event:   blueprint.EEPLAYLISTCONVERSION,
@@ -320,16 +339,15 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 	}
 
 	re, pErr := ax.Post(app.WebhookURL, r)
-
 	if pErr != nil {
 		log.Printf("[queue][PlaylistHandler] - error posting to webhook: %v", pErr.Error())
 		// TODO: implement retry logic. For now, if the webhook is unavailable, it will NOT be retried since we're returning nil
+		// hack: check if the error is a "no such host" error. If so, skip. useful esp for tunneling
 		if strings.Contains(pErr.Error(), "no such host") {
 			log.Printf("[queue][PlaylistHandler] - webhook unavailable, skipping")
 			return nil
 		}
 		log.Printf("[queue][PlaylistHandler] - error posting webhook to endpoint %s=%v", app.WebhookURL, pErr)
-		// TODO: change this to return evErr
 		return nil
 	}
 
@@ -337,14 +355,15 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 		log.Printf("[queue][PlaylistHandler][warning] - error posting webhook: %v", re)
 		return nil
 	}
-
 	log.Printf("[queue][EnqueueTask] - successfully processed task: %v", taskId)
-
 	// NOTE: In the case of a "follow", instead of just exiting here, we reschedule the task to  like 2 mins later.
 	return nil
 }
 
-func ConversionMiddleware(h asynq.Handler) asynq.Handler {
+// CheckForOrphanedTasksMiddleware is a middleware that checks for orphaned tasks. Orphaned tasks are tasks that perhaps failed at a point
+// and a handler was not able to be attached to them. This middleware checks for these tasks and process them. if the task is not orphaned,
+// it just passes it through to the next middleware
+func CheckForOrphanedTasksMiddleware(h asynq.Handler) asynq.Handler {
 	return asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
 		start := time.Now()
 		log.Printf("[Queue][LoggerMiddleware] Started processing task %q", t.ResultWriter().TaskID())
@@ -359,10 +378,10 @@ func ConversionMiddleware(h asynq.Handler) asynq.Handler {
 			// like the best way to handle this.
 			handlerNotFoundErr := asynq.NotFound(ctx, t)
 			if handlerNotFoundErr != nil {
-				log.Printf("[queue][ConversionMiddleware][warning] - Error is a handler not found error %v", handlerNotFoundErr)
+				log.Printf("[queue][CheckForOrphanedTasksMiddleware][warning] - Error is a handler not found error %v", handlerNotFoundErr)
 				return blueprint.ENORESULT
 			}
-			log.Printf("[queue][ConversionMiddleware] - error processing task: %v", err)
+			log.Printf("[queue][CheckForOrphanedTasksMiddleware] - error processing task: %v", err)
 			return err
 		}
 		log.Printf("Finished processing %q: Elapsed Time = %v", t.Type(), time.Since(start))

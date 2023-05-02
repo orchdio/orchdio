@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/samber/lo"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
@@ -23,14 +24,17 @@ func VerifyToken(ctx *fiber.Ctx) error {
 	jwtToken := jt.(*jwt.Token)
 	claims := jwtToken.Claims.(*blueprint.OrchdioUserToken)
 	ctx.Locals("claims", claims)
-	log.Printf("[middleware][VerifyToken] method - Token verified. Claims set: %v\n", claims)
+	log.Printf("[middleware][VerifyToken] method - Token verified. Claims set")
 	return ctx.Next()
 }
 
 func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
-	platforms := []string{"ytmusic", "spotify", "deezer", "applemusic", "tidal"}
+	// adding all in order to support wildcard. when the option is empty, we can presume they want to convert
+	// to all platforms (that they have added their credentials for and the user has authed, that is)
+	platforms := []string{"ytmusic", "spotify", "deezer", "applemusic", "tidal", "all"}
+	app := ctx.Locals("app").(*blueprint.DeveloperApp)
 	linkBody := ctx.Body()
-	// todo move this to a real type in blueprint
+	// todo move this to a real type in blueprint. the keys are url and target_platform
 	conversionBody := map[string]string{}
 
 	err := json.Unmarshal(linkBody, &conversionBody)
@@ -45,6 +49,8 @@ func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Bad request. Check you're using the '?conversionBody' query string")
 	}
 	linkInfo, err := services.ExtractLinkInfo(url)
+	linkInfo.App = app.UID.String()
+	linkInfo.Developer = app.Developer.String()
 
 	if err != nil {
 		if err == blueprint.EHOSTUNSUPPORTED {
@@ -65,8 +71,20 @@ func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "URL info not found.")
 	}
 
-	log.Printf("\n[middleware][ExtractLinkInfoFromBody] method - Extracted conversionBody info is: %v\n", linkInfo)
+	if conversionBody["target_platform"] == "" {
+		log.Printf("\n[middleware][ExtractLinkInfoFromBody] warning - Track conversion but no target platform specified. \n")
+		conversionBody["target_platform"] = "all"
+	}
+
+	if !lo.Contains(platforms, conversionBody["target_platform"]) {
+		log.Printf("\n[middleware][ExtractLinkInfoFromBody] warning - track platform is invalid. please pass a valid platform value. \n")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Bad request body. Please make sure you pass a valid target platform")
+	}
+	linkInfo.TargetPlatform = conversionBody["target_platform"]
+	// set ctx local called "linkInfo" to the linkInfo type. this is for a track conversion.
+	// it looks like: {TargetLink: "https://music.youtube.com/watch?v=Z2X4uZL2o8Q", TargetPlatform: "spotify"}
 	ctx.Locals("linkInfo", linkInfo)
+
 	if strings.Contains(linkInfo.TargetLink, "playlist") {
 		log.Printf("\n[middleware][ExtractLinkInfoFromBody] method - Playlist detected. Checking for target platform\n")
 		// if the target platform is not set, we'll exit here. keep in mind in case of testing and it doesnt work as before.
@@ -74,14 +92,17 @@ func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 			log.Printf("\n[middleware][ExtractLinkInfoFromBody] warning - Target platform not detected. Skipping...\n")
 			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "You are trying to convert a playlist. Please specify a target platform.")
 		}
-		newContext := linkInfo
-		for _, platform := range platforms {
-			if conversionBody["target_platform"] == platform {
-				newContext.TargetPlatform = conversionBody["target_platform"]
-				ctx.Locals("linkInfo", newContext)
-				return ctx.Next()
-			}
+
+		// if the target platform is set, we'll check if it's valid. if it's not, we'll exit here.
+		playlistPlatforms := []string{"spotify", "deezer", "applemusic", "tidal"}
+		if !lo.Contains(playlistPlatforms, conversionBody["target_platform"]) {
+			log.Printf("\n[middleware][ExtractLinkInfoFromBody] warning - track platform is invalid. please pass a valid platform value. \n")
+			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Bad request body. Please make sure you pass a valid target platform")
 		}
+		linkInfo.TargetPlatform = conversionBody["target_platform"]
+		// set ctx local called "linkInfo" to the linkInfo type. this is for a playlist conversion.
+		// it looks like: {TargetLink: "https://music.youtube.com/playlist?list=OLAK5uy_m8ZQZ4Z1Z2X4uZL2o8Q", TargetPlatform: "spotify", Entity: "playlist"}
+		ctx.Locals("linkInfo", linkInfo)
 	}
 	return ctx.Next()
 }

@@ -11,10 +11,10 @@ import (
 	"orchdio/blueprint"
 )
 
-func FetchLibraryAlbums(refreshToken string) ([]blueprint.LibraryAlbum, error) {
+func (s *Service) FetchLibraryAlbums(refreshToken string) ([]blueprint.LibraryAlbum, error) {
 	log.Printf("[spotify][FetchLibraryAlbums] info - Fetching user library albums from Spotify")
 
-	httpClient := spotifyauth.New().Client(context.Background(), &oauth2.Token{RefreshToken: refreshToken})
+	httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), &oauth2.Token{RefreshToken: refreshToken})
 	client := spotify.New(httpClient)
 	values := url.Values{}
 	values.Set("limit", "50")

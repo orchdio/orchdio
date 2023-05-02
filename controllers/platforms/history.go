@@ -1,6 +1,7 @@
 package platforms
 
 import (
+	"encoding/json"
 	"github.com/gofiber/fiber/v2"
 	"log"
 	"net/http"
@@ -9,11 +10,13 @@ import (
 	"orchdio/services/deezer"
 	"orchdio/services/spotify"
 	"orchdio/util"
+	"os"
 )
 
 // FetchTrackListeningHistory fetches the recently played tracks for a user
 func (p *Platforms) FetchTrackListeningHistory(ctx *fiber.Ctx) error {
 	log.Println("[platforms][FetchListeningHistory] info - Fetching listening history")
+	app := ctx.Locals("app").(*blueprint.DeveloperApp)
 	userCtx := ctx.Locals("userCtx").(*blueprint.AuthMiddlewareUserInfo)
 	platform := userCtx.Platform
 
@@ -43,7 +46,20 @@ func (p *Platforms) FetchTrackListeningHistory(ctx *fiber.Ctx) error {
 		return util.SuccessResponse(ctx, fiber.StatusOK, history)
 
 	case spotify.IDENTIFIER:
-		history, err := spotify.FetchTrackListeningHistory(userCtx.RefreshToken)
+		credBytes, err := util.Decrypt(app.SpotifyCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if err != nil {
+			log.Printf("[platforms][FetchListeningHistory] error - could not decrypt app's credentials while fetching user library listening history%s", err.Error())
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to fetch listening history from Spotify")
+		}
+		var credentials blueprint.IntegrationCredentials
+		err = json.Unmarshal(credBytes, &credentials)
+		if err != nil {
+			log.Printf("[platforms][FetchListeningHistory] error - could not unmarshal app's credentials while fetching user library listening history%s", err.Error())
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to fetch listening history from Spotify")
+		}
+
+		spotifyService := spotify.NewService(credentials.AppID, credentials.AppSecret, p.Redis)
+		history, err := spotifyService.FetchTrackListeningHistory(userCtx.RefreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchListeningHistory] error - %s", err.Error())
 			if err.Error() == "unauthorized" {

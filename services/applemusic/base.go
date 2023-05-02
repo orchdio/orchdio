@@ -61,9 +61,15 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 	// where {w} and {h} are the width and height of the image. we replace it with 150x150
 	coverURL := strings.ReplaceAll(t.Attributes.Artwork.URL, "{w}x{h}bb.jpg", "150x150bb.jpg")
 
+	strippedTitleInfo := util.ExtractTitle(t.Attributes.Name)
+	artistes := []string{t.Attributes.ArtistName}
+	if len(strippedTitleInfo.Artists) > 0 {
+		artistes = append(artistes, strippedTitleInfo.Artists...)
+	}
+
 	track := &blueprint.TrackSearchResult{
 		URL:           info.TargetLink,
-		Artists:       []string{t.Attributes.ArtistName},
+		Artists:       lo.Uniq(artistes),
 		Released:      t.Attributes.ReleaseDate,
 		Duration:      util.GetFormattedDuration(int(t.Attributes.DurationInMillis / 1000)),
 		DurationMilli: int(t.Attributes.DurationInMillis),
@@ -91,11 +97,12 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 
 // SearchTrackWithTitle searches for a track using the query.
 func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
-	cleanedArtiste := fmt.Sprintf("applemusic-%s-%s", util.NormalizeString(artiste), title)
-	log.Printf("Apple music: Searching with stripped artiste: %s. Original artiste: %s", cleanedArtiste, artiste)
-	if red.Exists(context.Background(), cleanedArtiste).Val() == 1 {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] Track found in cache: %v\n", cleanedArtiste)
-		track, err := red.Get(context.Background(), cleanedArtiste).Result()
+	strippedTitleInfo := util.ExtractTitle(title)
+	// if the title is in the format of "title (feat. artiste)" then we search for the title without the feat. artiste
+	log.Printf("Apple music: Searching with stripped artiste: %s. Original artiste: %s", strippedTitleInfo.Title, artiste)
+	if red.Exists(context.Background(), artiste).Val() == 1 {
+		log.Printf("[services][applemusic][SearchTrackWithTitle] Track found in cache: %v\n", artiste)
+		track, err := red.Get(context.Background(), util.NormalizeString(artiste)).Result()
 		if err != nil {
 			log.Printf("[services][applemusic][SearchTrackWithTitle] Error fetching track from cache: %v\n", err)
 			return nil, err
@@ -109,12 +116,13 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 		return result, nil
 	}
 
-	log.Printf("[services][applemusic][SearchTrackWithTitle] Track not found in cache, fetching from Apple Music: %v\n", title)
+	log.Printf("[services][applemusic][SearchTrackWithTitle] Track not found in cache, fetching track %s from Apple Music with artist %s\n", strippedTitleInfo.Title, util.NormalizeString(artiste))
 	tp := applemusic.Transport{Token: os.Getenv("APPLE_MUSIC_API_KEY")}
 	client := applemusic.NewClient(tp.Client())
 	results, response, err := client.Catalog.Search(context.Background(), "us", &applemusic.SearchOptions{
-		Term: fmt.Sprintf("%s+%s", artiste, title),
+		Term: fmt.Sprintf("%s+%s", artiste, strippedTitleInfo.Title),
 	})
+
 	if err != nil {
 		log.Printf("[services][applemusic][SearchTrackWithTitle] Error fetching track from Apple Music: %v\n", err)
 		return nil, err
@@ -126,7 +134,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	}
 
 	if results.Results.Songs == nil {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] Error fetching track from Apple Music: %v\n", err)
+		log.Printf("[services][applemusic][SearchTrackWithTitle] No result found for track %s by %s. \n", strippedTitleInfo.Title, artiste)
 		return nil, blueprint.ENORESULT
 	}
 
@@ -144,8 +152,12 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 
 	coverURL := strings.ReplaceAll(t.Attributes.Artwork.URL, "{w}x{h}bb.jpg", "150x150bb.jpg")
 
+	artistes := []string{t.Attributes.ArtistName}
+	if len(strippedTitleInfo.Artists) > 0 {
+		artistes = append(artistes, strippedTitleInfo.Artists...)
+	}
 	track := &blueprint.TrackSearchResult{
-		Artists:       []string{t.Attributes.ArtistName},
+		Artists:       artistes,
 		Released:      t.Attributes.ReleaseDate,
 		Duration:      util.GetFormattedDuration(int(t.Attributes.DurationInMillis / 1000)),
 		DurationMilli: int(t.Attributes.DurationInMillis),
@@ -165,7 +177,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 
 	if lo.Contains(track.Artists, artiste) {
 		err = red.MSet(context.Background(), map[string]interface{}{
-			cleanedArtiste: string(serializedTrack),
+			util.NormalizeString(artiste): string(serializedTrack),
 		}).Err()
 		if err != nil {
 			log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error caching track - %v\n", err)
@@ -693,10 +705,10 @@ func FetchUserArtists(token string) (*blueprint.UserLibraryArtists, error) {
 		}
 		data := artistInfo.Data[0]
 		artist := blueprint.UserArtist{
-			ID:      data.Id,
-			Name:    data.Attributes.Name,
-			Picture: strings.ReplaceAll(data.Attributes.Artwork.Url, "{w}x{h}bb", "300x300bb"),
-			URL:     data.Attributes.Url,
+			ID:    data.Id,
+			Name:  data.Attributes.Name,
+			Cover: strings.ReplaceAll(data.Attributes.Artwork.Url, "{w}x{h}bb", "300x300bb"),
+			URL:   data.Attributes.Url,
 		}
 		userArtists = append(userArtists, artist)
 	}

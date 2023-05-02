@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/antoniodipinto/ikisocket"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
@@ -135,6 +134,7 @@ func SignAuthJwt(claims *blueprint.AppAuthToken) ([]byte, error) {
 		RedirectURL: claims.RedirectURL,
 		Platform:    claims.Platform,
 		Action:      claims.Action,
+		Scopes:      claims.Scopes,
 	})
 
 	signedToken, err := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
@@ -263,34 +263,6 @@ func HashIdentifier(id string) string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
-func GetWSMessagePayload(payload []byte, ws *ikisocket.Websocket) *blueprint.Message {
-	var message blueprint.Message
-	err := json.Unmarshal(payload, &message)
-	if err != nil {
-		log.Printf("\n[main][SocketEvent][EventMessage] - error deserializing incoming message %v\n", err)
-		ws.Emit([]byte(blueprint.EEDESERIALIZE))
-		return nil
-	}
-	if message.EventName == "heartbeat" {
-		log.Printf("\n[main][SocketEvent][heartbeat] - Client sending headbeat\n")
-		log.Printf("%v\n", time.Now().String())
-		ws.Emit([]byte(`{"message":"heartbeat", "payload": "` + time.Now().String() + `"}`))
-		return nil
-	}
-	return &message
-}
-
-func SerializeWebsocketMessage(message interface{}) []byte {
-	payload, err := json.Marshal(message)
-	if err != nil {
-		log.Printf("\n[main][SocketEvent][EventMessage] - error serializing message %v\n", err)
-		// Todo: look for other places we're returning just a string instead of sending the standard WebSocketErrorMessage
-		// this should not be a problem, because we're just serializing the error message. If it fails, we're in trouble.
-		return []byte(blueprint.EEDESERIALIZE)
-	}
-	return payload
-}
-
 // BuildTidalAssetURL returns a string of the tidal asset id
 func BuildTidalAssetURL(id string) string {
 	// for now, we get the asset type of image, at 320/320 by default
@@ -317,7 +289,7 @@ func GenerateHMAC(message interface{}, secret string) []byte {
 	return []byte(hex.EncodeToString(mac.Sum(nil)))
 }
 
-// GenerateShortID generates a short id, used for short url for final conversion/entity results. The ID is 10 characters long
+// GenerateShortID generates a short id, used for short url for final conversion/entity results and deezer state. The ID is 10 characters long
 func GenerateShortID() []byte {
 	const format = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-"
 	sid, err := shortid.New(1, format, 2342)
@@ -343,4 +315,79 @@ func TidalIsPrivate(level string) bool {
 // IsTaskType checks if a task type is a type of specific task
 func IsTaskType(tasktype, task string) bool {
 	return strings.Contains(tasktype, task)
+}
+
+func DeserializeAppCredentials(data []byte) (*blueprint.IntegrationCredentials, error) {
+	var appCredentials blueprint.IntegrationCredentials
+	decr, err := Decrypt(data, []byte(os.Getenv("ENCRYPTION_SECRET")))
+	if err != nil {
+		log.Printf("[util]: [DeserializeAppCredentials] error -  could not decrypt app credentials %v", err)
+		return nil, err
+	}
+
+	err = json.Unmarshal(decr, &appCredentials)
+	if err != nil {
+		log.Printf("[util]: [DeserializeAppCredentials] error -  could not deserialize app credentials %v", err)
+		return nil, err
+	}
+	return &appCredentials, nil
+}
+
+// ExtractTitle will extract the title from the track title. This is important because
+// it will remove the (feat. artiste) from the title and or normalize the title
+// in order to enhance search results.
+func ExtractTitle(text string) blueprint.ExtractedTitleInfo {
+	// TODO: improve artiste title having spaces in between and more than one word
+	//       implement supporting [track_title] (feat. [artiste_name]) [remix_name]
+	//       implement supporting [track_title] (with) [remix_name]
+	//       implement supporting [track_title] (with [artiste_name])
+	// remove the (feat. artiste) from the title
+	// this is a very naive way of doing it, but it works for now
+
+	// first extraction requirement is that we want to detect when the title contains
+	// a paranthesis and contains (feat. or (ft. or (ft). In any of these combinations
+	// (and similar, in the future), we want to remove the content of the paranthesis
+	// and also probably get the featured artiste name
+	// Define the regular expression pattern to match the track title and artistes
+	pattern := regexp.MustCompile(`^(?i)\s*\[\s*(.+?)\s*\]\s*([(\[]?\s*(?:with|feat\.?)[\s&]*([a-z0-9 .,;&]+)\s*[)\]]?)?\s*$`)
+	// Apply the regular expression to the track title string
+	matches := pattern.FindStringSubmatch(text)
+
+	// Check if the title was matched
+	if len(matches) < 2 {
+		fmt.Printf("Error: Could not extract title from track title string: %v\n", text)
+		// Return a fallback to the original title and an empty array of artists
+		res := blueprint.ExtractedTitleInfo{
+			Title:   strings.Trim(text, "[] "),
+			Artists: []string{},
+		}
+		return res
+	}
+
+	// Extract the title and artistes from the matches
+	title := strings.TrimSpace(matches[1])
+	artistes := make([]string, 0)
+	if matches[3] != "" {
+		// If there are artistes, split them by commas, semicolons, and/or ampersands
+		artistes = strings.FieldsFunc(matches[3], func(r rune) bool {
+			return r == ',' || r == ';' || r == '&'
+		})
+		for i, a := range artistes {
+			artistes[i] = strings.TrimSpace(a)
+		}
+	}
+
+	// Create the final map with title and artistes keys
+	res := blueprint.ExtractedTitleInfo{
+		Title:   title,
+		Artists: artistes,
+	}
+	return res
+}
+
+func parseFeaturedArtistes(feat string) []string {
+	if feat == "" {
+		return nil
+	}
+	return regexp.MustCompile(`\s*&\s*|\s*,\s*|\s+and\s+`).Split(feat, -1)
 }

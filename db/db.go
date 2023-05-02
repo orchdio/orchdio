@@ -3,8 +3,11 @@ package db
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/samber/lo"
 	"log"
 	"orchdio/blueprint"
 	"orchdio/db/queries"
@@ -23,13 +26,6 @@ func (d *NewDB) FindUserByEmail(email, platform string) (*blueprint.User, error)
 	err := result.StructScan(user)
 	if err != nil {
 		log.Printf("[controller][db] error scanning row result. %v\n", err)
-		return nil, err
-	}
-	var userNames map[string]string
-	err = json.Unmarshal(user.Usernames.([]byte), &userNames)
-
-	if err != nil {
-		log.Printf("[controller][db] error unmarshalling usernames. %v\n", err)
 		return nil, err
 	}
 	return user, nil
@@ -66,14 +62,6 @@ func (d *NewDB) FindUserByUUID(id, platform string) (*blueprint.User, error) {
 		log.Printf("[controller][db] error scanning row result. %v\n", err)
 		return nil, err
 	}
-	var userNames map[string]string
-	err = json.Unmarshal(user.Usernames.([]byte), &userNames)
-
-	if err != nil {
-		log.Printf("[controller][db] error unmarshalling usernames. %v\n", err)
-		return nil, err
-	}
-	user.Usernames = userNames
 	return user, nil
 }
 
@@ -208,9 +196,6 @@ func (d *NewDB) FetchUserWithApiKey(key string) (*blueprint.User, error) {
 		log.Printf("[db][FetchUserWithApiKey] error scanning row result. %v\n", scanErr)
 		return nil, scanErr
 	}
-	var userNames map[string]string
-	usernames := json.Unmarshal(usr.Usernames.([]byte), &userNames)
-	log.Printf("[db][FetchUserWithApiKey] fetched user '%v'\n", usernames)
 	return &usr, nil
 }
 
@@ -395,9 +380,9 @@ func (d *NewDB) FetchTaskByEntityIDAndType(entityId, taskType string) (*blueprin
 }
 
 // CreateFollowTask creates a follow task if it does not exist and updates a task if it exists and the subscriber has been subscribed
-func (d *NewDB) CreateFollowTask(developer, uid, entityId, entityURL string, subscribers interface{}) ([]byte, error) {
+func (d *NewDB) CreateFollowTask(developer, app, uid, entityId, entityURL string, subscribers interface{}) ([]byte, error) {
 	log.Printf("[db][CreateFollowTask] Running query %s with '%s', '%s', '%s' \n", queries.CreateOrAddSubscriberFollow, uid, entityId, developer)
-	r := d.DB.QueryRowx(queries.CreateOrAddSubscriberFollow, uid, developer, entityId, subscribers, entityURL)
+	r := d.DB.QueryRowx(queries.CreateOrAddSubscriberFollow, uid, developer, entityId, subscribers, entityURL, app)
 	var res string
 	err := r.Scan(&res)
 	if err != nil {
@@ -409,8 +394,6 @@ func (d *NewDB) CreateFollowTask(developer, uid, entityId, entityURL string, sub
 
 // CreateTrackTaskRecord creates a new task record for a track.
 func (d *NewDB) CreateTrackTaskRecord(uid, shortId, entityId, appId string, result []byte) ([]byte, error) {
-	log.Printf("[db][CreateTrackTaskRecord] Running query %s with '%s', '%s', '%s' \n", queries.CreateNewTrackTaskRecord, uid, shortId, entityId)
-
 	r := d.DB.QueryRowx(queries.CreateNewTrackTaskRecord, uid, shortId, entityId, string(result), appId)
 	var res string
 	err := r.Scan(&res)
@@ -523,16 +506,17 @@ func (d *NewDB) UpdateFollowStatus(followId, status string) error {
 	return nil
 }
 
-func (d *NewDB) UpdateRedirectURL(user, redirectURL string) error {
-	log.Printf("[db][CreateOrUpdateWebhookURL] Running query %s\n", queries.UpdateRedirectURL)
-	_, err := d.DB.Exec(queries.UpdateRedirectURL, user, redirectURL)
-	if err != nil {
-		log.Printf("[db][CreateOrUpdateWebhookURL] error creating or updating webhook url. %v\n", err)
-		return err
-	}
-	log.Printf("[db][CreateOrUpdateWebhookURL] created or updated webhook url\n")
-	return nil
-}
+//
+//func (d *NewDB) UpdateRedirectURL(user, redirectURL string) error {
+//	log.Printf("[db][CreateOrUpdateWebhookURL] Running query %s\n", queries.UpdateRedirectURL)
+//	_, err := d.DB.Exec(queries.UpdateRedirectURL, user, redirectURL)
+//	if err != nil {
+//		log.Printf("[db][CreateOrUpdateWebhookURL] error creating or updating webhook url. %v\n", err)
+//		return err
+//	}
+//	log.Printf("[db][CreateOrUpdateWebhookURL] created or updated webhook url\n")
+//	return nil
+//}
 
 func (d *NewDB) AlreadyInWaitList(user string) bool {
 	log.Printf("[db][FetchUserFromWaitlist] Running query %s\n", queries.FetchUserFromWaitlist)
@@ -549,14 +533,132 @@ func (d *NewDB) AlreadyInWaitList(user string) bool {
 	return true
 }
 
-/// MIGHT BE USEFUL, keeping around for historical reasons, remove later
-//func (d *NewDB) UpdateUserPlatformToken(token byte, email, platform string) error {
-//	log.Printf("[db][UpdateUserPlatformToken] Running query %s\n", queries.UpdateUserPlatformToken)
-//	_, err := d.DB.Exec(queries.UpdateUserPlatformToken, token, email, platform)
-//	if err != nil {
-//		log.Printf("[db][UpdateUserPlatformToken] error updating user platform token. %v\n", err)
-//		return err
-//	}
-//	log.Printf("[db][UpdateUserPlatformToken] updated user: '%s' token to '%s'\n", email, token)
-//	return nil
-//}
+// CreateOrg creates a new org in the database
+func (d *NewDB) CreateOrg(uid, name, description, owner string) ([]byte, error) {
+	log.Printf("[db][CreateOrg] Running query %s\n", queries.CreateNewOrg)
+	r := d.DB.QueryRowx(queries.CreateNewOrg, uid, name, description, owner)
+	var res string
+	err := r.Scan(&res)
+	if err != nil {
+		log.Printf("[db][CreateOrg] error creating new org. %v\n", err)
+		return nil, err
+	}
+	log.Printf("[db][CreateOrg] created new org %s\n", res)
+	return []byte(res), nil
+}
+
+// DeleteOrg deletes an org from the database
+func (d *NewDB) DeleteOrg(uid, owner string) error {
+	log.Printf("[db][DeleteOrg] Running query %s\n", queries.DeleteOrg)
+	_, err := d.DB.Exec(queries.DeleteOrg, uid, owner)
+	if err != nil {
+		log.Printf("[db][DeleteOrg] error deleting org. %v\n", err)
+		return err
+	}
+	log.Printf("[db][DeleteOrg] deleted org %s\n", uid)
+	return nil
+}
+
+// UpdateOrg updates an org in the database
+func (d *NewDB) UpdateOrg(appId, owner string, data *blueprint.UpdateOrganizationData) error {
+	log.Printf("[db][UpdateOrg] Running query %s\n", queries.UpdateOrg)
+	log.Printf("Incoming payload is: ")
+	spew.Dump(appId, owner)
+	_, err := d.DB.Exec(queries.UpdateOrg, data.Description, data.Name, appId, owner)
+	if err != nil {
+		log.Printf("[db][UpdateOrg] error updating org. %v\n", err)
+		return err
+	}
+	log.Printf("[db][UpdateOrg] updated org %s\n", appId)
+	return nil
+}
+
+// FetchOrgs fetches all orgs belonging to a user
+func (d *NewDB) FetchOrgs(owner string) ([]blueprint.Organization, error) {
+	log.Printf("[db][FetchOrgs] Running query %s\n", queries.FetchUserOrgs)
+	row, err := d.DB.Queryx(queries.FetchUserOrgs, owner)
+	if err != nil {
+		log.Printf("[db][FetchOrgs] error fetching orgs. %v\n", err)
+		return nil, err
+	}
+
+	var res []blueprint.Organization
+	for row.Next() {
+		var r blueprint.Organization
+		err = row.StructScan(&r)
+		if err != nil {
+			log.Printf("[db][FetchOrgs] error scanning org. %v\n", err)
+			return nil, err
+		}
+		res = append(res, r)
+	}
+
+	log.Printf("[db][FetchOrgs] fetched %d orgs\n", len(res))
+	return res, nil
+}
+
+// FetchUserByIdentifier fetches a user by the identifier (email or id) and a flag specifying which one
+// it is. This is used for fetching user's info (basic info and app/platform infos).
+func (d *NewDB) FetchUserByIdentifier(identifier, app, opt string) (*[]blueprint.UserAppAndPlatformInfo, error) {
+	log.Printf("[db][FetchUserByIdentifier] - fetching user profile by identifier")
+
+	// hack: for now, we're going to declare valid opts to prevent accidental SQL injection or whatever
+	opts := []string{"email", "id"}
+
+	if !lo.Contains(opts, opt) {
+		log.Printf("[db][FetchUserByIdentifier] - invalid opt '%s'\n", opt)
+		return nil, errors.New("invalid opt")
+	}
+
+	log.Printf("[db][FetchUserByIdentifier] Running query with %s  %s %s\n", identifier, app, opt)
+
+	row, err := d.DB.Queryx(queries.FetchUserAppAndInfo, identifier, app, opt)
+	if err != nil {
+		log.Printf("[db][FetchUserByIdentifier] error fetching user. %v\n", err)
+		return nil, err
+	}
+
+	var res []blueprint.UserAppAndPlatformInfo
+	for row.Next() {
+		var r blueprint.UserAppAndPlatformInfo
+		err = row.StructScan(&r)
+		if err != nil {
+			log.Printf("[db][FetchUserByIdentifier] error scanning user. %v\n", err)
+			return nil, err
+		}
+
+		res = append(res, r)
+	}
+
+	log.Printf("[db][FetchUserByIdentifier] fetched user's info and apps info. They have %d apps\n", len(res))
+	return &res, nil
+}
+
+// FetchPlatformAndUserInfoByUserID fetches a user by the identifier (email or id) and a flag specifying which one and the platform the user
+func (d *NewDB) FetchPlatformAndUserInfoByUserID(identifier, app, platform string) (*blueprint.UserAppAndPlatformInfo, error) {
+	log.Printf("[db][FetchPlatformAndUserInfoByUserID] - fetching user profile by identifier")
+
+	// 1. uuid / email
+	// 2. app id
+	// 3. platform
+	row := d.DB.QueryRowx(queries.FetchUserAppAndInfoByPlatform, identifier, app, platform)
+	var res blueprint.UserAppAndPlatformInfo
+	err := row.StructScan(&res)
+	if err != nil {
+		log.Printf("[db][FetchPlatformAndUserInfoByUserID] error scanning user: could not fetch user app and info by platform. %v\n", err)
+		return nil, err
+	}
+
+	return &res, nil
+	/// MIGHT BE USEFUL, keeping around for historical reasons, remove later
+	//func (d *NewDB) UpdateUserPlatformToken(token byte, email, platform string) error {
+	//	log.Printf("[db][UpdateUserPlatformToken] Running query %s\n", queries.UpdateUserPlatformToken)
+	//	_, err := d.DB.Exec(queries.UpdateUserPlatformToken, token, email, platform)
+	//	if err != nil {
+	//		log.Printf("[db][UpdateUserPlatformToken] error updating user platform token. %v\n", err)
+	//		return err
+	//	}
+	//	log.Printf("[db][UpdateUserPlatformToken] updated user: '%s' token to '%s'\n", email, token)
+	//	return nil
+	//}
+}

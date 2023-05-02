@@ -18,6 +18,7 @@ import (
 	"orchdio/util"
 	"os"
 	"strings"
+	"time"
 )
 
 // Platforms represents the structure for the platforms
@@ -37,19 +38,33 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 	linkInfo := ctx.Locals("linkInfo").(*blueprint.LinkInfo)
 	app := ctx.Locals("app").(*blueprint.DeveloperApp)
 
+	// we fetch the credentials for the platform we're converting to
+	// and then we pass it to the queue to be used by the worker
+	// to make the conversion
+	targetPlatform := linkInfo.TargetPlatform
+	if targetPlatform == "" {
+		log.Printf("\n[controllers][platforms][ConvertEntity] error - %v\n", "Target platform not specified")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "target platform not specified", "Target platform not specified")
+	}
+
 	// make sure we're actually handling for track alone, not playlist.
 	if strings.Contains(linkInfo.Entity, "track") {
 		log.Printf("\n[controllers][platforms][deezer][ConvertEntity] [info] - It is a track URL")
 
-		conversion, err := universal.ConvertTrack(linkInfo, p.Redis)
-		if err != nil {
-			if err == blueprint.ENOTIMPLEMENTED {
+		conversion, conversionError := universal.ConvertTrack(linkInfo, p.Redis, p.DB)
+		if conversionError != nil {
+			if conversionError == blueprint.ENOTIMPLEMENTED {
 				log.Printf("\n[controllers][platforms][deezer][ConvertEntity] error - %v\n", "Not implemented")
 				return util.ErrorResponse(ctx, http.StatusNotImplemented, "not supported", "Not implemented")
 			}
 
+			if conversionError == blueprint.ECREDENTIALSMISSING {
+				log.Printf("\n[controllers][platforms][deezer][ConvertEntity] error - %v\n", "Credentials missing")
+				return util.ErrorResponse(ctx, http.StatusUnauthorized, "credentials missing", fmt.Sprintf("Credentials missing for %v. Please update your app with your %s credentials and try again.", linkInfo.TargetPlatform, strings.ToUpper(linkInfo.TargetPlatform)))
+			}
+
 			log.Printf("\n[controllers][platforms][base][ConvertEntity] - Could not convert track")
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred")
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, conversionError, "An internal error occurred")
 		}
 
 		log.Printf("\n[controllers][platforms][ConvertEntity] - converted %v with URL %v\n", linkInfo.Entity, linkInfo.TargetLink)
@@ -121,7 +136,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 		}
 		// create new task
 		conversionTask, err := orchdioQueue.NewTask(fmt.Sprintf("playlist:conversion:%s", taskData.TaskID), queue.PlaylistConversionTask, 1, ser)
-		enqErr := orchdioQueue.EnqueueTask(conversionTask, queue.PlaylistConversionQueue, taskData.TaskID)
+		enqErr := orchdioQueue.EnqueueTask(conversionTask, queue.PlaylistConversionQueue, taskData.TaskID, time.Second*1)
 		if enqErr != nil {
 			log.Printf("[controller][conversion][EchoConversion] - error enqueuing task: %v", enqErr)
 			return ctx.Status(http.StatusInternalServerError).JSON("error enqueuing task")
@@ -207,28 +222,4 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 
 	log.Printf("\n[controllers][platforms][ConvertEntity] error - %v\n", "It is not a playlist or track URL")
 	return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid URL")
-}
-
-// ConvertPlaylist retrieves info about a playlist from various platforms.
-func (p *Platforms) ConvertPlaylist(ctx *fiber.Ctx) error {
-	// first, we want to fetch the information on the link
-
-	linkInfo := ctx.Locals("linkInfo").(*blueprint.LinkInfo)
-
-	// make sure we're actually handling for track alone, not playlist.
-	if strings.Contains(linkInfo.Entity, "playlist") {
-		log.Printf("\n[controllers][platforms][ConvertEntity] error - %v\n", "It is a playlist URL")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Not a playlist entity")
-	}
-
-	convertedPlaylist, err := universal.ConvertPlaylist(linkInfo, p.Redis)
-
-	if err != nil {
-		if err == blueprint.ENOTIMPLEMENTED {
-			return util.ErrorResponse(ctx, http.StatusNotImplemented, "not supported", "Not implemented")
-		}
-		log.Printf("\n[controllers][platforms][ConvertPlaylist][error] could not convert playlist %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred")
-	}
-	return util.SuccessResponse(ctx, http.StatusOK, convertedPlaylist)
 }

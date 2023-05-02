@@ -1,8 +1,8 @@
 package queries
 
-const CreateUserQuery = `WITH user_rec as ( INSERT INTO "users"(email, username, uuid, refresh_token, platform_id, created_at, updated_at) VALUES($1, $2, $3, $4, $5, now(), now())
-ON CONFLICT("email")  DO UPDATE
-SET email=EXCLUDED.email, username=EXCLUDED.username, refresh_token=$4, platform_id=$5, updated_at=now() RETURNING email, uuid)
+const CreateUserQuery = `WITH user_rec as ( INSERT INTO "users"(email, uuid, created_at, updated_at) VALUES($1, $2, now(), now())
+ON CONFLICT("email") DO UPDATE
+SET email=EXCLUDED.email,updated_at=now() RETURNING email, uuid)
 			SELECT * from user_rec;`
 
 //const UpdateUserPlatformToken = `UPDATE "users" SET spotify_token =
@@ -10,8 +10,6 @@ SET email=EXCLUDED.email, username=EXCLUDED.username, refresh_token=$4, platform
 //                   applemusic_token = (case when $1 = 'apple' then applemusic_token = $2 end),
 //                   deezer_token = (case when $1 = 'deezer' then deezer_token = $2 end),
 //                   tidal_token = (case when $1 = 'tidal' then tidal_token = $2 end) WHERE uuid = $3`
-
-const UpdatePlatformUsernamesAndIds = `UPDATE users SET usernames = COALESCE(usernames::JSONB, '{}') || $2, platform_ids = COALESCE(platform_ids::JSONB, '{}') || $3 WHERE email = $1;`
 
 // FindUserByEmail returns a  user the email. it fetches the refresh token for the user based on platform passed. if no platform passed, it'll return refresh_token
 const FindUserByEmail = `SELECT id, email, coalesce(username, '') AS username, uuid, created_at, updated_at, usernames, platform_id, 
@@ -49,7 +47,7 @@ const FetchTask = `SELECT id, uuid, entity_id, created_at, updated_at, app, stat
 const FetchTaskByShortID = `SELECT id, uuid, entity_id, created_at, updated_at, app, status, coalesce(result, '{}') as result FROM tasks WHERE shortid = $1;`
 const DeleteTask = `DELETE FROM tasks WHERE uuid = $1;`
 
-const CreateOrAddSubscriberFollow = `INSERT INTO follows(uuid, developer, entity_id, subscribers, entity_url, created_at, updated_at) values ($1, $2, $3, $4, $5, now(), now())
+const CreateOrAddSubscriberFollow = `INSERT INTO follows(uuid, developer, entity_id, subscribers, entity_url, created_at, updated_at, app) values ($1, $2, $3, $4, $5, now(), now(), $6)
 ON CONFLICT("entity_id") DO UPDATE SET updated_at = NOW() RETURNING uuid;`
 
 const CreateNewTrackTaskRecord = `INSERT INTO tasks(uuid, shortid, entity_id, result, status, type, created_at, updated_at, app) values ($1, $2, $3, $4, 'completed', 'track', now(), now(), $5) RETURNING uuid;`
@@ -58,7 +56,14 @@ const FetchFollowedTask = `SELECT * FROM  follows where entity_id = $1;`
 
 const FetchTaskByEntityIdAndType = `SELECT * FROM tasks WHERE entity_id = $1 and type = $2;`
 
-const FetchPlaylistFollowsToProcess = `SELECT DISTINCT on(follow.id) follow.id, follow.created_at, follow.updated_at, follow.developer, follow.entity_id, follow.entity_url, json_agg("user".*) as subscribers FROM follows follow JOIN users "user" ON "user"::text <> ANY (subscribers::text[]) WHERE entity_id IS NOT NULL AND entity_url IS NOT NULL AND (status <> 'ERROR' OR follow.updated_at > CURRENT_DATE - interval '10 minutes') AND entity_url IS NOT NULL GROUP BY follow.id;
+const FetchPlaylistFollowsToProcess = `SELECT DISTINCT on(follow.id) follow.id, 
+follow.created_at, follow.updated_at, follow.developer, 
+follow.entity_id, follow.entity_url, json_agg("user".*), follow.app
+as subscribers FROM follows follow JOIN users "user" 
+    ON "user"::text <> ANY (subscribers::text[]) WHERE 
+		entity_id IS NOT NULL AND entity_url IS NOT NULL 
+			AND (status <> 'ERROR' OR follow.updated_at > CURRENT_DATE - interval '10 minutes') 
+			AND entity_url IS NOT NULL GROUP BY follow.id;
 `
 
 // FetchFollowByEntityId query is used to fetch a follow and the subscribers to it.
@@ -73,11 +78,7 @@ const UpdateFollowStatus = `UPDATE follows SET updated_at = now(), status = $1 w
 
 const CreateWaitlistEntry = `INSERT INTO waitlists(uuid, email, platform, created_at,  updated_at) VALUES ($1, $2, $3, now(), now()) ON CONFLICT(email) DO UPDATE SET updated_at = now() RETURNING email;`
 
-// update user platform token based on the streaming platform user provides
-
-const UpdateUserPlatformToken = `UPDATE users SET spotify_token = (CASE WHEN $2 ILIKE '%spotify%' THEN $1 ELSE spotify_token END), applemusic_token = (CASE WHEN $2 ILIKE '%applemusic%' THEN $1 ELSE applemusic_token END), deezer_token = (CASE WHEN $2 ILIKE '%deezer%' THEN $1 ELSE deezer_token END) WHERE email = $3;`
-
-const UpdateRedirectURL = `UPDATE users SET redirect_url = $2 WHERE uuid = $1;`
+//const UpdateRedirectURL = `UPDATE users SET redirect_url = $2 WHERE uuid = $1;`
 
 const FetchUserFromWaitlist = `SELECT uuid FROM waitlists WHERE email = $1;`
 

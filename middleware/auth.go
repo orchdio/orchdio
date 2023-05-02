@@ -2,16 +2,15 @@ package middleware
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"github.com/gofiber/fiber/v2"
 	"github.com/jmoiron/sqlx"
+	"github.com/samber/lo"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
 	"orchdio/db"
 	"orchdio/db/queries"
-	"orchdio/services/spotify"
 	"orchdio/util"
 	"os"
 	"strings"
@@ -63,6 +62,10 @@ func (a *AuthMiddleware) ValidateKey(ctx *fiber.Ctx) error {
 }
 
 func (a *AuthMiddleware) LogIncomingRequest(ctx *fiber.Ctx) error {
+	// in order to suppress the health monitor from logging the request, we check if the path is /health
+	if ctx.Path() == "/vermont/info" {
+		return ctx.Next()
+	}
 	log.Printf("[middleware][LogIncomingRequest] incoming request: %s  %s: %s\n", ctx.IP(), ctx.Method(), ctx.Path())
 	return ctx.Next()
 }
@@ -97,7 +100,7 @@ func (a *AuthMiddleware) AddReadOnlyDeveloperToContext(ctx *fiber.Ctx) error {
 	ctx.Locals("developer", developer)
 
 	// fetch the app with the public key
-	app, err := database.FetchAppByPublicKey(pubKey)
+	app, err := database.FetchAppByPublicKey(pubKey, developer.UUID.String())
 	if err != nil {
 		log.Printf("[db][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app with public key")
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred")
@@ -166,98 +169,69 @@ func (a *AuthMiddleware) HandleTrolls(ctx *fiber.Ctx) error {
 // CheckOrInitiateUserAuthStatus checks if the user is already authenticated on orchdio. If the user has been authorized, we will
 // continue to the next handler in line by proceeding to next but if the user is not authenticated then we
 // will return a redirect auth for the platform the user is trying to perform an action and or auth on.
-func (a *AuthMiddleware) CheckOrInitiateUserAuthStatus(ctx *fiber.Ctx) error {
-	// extract the user id from the path. the assumption here is that the user id would be passed in the endpoints path
-	userId := ctx.Params("userId")
-	// attach appId as query params. if we change the verb to POST, we can simply attach the appId to the header as
-	// x-orchdio-app-id
-	appId := ctx.Query("app_id")
-	if userId == "" {
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing user id")
-	}
-
-	if appId == "" {
-		log.Printf("[middleware][CheckUserAuthStatus] missing app id")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing app id")
-	}
-
-	isValidUserId := util.IsValidUUID(userId)
-	if !isValidUserId {
-		log.Printf("[middleware][CheckUserAuthStatus] invalid user id")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid user id")
-	}
-
-	// extract the platform to auth for
-	platform := ctx.Query("platform")
-	if platform == "" {
-		log.Printf("[middleare][auth][CheckUserAuthStatus] - platform not present. Please specify platform to auth user on")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid Auth platform")
-	}
-
-	// find the user in the db with the id
-	database := db.NewDB{DB: a.DB}
-	user, err := database.FindUserByUUID(userId, platform)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "App not found")
-		}
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An internal error occurred")
-	}
-
-	// check if the user is authenticated on orchdio
-	if !user.Authorized {
-		log.Printf("[middleware][CheckUserAuthStatus] user is not authorized. Redirecting to auth page. %s\n", userId)
-		// TODO: handle fetching auth url depending on the platform here.
-		developerApp, err := database.FetchAppByAppId(appId)
-		if err != nil {
-			log.Printf("[middleware][CheckUserAuthStatus] could not retrieve developer app")
-			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "Invalid App ID")
-		}
-
-		redirectToken := blueprint.AppAuthToken{
-			App:         appId,
-			RedirectURL: developerApp.RedirectURL,
-			Action: struct {
-				Payload interface{} `json:"payload"`
-				Action  string      `json:"action"`
-			}(struct {
-				Payload interface{}
-				Action  string
-			}{Payload: nil, Action: "app_auth"}),
-			Platform: platform,
-		}
-
-		switch platform {
-		case "spotify":
-			encryptedAuthToken, err := util.SignAuthJwt(&redirectToken)
-			if err != nil {
-				log.Printf("[middleware][auth][CheckUserAuthStatus] - could not sign auth token. This is a serious error - %v\n", err)
-				return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not sign JWT token")
-			}
-
-			authURL := spotify.FetchAuthURL(string(encryptedAuthToken))
-			log.Printf("[middleware][auth][CheckUserAuthStatus] - user auth redirect url - %v\n", string(authURL))
-			return util.SuccessResponse(ctx, http.StatusOK, string(authURL))
-
-		case "deezer":
-			log.Printf("[middleware][auth][CheckAuthMiddleware] - generating user deezer auth redirect url")
-			encryptedToken, err := util.SignAuthJwt(&redirectToken)
-			if err != nil {
-				log.Printf("[middleare][auth][CheckUserAuthStatus] - could not sign auth token. This is a serious error: %v\n", err)
-				return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not sign redirect token")
-			}
-			return util.SuccessResponse(ctx, http.StatusOK, string(encryptedToken))
-
-		case "applemusic":
-			log.Printf("[middleware][CheckUserAuthStatus] - generating apple music auth token")
-			return ctx.Status(http.StatusNotImplemented).JSON(fiber.Map{
-				"message": "Apple Music auth not supported on this endpoint",
-			})
-		}
-	}
-
-	return ctx.Next()
-}
+//func (a *AuthMiddleware) CheckOrInitiateUserAuthStatus(ctx *fiber.Ctx) error {
+//	// extract the user id from the path. the assumption here is that the user id would be passed in the endpoints path
+//	userId := ctx.Params("userId")
+//	// attach appId as query params. if we change the verb to POST, we can simply attach the appId to the header as
+//	// x-orchdio-app-id
+//	appId := ctx.Query("app_id")
+//	if userId == "" {
+//		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing user id")
+//	}
+//
+//	if appId == "" {
+//		log.Printf("[middleware][CheckUserAuthStatus] missing app id")
+//		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing app id")
+//	}
+//
+//	isValidUserId := util.IsValidUUID(userId)
+//	if !isValidUserId {
+//		log.Printf("[middleware][CheckUserAuthStatus] invalid user id")
+//		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid user id")
+//	}
+//
+//	// extract the platform to auth for
+//	platform := ctx.Query("platform")
+//	if platform == "" {
+//		log.Printf("[middleare][auth][CheckUserAuthStatus] - platform not present. Please specify platform to auth user on")
+//		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid Auth platform")
+//	}
+//
+//	scopes := ctx.Query("scopes")
+//	if scopes == "" {
+//		log.Printf("[middleware][auth][CheckUserAuthStatus] - scopes not present. Please specify scopes to auth user on")
+//		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid Auth scopes")
+//	}
+//	authScopes := strings.Split(scopes, ",")
+//	// get the hostname
+//	hostname := ctx.Hostname()
+//	if hostname == "" {
+//		log.Printf("[controllers][AppAuthRedirect] developer -  error: no hostname provided\n")
+//		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Hostname is not present. please pass your hostname as a header")
+//	}
+//
+//	if !lo.Contains([]string{"https://"}, hostname) {
+//		hostname = fmt.Sprintf("https://%s", hostname)
+//	}
+//	redirectURL := fmt.Sprintf("%s/v1/auth/%s/callback", hostname, platform)
+//
+//	// find the user in the db with the id
+//	database := db.NewDB{DB: a.DB}
+//	//user, err := database.FindUserByUUID(userId, platform)
+//	user, err := database.FetchPlatformAndUserInfoByUserID(userId, appId, platform, "id")
+//	if err != nil {
+//		if err == sql.ErrNoRows {
+//			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "App not found. User might not have authorized this app")
+//		}
+//		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An internal error occurred")
+//	}
+//
+//	// check if the user is authenticated on orchdio
+//	if !user.Authorized {
+//	}
+//
+//	return ctx.Next()
+//}
 
 // VerifyUserActionDeveloper verifies that the developer app is valid and that the user is authorized to perform the action. It attaches the user
 // context information to the locals. this is then used in controllers where user is making user action requests, for example fetching user library playlists.
@@ -280,7 +254,8 @@ func (a *AuthMiddleware) VerifyUserActionDeveloper(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing app")
 	}
 	database := db.NewDB{DB: a.DB}
-	user, err := database.FindUserByUUID(userId, platform)
+	//user, err := database.FindUserByUUID(userId, platform)
+	user, err := database.FetchPlatformAndUserInfoByUserID(userId, app.UID.String(), platform)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User not found")
@@ -300,20 +275,27 @@ func (a *AuthMiddleware) VerifyUserActionDeveloper(ctx *fiber.Ctx) error {
 		refreshToken = string(r)
 	}
 
-	var platformIDs map[string]string
-
-	err = json.Unmarshal(user.PlatformIDs.([]byte), &platformIDs)
-	if err != nil {
-		log.Printf("[middleware][auth][AuthDeveloperApp] - could not unmarshal platform ids")
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An internal error occurred")
-	}
-
 	userMiddlewareInfo := blueprint.AuthMiddlewareUserInfo{
 		Platform:     platform,
-		PlatformIDs:  platformIDs,
+		PlatformID:   user.PlatformID,
 		RefreshToken: refreshToken,
 	}
 
 	ctx.Locals("userCtx", &userMiddlewareInfo)
+	return ctx.Next()
+}
+
+func (a *AuthMiddleware) AddRequestPlatformToCtx(ctx *fiber.Ctx) error {
+	platform := ctx.Params("platform")
+	if platform == "" {
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing platform")
+	}
+
+	platforms := []string{"spotify", "deezer", "tidal", "applemusic"}
+	if !lo.Contains(platforms, platform) {
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid platform")
+	}
+
+	ctx.Locals("platform", platform)
 	return ctx.Next()
 }

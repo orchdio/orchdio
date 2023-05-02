@@ -5,6 +5,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx/types"
+	"github.com/lib/pq"
 	"time"
 )
 
@@ -20,19 +21,23 @@ const (
 // perhaps have a different Error type declarations somewhere. For now, be here
 
 var (
-	EHOSTUNSUPPORTED = errors.New("EHOSTUNSUPPORTED")
-	ENORESULT        = errors.New("Not Found")
-	ENOTIMPLEMENTED  = errors.New("NOT_IMPLEMENTED")
-	EGENERAL         = errors.New("EGENERAL")
-	EUNKNOWN         = errors.New("EUNKNOWN")
-	EINVALIDLINK     = errors.New("invalid link")
-	EALREADY_EXISTS  = errors.New("already exists")
-	EPHANTOMERR      = errors.New("unexpected error")
-	ERRTOOMANY       = errors.New("too many parameters")
-	EFORBIDDEN       = errors.New("403 Forbidden")
-	EUNAUTHORIZED    = errors.New("401 Unauthorized")
-	EBADREQUEST      = errors.New("400 Bad Request")
-	EINVALIDAUTHCODE = errors.New("INVALID_AUTH_CODE")
+	EHOSTUNSUPPORTED    = errors.New("EHOSTUNSUPPORTED")
+	ENORESULT           = errors.New("Not Found")
+	ENOTIMPLEMENTED     = errors.New("NOT_IMPLEMENTED")
+	EGENERAL            = errors.New("EGENERAL")
+	EUNKNOWN            = errors.New("EUNKNOWN")
+	EINVALIDLINK        = errors.New("invalid link")
+	EALREADY_EXISTS     = errors.New("already exists")
+	EPHANTOMERR         = errors.New("unexpected error")
+	ERRTOOMANY          = errors.New("too many parameters")
+	EFORBIDDEN          = errors.New("403 Forbidden")
+	EUNAUTHORIZED       = errors.New("401 Unauthorized")
+	EBADREQUEST         = errors.New("400 Bad Request")
+	EINVALIDAUTHCODE    = errors.New("INVALID_AUTH_CODE")
+	ECREDENTIALSMISSING = errors.New("credentials not added for platform")
+	EINVALIDPERMISSIONS = errors.New("invalid permissions")
+	ESERVICECLOSED      = errors.New("service closed")
+	EINVALIDPLATFORM    = errors.New("invalid platform")
 )
 
 var (
@@ -42,20 +47,6 @@ var (
 
 // MorbinTime because "its morbin time"
 type MorbinTime string
-
-type User struct {
-	Email        string      `json:"email" db:"email"`
-	Usernames    interface{} `json:"usernames" db:"usernames"`
-	Username     string      `json:"username,omitempty" db:"username"`
-	ID           int         `json:"id,omitempty" db:"id"`
-	UUID         uuid.UUID   `json:"uuid" db:"uuid"`
-	CreatedAt    string      `json:"created_at" db:"created_at"`
-	UpdatedAt    string      `json:"updated_at" db:"updated_at"`
-	RefreshToken []byte      `json:"refresh_token" db:"refresh_token,omitempty"`
-	PlatformID   string      `json:"platform_id" db:"platform_id"`
-	Authorized   bool        `json:"authorized,omitempty" db:"authorized,omitempty"`
-	PlatformIDs  interface{} `json:"platform_ids,omitempty" db:"platform_ids,omitempty"`
-}
 
 type UserProfile struct {
 	Email     string      `json:"email" db:"email"`
@@ -137,6 +128,8 @@ type LinkInfo struct {
 	Entity         string `json:"entity"`
 	EntityID       string `json:"entity_id"`
 	TargetPlatform string `json:"target_platform,omitempty"`
+	App            string `json:"app,omitempty"`
+	Developer      string `json:"developer,omitempty"`
 }
 
 // TrackSearchResult represents a single search result for a platform.
@@ -145,7 +138,7 @@ type LinkInfo struct {
 type TrackSearchResult struct {
 	URL           string   `json:"url"`
 	Artists       []string `json:"artists"`
-	Released      string   `json:"released"`
+	Released      string   `json:"release_date,omitempty"`
 	Duration      string   `json:"duration"`
 	DurationMilli int      `json:"duration_milli,omitempty"`
 	Explicit      bool     `json:"explicit"`
@@ -187,11 +180,11 @@ type PlatformSearchTrack struct {
 type Conversion struct {
 	Entity    string `json:"entity"`
 	Platforms struct {
-		Deezer     *TrackSearchResult `json:"deezer"`
-		Spotify    *TrackSearchResult `json:"spotify"`
-		Tidal      *TrackSearchResult `json:"tidal"`
-		YTMusic    *TrackSearchResult `json:"ytmusic"`
-		AppleMusic *TrackSearchResult `json:"applemusic"`
+		Deezer     *TrackSearchResult `json:"deezer,omitempty"`
+		Spotify    *TrackSearchResult `json:"spotify,omitempty"`
+		Tidal      *TrackSearchResult `json:"tidal,omitempty"`
+		YTMusic    *TrackSearchResult `json:"ytmusic,omitempty"`
+		AppleMusic *TrackSearchResult `json:"applemusic,omitempty"`
 	} `json:"platforms"`
 	ShortURL string `json:"short_url,omitempty"`
 }
@@ -356,6 +349,7 @@ type FollowsToProcess struct {
 	CreatedAt   time.Time   `json:"created_at,omitempty" db:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at,omitempty" db:"updated_at"`
 	Developer   uuid.UUID   `json:"user,omitempty" db:"developer"`
+	App         uuid.UUID   `json:"app,omitempty" db:"app"`
 	Subscribers interface{} `json:"subscribers,omitempty" db:"subscribers"`
 	//Result    interface{} `json:"result,omitempty" db:"result"`
 	//Type      string      `json:"type,omitempty" db:"type"`
@@ -373,13 +367,16 @@ type PlaylistFollow struct {
 	// an array of subscribers
 	Result []types.JSONText `json:"result,omitempty" db:"result"`
 	Type   string           `json:"type,omitempty" db:"type"`
+	App    string           `json:"app,omitempty" db:"app"`
 }
 
 type FollowTaskData struct {
-	User     uuid.UUID `json:"user"`
-	Url      string    `json:"url"`
-	EntityID string    `json:"entity_id"`
-	Platform string    `json:"platform"`
+	User      uuid.UUID `json:"user"`
+	Url       string    `json:"url"`
+	EntityID  string    `json:"entity_id"`
+	Platform  string    `json:"platform"`
+	App       string    `json:"app"`
+	Developer string    `json:"developer,omitempty"`
 	//Subscribers interface{} `json:"subscribers"`
 }
 
@@ -395,41 +392,56 @@ type AddPlaylistToAccountData struct {
 }
 
 type DeveloperApp struct {
-	ID          int       `json:"id,omitempty" db:"id"`
-	UID         uuid.UUID `json:"uid,omitempty" db:"uuid"`
-	Name        string    `json:"name,omitempty" db:"name"`
-	Description string    `json:"description,omitempty" db:"description"`
-	Developer   uuid.UUID `json:"developer,omitempty" db:"developer"`
-	SecretKey   []byte    `json:"secret_key,omitempty" db:"secret_key"`
-	PublicKey   uuid.UUID `json:"public_key,omitempty" db:"public_key"`
-	RedirectURL string    `json:"redirect_url,omitempty" db:"redirect_url"`
-	WebhookURL  string    `json:"webhook_url,omitempty" db:"webhook_url"`
-	VerifyToken []byte    `json:"verify_token,omitempty" db:"verify_token"`
-	CreatedAt   string    `json:"created_at,omitempty" db:"created_at"`
-	UpdatedAt   string    `json:"updated_at,omitempty" db:"updated_at"`
-	Authorized  bool      `json:"authorized,omitempty" db:"authorized"`
+	ID                    int       `json:"id,omitempty" db:"id"`
+	UID                   uuid.UUID `json:"uid,omitempty" db:"uuid"`
+	Name                  string    `json:"name,omitempty" db:"name"`
+	Description           string    `json:"description,omitempty" db:"description"`
+	Developer             uuid.UUID `json:"developer,omitempty" db:"developer"`
+	SecretKey             []byte    `json:"secret_key,omitempty" db:"secret_key"`
+	PublicKey             uuid.UUID `json:"public_key,omitempty" db:"public_key"`
+	RedirectURL           string    `json:"redirect_url,omitempty" db:"redirect_url"`
+	WebhookURL            string    `json:"webhook_url,omitempty" db:"webhook_url"`
+	VerifyToken           []byte    `json:"verify_token,omitempty" db:"verify_token"`
+	CreatedAt             string    `json:"created_at,omitempty" db:"created_at"`
+	UpdatedAt             string    `json:"updated_at,omitempty" db:"updated_at"`
+	Authorized            bool      `json:"authorized,omitempty" db:"authorized"`
+	Organization          string    `json:"organization,omitempty" db:"organization"`
+	SpotifyCredentials    []byte    `json:"spotify_credentials,omitempty" db:"spotify_credentials"`
+	AppleMusicCredentials []byte    `json:"applemusic_credentials,omitempty" db:"applemusic_credentials"`
+	DeezerCredentials     []byte    `json:"deezer_credentials,omitempty" db:"deezer_credentials"`
+	TidalCredentials      []byte    `json:"tidal_credentials,omitempty" db:"tidal_credentials"`
+	DeezerState           string    `json:"deezer_state,omitempty" db:"deezer_state,omitempty"`
 }
 
 type UpdateDeveloperAppData struct {
-	Name        string `json:"name,omitempty"`
-	Description string `json:"description,omitempty"`
-	RedirectURL string `json:"redirect_url,omitempty"`
-	WebhookURL  string `json:"webhook_url,omitempty"`
+	Name                   string `json:"name,omitempty"`
+	Description            string `json:"description,omitempty"`
+	IntegrationRedirectURL string `json:"integration_redirect_url,omitempty"`
+	IntegrationPlatform    string `json:"integration_platform,omitempty"`
+	WebhookURL             string `json:"webhook_url,omitempty"`
+	IntegrationAppID       string `json:"integration_app_id,omitempty"`
+	IntegrationAppSecret   string `json:"integration_app_secret,omitempty"`
 }
 
 type CreateNewDeveloperAppData struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	RedirectURL string `json:"redirect_url"`
-	WebhookURL  string `json:"webhook_url"`
+	//RedirectURL            string `json:"redirect_url"`
+	WebhookURL             string `json:"webhook_url"`
+	Organization           string `json:"organization"`
+	IntegrationAppSecret   string `json:"integration_app_secret"`
+	IntegrationAppId       string `json:"integration_app_id"`
+	IntegrationRedirectURL string `json:"integration_redirect_url"`
+	IntegrationPlatform    string `json:"platform"`
 }
 
 type AppAuthToken struct {
 	jwt.RegisteredClaims
-	App         string `json:"app_id"`
-	RedirectURL string `json:"redirect_url"`
-	Platform    string `json:"platform"`
-	Action      Action `json:"action,omitempty"`
+	App         string   `json:"app_id"`
+	RedirectURL string   `json:"redirect_url"`
+	Platform    string   `json:"platform"`
+	Action      Action   `json:"action,omitempty"`
+	Scopes      []string `json:"scopes,omitempty"`
 }
 
 type Action struct {
@@ -460,6 +472,7 @@ type AppInfo struct {
 	WebhookURL  string `json:"webhook_url"`
 	PublicKey   string `json:"public_key"`
 	Authorized  bool   `json:"authorized"`
+	IntegrationCredentials
 }
 
 type UserPlaylist struct {
@@ -472,16 +485,17 @@ type UserPlaylist struct {
 	Collaborative bool   `json:"collaborative"`
 	NbTracks      int    `json:"nb_tracks,omitempty"`
 	Fans          int    `json:"fans,omitempty"`
-	URL           string `json:"link"`
+	URL           string `json:"url"`
 	Cover         string `json:"cover"`
 	CreatedAt     string `json:"created_at"`
 	Checksum      string `json:"checksum,omitempty"`
 	// use the name as the owner for now
 	Owner string `json:"owner"`
 }
+
 type UserLibraryPlaylists struct {
-	Total int            `json:"total"`
-	Data  []UserPlaylist `json:"data"`
+	Total   int            `json:"total"`
+	Payload []UserPlaylist `json:"data"`
 }
 
 type AppTaskData struct {
@@ -498,10 +512,10 @@ type EmailTaskData struct {
 }
 
 type UserArtist struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Picture string `json:"picture"`
-	URL     string `json:"url"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Cover string `json:"cover"`
+	URL   string `json:"url"`
 }
 
 type LibraryAlbum struct {
@@ -510,9 +524,14 @@ type LibraryAlbum struct {
 	URL         string   `json:"url"`
 	ReleaseDate string   `json:"release_date"`
 	Explicit    bool     `json:"explicit"`
-	TrackCount  int      `json:"track_count"`
+	TrackCount  int      `json:"nb_tracks"`
 	Artists     []string `json:"artists"`
 	Cover       string   `json:"cover"`
+}
+
+type UserLibraryAlbums struct {
+	Payload []LibraryAlbum `json:"payload"`
+	Total   int            `json:"total"`
 }
 
 type UserLibraryArtists struct {
@@ -521,7 +540,173 @@ type UserLibraryArtists struct {
 }
 
 type AuthMiddlewareUserInfo struct {
-	Platform     string            `json:"platform"`
-	PlatformIDs  map[string]string `json:"platform_ids"`
-	RefreshToken string            `json:"refresh_token"`
+	Platform     string `json:"platform"`
+	PlatformID   string `json:"platform_ids"`
+	RefreshToken string `json:"refresh_token"`
 }
+
+type CreateOrganizationData struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+type Organization struct {
+	ID          int       `json:"id,omitempty" db:"id"`
+	UID         uuid.UUID `json:"uid,omitempty" db:"uuid"`
+	Name        string    `json:"name,omitempty" db:"name"`
+	Description string    `json:"description,omitempty" db:"description"`
+	CreatedAt   string    `json:"created_at,omitempty" db:"created_at"`
+	UpdatedAt   string    `json:"updated_at,omitempty" db:"updated_at"`
+	Owner       uuid.UUID `json:"owner,omitempty" db:"owner"`
+}
+
+type UpdateOrganizationData struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+type OrganizationResponse struct {
+	UUID        uuid.UUID `json:"uuid"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	CreatedAt   string    `json:"created_at"`
+	// TODO: i may need to JOIN the users table to get the owner name and other stuff
+	Owner uuid.UUID `json:"owner"`
+}
+
+type IntegrationCredentials struct {
+	AppID     string `json:"app_id,omitempty"`
+	AppSecret string `json:"app_secret,omitempty"`
+	Platform  string `json:"app_platform"`
+}
+
+type SrcTargetCredentials struct {
+	Source IntegrationCredentials `json:"source"`
+	Target IntegrationCredentials `json:"target"`
+}
+
+type ExtractedTitleInfo struct {
+	Artists []string `json:"artists"`
+	Title   string   `json:"title"`
+}
+
+type UserApp struct {
+	UUID         uuid.UUID      `json:"uuid" db:"uuid"`
+	RefreshToken []byte         `json:"refreshToken" db:"refresh_token"`
+	Scopes       pq.StringArray `json:"scopes" db:"scopes"`
+	User         uuid.UUID      `json:"user" db:"user"`
+	AuthedAt     string         `json:"authed_at" db:"authed_at"`
+	LastAuthedAt string         `json:"last_authed_at" db:"last_authed_at"`
+	App          uuid.UUID      `json:"app" db:"app"`
+	Platform     string         `json:"platform" db:"platform"`
+	Username     string         `json:"username" db:"username"`
+	PlatformID   string         `json:"platform_id" db:"platform_id"`
+}
+
+type CreateNewUserAppData struct {
+	//AccessToken  []byte      `json:"accessToken"`
+	RefreshToken []byte    `json:"refreshToken"`
+	Scopes       []string  `json:"scopes"`
+	User         uuid.UUID `json:"user"`
+	LastAuthedAt string    `json:"last_authed_at"`
+	App          uuid.UUID `json:"app"`
+	Platform     string    `json:"platform"`
+}
+
+type UserAccountInfo struct {
+	Email     string `json:"email"`
+	Usernames struct {
+		Spotify string `json:"spotify,omitempty"`
+		Deezer  string `json:"deezer,omitempty"`
+		YtMusic string `json:"ytmusic,omitempty"`
+	} `json:"usernames"`
+	ProfilePictures struct {
+		Spotify    string `json:"spotify,omitempty"`
+		Deezer     string `json:"deezer,omitempty"`
+		YtMusic    string `json:"ytmusic,omitempty"`
+		AppleMusic string `json:"applemusic,omitempty"`
+		Tidal      string `json:"tidal,omitempty"`
+	} `json:"profile_pictures"`
+	ExplicitContents struct {
+		Spotify    bool `json:"spotify,omitempty"`
+		Deezer     bool `json:"deezer,omitempty"`
+		YtMusic    bool `json:"ytmusic,omitempty"`
+		AppleMusic bool `json:"applemusic,omitempty"`
+		Tidal      bool `json:"tidal,omitempty"`
+	} `json:"explicit_contents"`
+}
+
+type UserPlatformInfo struct {
+	Platform       string `json:"platform"`
+	Username       string `json:"username"`
+	ProfilePicture string `json:"profile_picture"`
+	// at the moment, it seems the spotify library being used doesnt return the user
+	// explicit content level. so for now, we set to false always for spotify and other platforms
+	// that may have same issue
+	ExplicitContent bool   `json:"explicit_content,omitempty"`
+	Followers       int    `json:"followers,omitempty"`
+	Following       int    `json:"following,omitempty"`
+	PlatformID      string `json:"platform_id,omitempty"`
+	PlatformSubPlan string `json:"subscription_plan,omitempty"`
+	Url             string `json:"url,omitempty"`
+}
+
+type UserInfo struct {
+	Email      string            `json:"email"`
+	ID         string            `json:"id"`
+	Deezer     *UserPlatformInfo `json:"deezer,omitempty"`
+	Spotify    *UserPlatformInfo `json:"spotify,omitempty"`
+	YtMusic    *UserPlatformInfo `json:"ytmusic,omitempty"`
+	AppleMusic *UserPlatformInfo `json:"applemusic,omitempty"`
+	Tidal      *UserPlatformInfo `json:"tidal,omitempty"`
+}
+
+type UserAppAndPlatformInfo struct {
+	AppID        string `json:"app_id" db:"app_id"`
+	Platform     string `json:"platform" db:"platform"`
+	PlatformID   string `json:"platform_id" db:"platform_id"`
+	RefreshToken []byte `json:"refresh_token" db:"refresh_token"`
+	Username     string `json:"username" db:"username"`
+	Email        string `json:"email" db:"email"`
+	UserID       string `json:"user_id" db:"user_id"`
+}
+
+type User struct {
+	Email string `json:"email" db:"email"`
+	//Usernames interface{} `json:"usernames" db:"usernames"`
+	//Username     string      `json:"username,omitempty" db:"username"`
+	ID        int       `json:"id,omitempty" db:"id"`
+	UUID      uuid.UUID `json:"uuid" db:"uuid"`
+	CreatedAt string    `json:"created_at" db:"created_at"`
+	UpdatedAt string    `json:"updated_at" db:"updated_at"`
+
+	//RefreshToken []byte      `json:"refresh_token" db:"refresh_token,omitempty"`
+	//PlatformID  string      `json:"platform_id" db:"platform_id"`
+	//Authorized  bool        `json:"authorized,omitempty" db:"authorized,omitempty"`
+	//PlatformIDs interface{} `json:"platform_ids,omitempty" db:"platform_ids,omitempty"`
+}
+
+//// DeveloperAppWithUserApp is similar to ```DeveloperApp``` but includes the user app id and other user app info
+//type DeveloperAppWithUserApp struct {
+//	ID                    int            `json:"id,omitempty" db:"id"`
+//	UID                   uuid.UUID      `json:"uid,omitempty" db:"uuid"`
+//	Name                  string         `json:"name,omitempty" db:"name"`
+//	Description           string         `json:"description,omitempty" db:"description"`
+//	Developer             uuid.UUID      `json:"developer,omitempty" db:"developer"`
+//	SecretKey             []byte         `json:"secret_key,omitempty" db:"secret_key"`
+//	PublicKey             uuid.UUID      `json:"public_key,omitempty" db:"public_key"`
+//	RedirectURL           string         `json:"redirect_url,omitempty" db:"redirect_url"`
+//	WebhookURL            string         `json:"webhook_url,omitempty" db:"webhook_url"`
+//	VerifyToken           []byte         `json:"verify_token,omitempty" db:"verify_token"`
+//	CreatedAt             string         `json:"created_at,omitempty" db:"created_at"`
+//	UpdatedAt             string         `json:"updated_at,omitempty" db:"updated_at"`
+//	Authorized            bool           `json:"authorized,omitempty" db:"authorized"`
+//	Organization          string         `json:"organization,omitempty" db:"organization"`
+//	SpotifyCredentials    []byte         `json:"spotify_credentials,omitempty" db:"spotify_credentials"`
+//	AppleMusicCredentials []byte         `json:"applemusic_credentials,omitempty" db:"applemusic_credentials"`
+//	DeezerCredentials     []byte         `json:"deezer_credentials,omitempty" db:"deezer_credentials"`
+//	TidalCredentials      []byte         `json:"tidal_credentials,omitempty" db:"tidal_credentials"`
+//	DeezerState           string         `json:"deezer_state,omitempty" db:"deezer_state,omitempty"`
+//	UserAppID             string         `json:"user_app_id,omitempty" db:"user_app_id"`
+//	Scopes                pq.StringArray `json:"scopes,omitempty" db:"scopes"`
+//}

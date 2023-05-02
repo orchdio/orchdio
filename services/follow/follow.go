@@ -15,6 +15,9 @@ import (
 	"orchdio/db"
 	"orchdio/db/queries"
 	"orchdio/services"
+	"orchdio/services/deezer"
+	"orchdio/services/spotify"
+	"orchdio/services/tidal"
 	"orchdio/universal"
 	"time"
 )
@@ -35,7 +38,7 @@ func NewFollow(db *sqlx.DB, red *redis.Client) *Follow {
 // FollowPlaylist follows a playlist. It will check if the follow already exists. If it exists, then
 // we want to add the subscriber to the follow. If the subscriber has already followed the playlist,
 // then we do nothing. If it doesn't exist, then we create a new follow and add the subscriber.
-func (f *Follow) FollowPlaylist(developer, originalURL string, info *blueprint.LinkInfo, subscribers []string) ([]byte, error) {
+func (f *Follow) FollowPlaylist(developer, app, originalURL string, info *blueprint.LinkInfo, subscribers []string) ([]byte, error) {
 	log.Printf("[follow][FollowPlaylist] - Running follow playlist")
 	if len(subscribers) > 20 {
 		log.Printf("[follow][FollowPlaylist] - too many subscribers. Max is 20")
@@ -60,7 +63,7 @@ func (f *Follow) FollowPlaylist(developer, originalURL string, info *blueprint.L
 	if rows == nil {
 		subs := pq.Array(subscribers)
 		// TODO: pass taskID
-		followId, err := database.CreateFollowTask(developer, uniqueId.String(), info.EntityID, originalURL, subs)
+		followId, err := database.CreateFollowTask(developer, app, uniqueId.String(), info.EntityID, originalURL, subs)
 		if err != nil {
 			log.Printf("[follow][FollowPlaylist] - error creating follow task: %v", err)
 			return nil, err
@@ -123,6 +126,31 @@ func (s *TaskCronHandler) ProcessFollowTaskHandler(ctx context.Context, task *as
 
 	log.Printf("[queue][ProcessFollowTaskHandler] - task data: %v", data)
 
+	// fetch the app that made the request
+	database := db.NewDB{DB: s.DB}
+	app, err := database.FetchAppByAppId(data.App)
+	if err != nil {
+		log.Printf("[queue][ProcessFollowTaskHandler][conversion] - error fetching app: could not fetch app with app and developer id. please make sure they are correct %v", err)
+		return err
+	}
+
+	var outBytes []byte
+	switch data.Platform {
+	case spotify.IDENTIFIER:
+		outBytes = app.SpotifyCredentials
+	case tidal.IDENTIFIER:
+		outBytes = app.TidalCredentials
+	case deezer.IDENTIFIER:
+		outBytes = app.DeezerCredentials
+	}
+
+	var credentials blueprint.IntegrationCredentials
+	err = json.Unmarshal(outBytes, &credentials)
+	if err != nil {
+		log.Printf("[queue][ProcessFollowTaskHandler][conversion] - could not deserialize app integration credentials. Maybe a field is empty: %v", err)
+		return err
+	}
+
 	// fetch the link info from the url passed in the task payload
 	linkInfo, err := services.ExtractLinkInfo(data.Url)
 	if err != nil {
@@ -132,14 +160,14 @@ func (s *TaskCronHandler) ProcessFollowTaskHandler(ctx context.Context, task *as
 
 	followService := services.NewFollowTask(s.DB, s.Red)
 	// NOTE: for tidal, the update hash is a timestamp (in string format) for tidal
-	updatedHash, ok, _, err := followService.HasPlaylistBeenUpdated(linkInfo.Platform, linkInfo.Entity, linkInfo.EntityID)
+	updatedHash, ok, _, err := followService.HasPlaylistBeenUpdated(linkInfo.Platform, linkInfo.Entity, linkInfo.EntityID, data.App)
 
 	if err != nil {
 		// if the user wants follow a playlist we havent cached before, we're not (necessarily) going to
 		// be able to check if the playlist has been updated. in this case, we want to create a new follow
 		if err == redis.Nil {
 			log.Printf("[queue][ProcessFollowTaskHandler] - playlist hasnt been cached")
-			convertedPlaylist, err := universal.ConvertPlaylist(linkInfo, s.Red)
+			convertedPlaylist, err := universal.ConvertPlaylist(linkInfo, s.Red, credentials.AppID, credentials.AppSecret)
 			if err != nil {
 				log.Printf("[queue][ProcessFollowTaskHandler][conversion] - error converting playlist: %v", err)
 				return err
@@ -169,7 +197,7 @@ func (s *TaskCronHandler) ProcessFollowTaskHandler(ctx context.Context, task *as
 	// if the playlist has been updated, then update the redis snapshot with the new hash
 	if ok {
 		log.Println("[queue][ProcessFollowTaskHandler] - playlist has been updated. Converting again to fetch new tracks")
-		updatedPlaylist, err := universal.ConvertPlaylist(linkInfo, s.Red)
+		updatedPlaylist, err := universal.ConvertPlaylist(linkInfo, s.Red, credentials.AppID, credentials.AppSecret)
 		if err != nil {
 			log.Printf("[queue][ProcessFollowTaskHandler][conversion] - error converting playlist: %v", err)
 			return err
@@ -269,10 +297,12 @@ func SyncFollowsHandler(DB *sqlx.DB, red *redis.Client, asynqClient *asynq.Clien
 			continue
 		}
 		var followTaskData = &blueprint.FollowTaskData{
-			User:     follow.Developer,
-			Url:      follow.EntityURL,
-			EntityID: follow.EntityID,
-			Platform: extractLinkInfo.Platform,
+			User:      follow.Developer,
+			Url:       follow.EntityURL,
+			EntityID:  follow.EntityID,
+			Platform:  extractLinkInfo.Platform,
+			App:       follow.App.String(),
+			Developer: follow.Developer.String(),
 		}
 
 		// serialize followTaskData to bytes

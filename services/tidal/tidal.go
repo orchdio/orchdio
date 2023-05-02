@@ -200,7 +200,9 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 
 		return tidalTrack, nil
 	}
-	return nil, nil
+	log.Printf("\n[controllers][platforms][tidal][SearchTrackWithTitle] - no track found for title '%s' on tidal\n", title)
+	return nil, blueprint.ENORESULT
+
 }
 
 // FetchSingleTrackByTitle fetches a track from tidal by title and artist
@@ -221,7 +223,9 @@ func FetchSingleTrackByTitle(title, artiste string) (*SearchResult, error) {
 		},
 	})
 
-	query := url.QueryEscape(fmt.Sprintf("%s %s", artiste, title))
+	strippedTrackTitleInfo := util.ExtractTitle(title)
+
+	query := url.QueryEscape(fmt.Sprintf("%s %s", artiste, strippedTrackTitleInfo.Title))
 
 	log.Printf("[controllers][[platforms][tidal][FetchSingleTrackByTitle]  - Search URL %s\n", fmt.Sprintf("%s %s", artiste, title))
 
@@ -811,10 +815,10 @@ func FetchUserArtists(userId string) (*blueprint.UserLibraryArtists, error) {
 	var artists []blueprint.UserArtist
 	for _, artist := range artistResponse.Items {
 		artists = append(artists, blueprint.UserArtist{
-			Name:    artist.Item.Name,
-			ID:      strconv.Itoa(artist.Item.Id),
-			Picture: artist.Item.Picture,
-			URL:     artist.Item.Url,
+			Name:  artist.Item.Name,
+			ID:    strconv.Itoa(artist.Item.Id),
+			Cover: artist.Item.Picture,
+			URL:   artist.Item.Url,
 		})
 	}
 

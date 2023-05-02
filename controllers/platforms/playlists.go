@@ -32,6 +32,8 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Platform not found")
 	}
 
+	app := ctx.Locals("app").(*blueprint.DeveloperApp)
+
 	//// get the playlist ID
 	//playlistID := ctx.Params("playlistId")
 	//if playlistID == "" {
@@ -68,7 +70,8 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 
 	// find the user in the database
 	database := db.NewDB{DB: p.DB}
-	user, err := database.FindUserByEmail(createBodyData.User, platform)
+	//user, err := database.FindUserByEmail(createBodyData.User, platform)
+	user, err := database.FetchPlatformAndUserInfoByUserID(createBodyData.User, app.UID.String(), platform)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "App not found")
@@ -80,6 +83,7 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 
 	// get the user's access token
 	t, err := util.Decrypt(user.RefreshToken, []byte(os.Getenv("ENCRYPTION_SECRET")))
+
 	if err != nil {
 		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error decrypting user refresh token - %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred while decrypting refresh token")
@@ -182,7 +186,8 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 
 	// get the user via the id to make sure the user exists
 	database := db.NewDB{DB: p.DB}
-	user, err := database.FindUserByUUID(userId, targetPlatform)
+	//user, err := database.FindUserByUUID(userId, targetPlatform)
+	user, err := database.FetchPlatformAndUserInfoByUserID(userId, app.UID.String(), targetPlatform)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("[platforms][FetchPlatformPlaylists] error - user not found %v\n", err)
@@ -191,7 +196,7 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 		log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching user %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
 	}
-	log.Printf("[platforms][FetchPlatformPlaylists] user found. Target platform is %v %s\n", user.Usernames, targetPlatform)
+	log.Printf("[platforms][FetchPlatformPlaylists] user found. Target platform is %v %s\n", user.Username, targetPlatform)
 
 	var refreshToken string
 	// if the user refresh token is nil, the user has not connected this platform to Orchdio.
@@ -213,6 +218,18 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 
 	switch targetPlatform {
 	case deezer.IDENTIFIER:
+		//credBytes, err := util.Decrypt(app.DeezerCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		//if err != nil {
+		//	log.Printf("[platforms][FetchPlatformPlaylists] error - error decrypting deezer credentials while fetching user library playlists%v\n", err)
+		//	return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		//}
+		//var credentials blueprint.IntegrationCredentials
+		//err = json.Unmarshal(credBytes, &credentials)
+		//if err != nil {
+		//	log.Printf("[platforms][FetchPlatformPlaylists] error - error unmarshalling deezer credentials while fetching user library playlists%v\n", err)
+		//	return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		//}
+
 		// get the deezer playlists
 		playlists, err := deezer.FetchUserPlaylists(refreshToken)
 		if err != nil {
@@ -240,13 +257,28 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 			})
 		}
 		var response = blueprint.UserLibraryPlaylists{
-			Total: playlists.Total,
-			Data:  userPlaylists,
+			Total:   playlists.Total,
+			Payload: userPlaylists,
 		}
 		return util.SuccessResponse(ctx, http.StatusOK, response)
 	case "spotify":
+		// decrypt integration credentials of the app
+		credBytes, err := util.Decrypt(app.SpotifyCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if err != nil {
+			log.Printf("[platforms][FetchPlatformPlaylists] error - error decrypting spotify credentials while fetching user library playlist.%v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		}
+		// unmarshal the credentials
+		var spotifyCred blueprint.IntegrationCredentials
+		err = json.Unmarshal(credBytes, &spotifyCred)
+		if err != nil {
+			log.Printf("[platforms][FetchPlatformPlaylists] error - error unmarshalling spotify credentials while fetching user library playlist.%v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		}
+
 		// get the spotify playlists
-		playlists, err := spotify2.FetchUserPlaylist(refreshToken)
+		spotifyService := spotify2.NewService(spotifyCred.AppID, spotifyCred.AppSecret, p.Redis)
+		playlists, err := spotifyService.FetchUserPlaylist(refreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching spotify playlists %v\n", err)
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
@@ -255,7 +287,6 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 		// create a slice of UserLibraryPlaylists
 		var userPlaylists []blueprint.UserPlaylist
 		for _, playlist := range playlists.Playlists {
-			log.Printf("[platforms][FetchPlatformPlaylists] playlist info url is- %v\n", playlist.Endpoint)
 			pix := playlist.Images
 			var cover string
 			if len(pix) > 0 {
@@ -274,8 +305,8 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 			})
 		}
 		var response = blueprint.UserLibraryPlaylists{
-			Total: playlists.Total,
-			Data:  userPlaylists,
+			Total:   playlists.Total,
+			Payload: userPlaylists,
 		}
 		return util.SuccessResponse(ctx, http.StatusOK, response)
 
@@ -315,8 +346,8 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 			})
 		}
 		var response = blueprint.UserLibraryPlaylists{
-			Total: playlists.TotalNumberOfItems,
-			Data:  userPlaylists,
+			Total:   playlists.TotalNumberOfItems,
+			Payload: userPlaylists,
 		}
 		return util.SuccessResponse(ctx, http.StatusOK, response)
 
@@ -350,9 +381,10 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 			})
 		}
 		var response = blueprint.UserLibraryPlaylists{
-			Total: len(playlists),
-			Data:  userPlaylists,
+			Total:   len(playlists),
+			Payload: userPlaylists,
 		}
+
 		return util.SuccessResponse(ctx, http.StatusOK, response)
 	}
 	return util.ErrorResponse(ctx, http.StatusNotImplemented, "not implemented", "This platform is not yet supported")
@@ -380,7 +412,8 @@ func (p *Platforms) FetchPlatformArtists(ctx *fiber.Ctx) error {
 
 	// get the user
 	database := db.NewDB{DB: p.DB}
-	user, err := database.FindUserByUUID(userId, platform)
+	//user, err := database.FindUserByUUID(userId, platform)
+	user, err := database.FetchPlatformAndUserInfoByUserID(userId, app.UID.String(), platform)
 	if err != nil {
 		log.Printf("[platforms][FetchPlatformArtists] error - error fetching user %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
@@ -422,7 +455,20 @@ func (p *Platforms) FetchPlatformArtists(ctx *fiber.Ctx) error {
 	case spotify2.IDENTIFIER:
 		// get the spotify artists
 		log.Printf("[platforms][FetchPlatformArtists] fetching spotify artists\n")
-		artists, err := spotify2.FetchUserArtists(refreshToken)
+		credBytes, err := util.Decrypt(app.SpotifyCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if err != nil {
+			log.Printf("[platforms][FetchPlatformArtists] error - error decrypting spotify credentials while fetching user library spotify artists%v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		}
+		var spotifyCreds blueprint.IntegrationCredentials
+		err = json.Unmarshal(credBytes, &spotifyCreds)
+		if err != nil {
+			log.Printf("[platforms][FetchPlatformArtists] error - error unmarshalling spotify credentials while fetching user library spotify artists%v\n", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		}
+
+		spotifyService := spotify2.NewService(spotifyCreds.AppID, spotifyCreds.AppSecret, p.Redis)
+		artists, err := spotifyService.FetchUserArtists(refreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformArtists] error - error fetching spotify artists %v\n", err)
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
@@ -432,13 +478,13 @@ func (p *Platforms) FetchPlatformArtists(ctx *fiber.Ctx) error {
 		// get the tidal artists
 		log.Printf("[platforms][FetchPlatformArtists] fetching tidal artists\n")
 		// deserialize the user platform ids
-		var platformIds map[string]string
-		err := json.Unmarshal(user.PlatformIDs.([]byte), &platformIds)
-		if err != nil {
-			log.Printf("[platforms][FetchPlatformArtists] error - error deserializing platform ids %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
-		}
-		artists, err := tidal.FetchUserArtists(platformIds["tidal"])
+		//var platformIds map[string]string
+		//if err != nil {
+		//	log.Printf("[platforms][FetchPlatformArtists] error - error deserializing platform ids %v\n", err)
+		//	return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		//}
+		//artists, err := tidal.FetchUserArtists(platformIds["tidal"])
+		artists, err := tidal.FetchUserArtists(user.PlatformID)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformArtists] error - error fetching tidal artists %v\n", err)
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")

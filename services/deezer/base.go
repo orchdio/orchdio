@@ -26,14 +26,14 @@ type SearchInfo struct {
 
 // ExtractTitle retrieves the title of a track if it contains opening and closing brackets
 // This is to improve the searching accuracy when searching for these tracks on platforms
-func ExtractTitle(title string) string {
-	openingBracketIndex := strings.Index(title, "(")
-	closingBracketIndex := strings.LastIndex(title, ")")
-	if openingBracketIndex != -1 && closingBracketIndex != -1 {
-		return title[:openingBracketIndex]
-	}
-	return title
-}
+//func ExtractTitle(title string) string {
+//	openingBracketIndex := strings.Index(title, "(")
+//	closingBracketIndex := strings.LastIndex(title, ")")
+//	if openingBracketIndex != -1 && closingBracketIndex != -1 {
+//		return title[:openingBracketIndex]
+//	}
+//	return title
+//}
 
 // FetchSingleTrack fetches a single deezer track from the URL
 func FetchSingleTrack(link string) (*Track, error) {
@@ -60,13 +60,13 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) *blueprint
 	log.Printf("\n[services][deezer][SearchTrackWithLink] cachedKey %v\n", cachedKey)
 	cachedTrack, err := red.Get(context.Background(), cachedKey).Result()
 	if err != nil && err != redis.Nil {
-		log.Printf("\n[services][deezer][playlist][SearchTrackWithLink] error - Could not get cached track %v\n", err)
+		log.Printf("\n[services][deezer][SearchTrackWithLink][SearchTrackWithLink] error - Could not get cached track %v\n", err)
 		return nil
 	}
 
 	// if we have not cached this track before
 	if err != nil && err == redis.Nil {
-		log.Printf("\n[universal][ConvertEntity] Track has not been cached\n")
+		log.Printf("\n[deezer][base][SearchTrackWithLink] - warning Track has not been cached\n")
 		dzSingleTrack, err := FetchSingleTrack(info.TargetLink)
 		var dzTrackContributors []string
 		for _, contributor := range dzSingleTrack.Contributors {
@@ -96,12 +96,8 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) *blueprint
 		}
 
 		// cache the result
-		err = red.Set(context.Background(), cachedKey, string(serializedTrack), time.Hour*24).Err()
-		if err != nil {
-			log.Printf("\n[platforms][base][SearchTrackWithLink][error] could not cache track %v\n", dzSingleTrack.Title)
-		} else {
-			log.Printf("\n[platforms][base][SearchTrackWithLink] Track %s has been cached\n", dzSingleTrack.Title)
-		}
+		_ = red.Set(context.Background(), cachedKey, string(serializedTrack), time.Hour*24).Err()
+		log.Printf("\n[platforms][base][SearchTrackWithLink] Track %s has been cached\n", dzSingleTrack.Title)
 		return &fetchedDeezerTrack
 	}
 
@@ -117,11 +113,9 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) *blueprint
 // SearchTrackWithTitle searches for a track using the title (and artiste) on deezer
 // This is typically expected to be used when the track we want to fetch is the one we just
 // want to search on. That is, the other platforms that the user is trying to convert to.
-func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
+func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
 	//searchKey := fmt.Sprintf("deezer-%s-%s", artiste, title)
-	cacheKey := fmt.Sprintf("deezer-%s-%s", util.NormalizeString(artiste), title)
-
-	log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] first artiste and title %s %s\n", artiste, title)
+	cacheKey := fmt.Sprintf("deezer:%s:%s", util.NormalizeString(artiste), title)
 	// get the cached track
 	if red.Exists(context.Background(), cacheKey).Val() == 1 {
 		log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] Track has been cached\n")
@@ -140,16 +134,15 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 		return deserializedTrack, nil
 	}
 
-	log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] Track has not been cached\n")
+	log.Printf("\n[services][deezer][SearchTrackWithTitle][SearchTrackWithTitle] Track has not been cached\n")
 
-	trackTitle := ExtractTitle(title)
-
+	strippedTrackTitle := util.ExtractTitle(title)
+	searchTitle := strippedTrackTitle.Title
 	// for deezer we'll not trim the artiste name. this is because it becomes way less accurate.
 	// deezer has second to the lowest accuracy in terms of search results (youtube being the lowest)
 	// however, just like others, we're caching the result under the normalized string, which contains trimmed artiste name
 	// like so: "deezer-artistename-title". For example: "deezer-flatbushzombies-reelgirls
-	_link := fmt.Sprintf("track:\"%s\" artist:\"%s\" album:\"%s\"", strings.Trim(trackTitle, " "),
-		artiste, strings.Trim(album, " "))
+	_link := fmt.Sprintf("track:\"%s\" artist:\"%s\"", strings.Trim(searchTitle, " "), artiste)
 	link := fmt.Sprintf("%s/search?q=%s", os.Getenv("DEEZER_API_BASE"), url.QueryEscape(_link))
 
 	response, err := axios.Get(link)
@@ -158,8 +151,7 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 		return nil, err
 	}
 
-	log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] Searched deezer for track...")
-
+	log.Printf("\n[services][deezer][SearchTrackWithTitle][SearchTrackWithTitle] Searched deezer for track...")
 	fullTrack := FullTrack{}
 	err = json.Unmarshal(response.Data, &fullTrack)
 	if err != nil {
@@ -172,10 +164,14 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 	// then, this is where to probably start.
 	if len(fullTrack.Data) > 0 {
 		track := fullTrack.Data[0]
+		artistes := []string{track.Artist.Name}
+		if len(strippedTrackTitle.Artists) > 0 {
+			artistes = append(artistes, strippedTrackTitle.Artists...)
+		}
 
 		out := blueprint.TrackSearchResult{
 			URL:           track.Link,
-			Artists:       []string{track.Artist.Name},
+			Artists:       lo.Uniq(artistes),
 			Released:      "",
 			Duration:      util.GetFormattedDuration(track.Duration),
 			DurationMilli: track.Duration * 1000,
@@ -194,31 +190,19 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 		}
 		//newHashIdentifier := util.HashIdentifier("deezer-" + out.Artistes[0] + "-" + out.Title)
 		// if the artistes are the same, the track result is most likely the same (except remixes, an artiste doesnt have two tracks with the same name)
-		if lo.Contains(out.Artists, artiste) {
-			log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle][debug] - the result seems to not be exact same track but same track.\n")
-			err = red.MSet(context.Background(), map[string]interface{}{
-				cacheKey: string(serializedTrack),
-			}).Err()
-			if err != nil {
-				log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error caching track - %v\n", err)
-			} else {
-				log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] Track %s has been cached\n", out.Title)
-			}
-		}
-
-		log.Printf("\n[services][deezer][base][SearchTrackWithTitle] Deezer search for track done %v\n", out)
-
-		//log.Printf("Old identifier: %s and new identifier: %s", identifierHash, newHashIdentifier)
-		//log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] second artiste and title %s %s\n", out.Artistes[0], out.Title)
 
 		// cache tracks. Here we are caching both with hash identifier and with the ID of the track itself
 		// this is because in some cases, we need to fetch by ID and not by title
 		// cache track but with identifier. this is for when we're searching by title again and its the same
 		// track as this
-		//err = red.MSet(context.Background(), newHashIdentifier, string(serializedTrack), fmt.Sprintf("deezer:%s", out.ID), string(serializedTrack)).Err()
-		//if err != nil {
-		//	log.Printf("\n[platforms][base][SearchTrackWithTitle][error] could not cache track %v\n", title)
-		//}
+		if lo.Contains(out.Artists, artiste) {
+			log.Printf("\n[services][deezer][SearchTrackWithTitle][SearchTrackWithTitle][debug] - the result seems to not be exact same track but same track.\n")
+			cacheErr := red.Set(context.Background(), cacheKey, string(serializedTrack), time.Hour*24).Err()
+			if cacheErr != nil {
+				log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error caching track with key %s - %v\n", err, cacheKey)
+			}
+			log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] Track %s has been cached\n", out.Title)
+		}
 		return &out, nil
 	}
 
@@ -228,7 +212,7 @@ func SearchTrackWithTitle(title, artiste, album string, red *redis.Client) (*blu
 
 // SearchTrackWithTitleChan searches for a track similar to `SearchTrackWithTitle` but uses a channel
 func SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup, red *redis.Client) {
-	result, err := SearchTrackWithTitle(title, artiste, "", red)
+	result, err := SearchTrackWithTitle(title, artiste, red)
 	if err != nil {
 		defer wg.Done()
 		c <- nil
@@ -332,10 +316,16 @@ func FetchPlaylistTracksAndInfo(id string, red *redis.Client) (*blueprint.Playli
 
 		var out []blueprint.TrackSearchResult
 		for _, track := range trackList.Tracks.Data {
+			strippedTitleInfo := util.ExtractTitle(track.Title)
+			artistes := []string{track.Artist.Name}
+			if len(strippedTitleInfo.Artists) > 0 {
+				artistes = append(artistes, strippedTitleInfo.Artists...)
+			}
+
 			log.Printf("deezer track duration mill is %v", track.Duration)
 			result := &blueprint.TrackSearchResult{
 				URL:     track.Link,
-				Artists: []string{track.Artist.Name},
+				Artists: lo.Uniq(artistes),
 				//Released: track.r,
 				Duration:      util.GetFormattedDuration(track.Duration),
 				DurationMilli: track.Duration * 1000,
@@ -580,10 +570,10 @@ func FetchUserArtists(token string) (*blueprint.UserLibraryArtists, error) {
 	var artists []blueprint.UserArtist
 	for _, artist := range artistsResponse.Data {
 		artists = append(artists, blueprint.UserArtist{
-			ID:      strconv.Itoa(artist.Id),
-			Name:    artist.Name,
-			Picture: artist.Picture,
-			URL:     artist.Link,
+			ID:    strconv.Itoa(artist.Id),
+			Name:  artist.Name,
+			Cover: artist.Picture,
+			URL:   artist.Link,
 		})
 	}
 
@@ -682,6 +672,7 @@ func FetchTracksListeningHistory(token string) ([]blueprint.TrackSearchResult, e
 
 	var tracks []blueprint.TrackSearchResult
 	for _, track := range history.Data {
+
 		tracks = append(tracks, blueprint.TrackSearchResult{
 			URL:           track.Link,
 			Artists:       []string{track.Artist.Name},

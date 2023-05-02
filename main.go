@@ -24,10 +24,6 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/joho/godotenv"
 	"github.com/robfig/cron/v3"
-	"github.com/shirou/gopsutil/cpu"
-	"github.com/shirou/gopsutil/disk"
-	"github.com/shirou/gopsutil/host"
-	"github.com/shirou/gopsutil/mem"
 	"github.com/vmihailenco/taskq/v3"
 	"github.com/vmihailenco/taskq/v3/redisq"
 	"log"
@@ -38,15 +34,14 @@ import (
 	"orchdio/controllers/auth"
 	"orchdio/controllers/conversion"
 	"orchdio/controllers/developer"
-	"orchdio/controllers/follow"
 	"orchdio/controllers/platforms"
 	"orchdio/controllers/webhook"
 	"orchdio/middleware"
 	"orchdio/queue"
+	follow2 "orchdio/services/follow"
 	"orchdio/util"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -64,94 +59,10 @@ func init() {
 	}
 }
 
-type SysInfo struct {
-	Hostname string `bson:"hostname"`
-	Platform string `bson:"platform"`
-	CPU      string `bson:"cpu"`
-	RAM      string `bson:"ram"`
-	Disk     string `bson:"disk"`
-}
-
 /**
    ===========================================================
   + Redis connections here
 */
-
-func getInfo(ctx *fiber.Ctx) error {
-
-	hostStat, _ := host.Info()
-	cpuStat, _ := cpu.Info()
-	vmStatus, _ := mem.VirtualMemory()
-	diskStat, _ := disk.Usage("//")
-
-	cpuName := ""
-	if len(cpuStat) > 0 {
-		cpuName = cpuStat[0].Family
-	}
-
-	info := SysInfo{
-		Hostname: hostStat.Hostname,
-		CPU:      cpuName,
-		Platform: hostStat.Platform,
-		Disk:     fmt.Sprintf("%dGB", diskStat.Total/1024/1024/1024),
-		RAM:      fmt.Sprintf("%dGB", vmStatus.Total/1024/1024/1024),
-	}
-
-	response := map[string]interface{}{
-		"processor": cpuName,
-		"hostname":  info.Hostname,
-		"ram":       info.RAM,
-		"disk":      info.Disk,
-		"platform":  info.Platform,
-	}
-
-	return ctx.Status(http.StatusOK).JSON(fiber.Map{
-		"message": "Request OK",
-		"status":  http.StatusOK,
-		"data":    response,
-	})
-}
-
-func taskErrorHandler(connOpts asynq.RedisClientOpt, err error) error {
-	log.Printf("[main] Error processing task %v", err)
-	// get the PID of the asynq server and send it a kill signal to OS
-	// this is a hacky way to kill the asynq server
-	inspector := asynq.NewInspector(connOpts)
-	queueServer, err := inspector.Servers()
-
-	if err != nil {
-		log.Printf("Error getting queue server %v", err)
-		return err
-	}
-
-	// make sure we have a queue server
-	if len(queueServer) == 0 {
-		log.Printf("No queue server found")
-		return nil
-	}
-
-	v := queueServer[0].PID
-	p, err := os.FindProcess(v)
-	if err != nil {
-		log.Printf("Error finding process %v", err)
-		return err
-	}
-
-	// send task creation signal cancelation to the queue server
-	err = p.Signal(syscall.SIGINT)
-	if err != nil {
-		log.Printf("Error stopping new tasks%v", err)
-		return err
-	}
-
-	// shutdown the queue server itself.
-	err = p.Signal(syscall.SIGKILL)
-	if err != nil {
-		log.Printf("Error stopping queue server %v", err)
-		return err
-	}
-	return asynq.SkipRetry
-}
 
 func main() {
 	// Database and cache setup things
@@ -187,9 +98,6 @@ func main() {
 	}
 
 	log.Println("Connected to Postgresql database")
-	userController := account.UserController{
-		DB: db,
-	}
 
 	redisOpts, err := redis.ParseURL(os.Getenv("REDISCLOUD_URL"))
 	if err != nil {
@@ -229,12 +137,14 @@ func main() {
 				"email":               2,
 				"default":             1,
 			},
-			// NB: from the queue ConversionMiddleware, when we handle orphaned task and we return a blueprint.ENORESULT error, the execution
+			// NB: from the queue CheckForOrphanedTasksMiddleware, when we handle orphaned task and we return a blueprint.ENORESULT error, the execution
 			// jumps here, so when the middleware runs and we return a blueprint.ENORESULT error, it'll run this block and reprocess the task
 			// if the handler has successfully been attached or do nothing (and let the queue retry later) if there was an error
 			ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
 				log.Printf("[main][QueueErrorHandler] Running queue server error handler...")
 				// handle for each task here
+
+				// check if the task is an email task
 				isEmailQueue := util.IsTaskType(task.Type(), "send:appauth")
 				if isEmailQueue {
 					queueInfo, qErr := inspector.GetQueueInfo(queue.EmailQueue)
@@ -331,7 +241,10 @@ func main() {
 			}),
 		})
 
-	asynqMux.Use(queue.ConversionMiddleware)
+	asynqMux.Use(queue.CheckForOrphanedTasksMiddleware)
+	emailQueue := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
+	asynqMux.HandleFunc("send:appauth:email", emailQueue.SendEmailHandler)
+
 	err = asynqServer.Start(asynqMux)
 	if err != nil {
 		log.Printf("Error starting asynq server")
@@ -367,6 +280,7 @@ func main() {
 				return nil
 			}
 
+			// on railway, the server is always the first one
 			v := queueServer[0].PID
 			p, err := os.FindProcess(v)
 			if err != nil {
@@ -374,7 +288,7 @@ func main() {
 				return err
 			}
 
-			// send task creation signal cancelation to the queue server
+			// send task creation signal cancellation to the queue server
 			err = p.Signal(syscall.SIGINT)
 			if err != nil {
 				log.Printf("Error stopping new tasks%v", err)
@@ -391,38 +305,42 @@ func main() {
 		},
 	})
 	serverChan := make(chan os.Signal, 1)
+	// we listen for SIGINT, SIGTERM and SIGKILL. this sends a signal to the serverChan channel, which we listen to in the goroutine below
 	signal.Notify(serverChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
-	//inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
+
 	// unpause the queue server
 	// get status of the playlist conversion queue
 	// if it is paused, unpause it
-	conversionQueuePaused, err := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
+	queues, err := inspector.Queues()
 	if err != nil {
-		log.Printf("[main][Queue] Error getting conversion status queue %v", err.Error())
-		if !strings.Contains(err.Error(), "NOT_FOUND: queue") {
-			_ = app.Shutdown()
-			return
-		}
+		log.Printf("[main][Queue] Error getting queues %v", err)
+		_ = app.Shutdown()
+		return
 	}
 
-	if conversionQueuePaused != nil {
-		if conversionQueuePaused.Paused {
-			log.Printf("[main][Queue] Conversion queue is paused. Unpausing it")
-			err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
+	if len(queues) > 0 {
+		for _, q := range queues {
+			queueInfo, err := inspector.GetQueueInfo(q)
 			if err != nil {
-				log.Printf("[main][Queue] Error unpausing conversion queue %v", err)
+				log.Printf("[main][Queue] Error getting queue info %v", err)
 				_ = app.Shutdown()
 				return
 			}
-			log.Printf("[main][Queue] Conversion queue unpaused")
+			if queueInfo.Paused {
+				log.Printf("[main][Queue] Queue %s is paused. Unpausing..", q)
+				err = inspector.UnpauseQueue(q)
+				if err != nil {
+					log.Printf("[main][Queue] Error unpausing queue %v", err)
+					_ = app.Shutdown()
+					return
+				}
+			}
 		}
 	}
 
-	log.Printf("[main][Queue] Queue server unpaused...")
-
 	serverShutdown := make(chan struct{})
 
-	// handles the shutdown of the server
+	// handles the shutdown of the server.
 	go func() {
 		_ = <-serverChan
 		log.Printf("[main] [info] - Shutting down server")
@@ -441,11 +359,10 @@ func main() {
 		log.Printf("[main] [info] - Queue pause successful. Server shutdown complete")
 	}()
 
-	userController = *account.NewUserController(db)
+	userController := account.NewUserController(db, redisClient)
 	//webhookController := account.NewAccountWebhookController(db)
 	authMiddleware := middleware.NewAuthMiddleware(db)
 	conversionController := conversion.NewConversionController(db, redisClient, playlistQueue, QueueFactory, asyncClient, asynqServer, asynqMux)
-	followController := follow.NewController(db, redisClient)
 	devAppController := developer.NewDeveloperController(db)
 
 	platformsControllers := platforms.NewPlatform(redisClient, db, asyncClient, asynqMux)
@@ -486,48 +403,67 @@ func main() {
 	baseRouter.Get("/", func(ctx *fiber.Ctx) error {
 		return ctx.SendStatus(http.StatusOK)
 	})
-	//baseRouter.Use(authMiddleware.LogIncomingRequest)
-
-	//baseRouter.Use(defaultFiberConfig)
+	app.Get("/vermont/info", monitor.New(monitor.Config{Title: "Orchdio-Core health info"}))
 
 	authController := auth.NewAuthController(db, asyncClient, asynqServer, asynqMux, redisClient)
 	// connect endpoints
-	orchRouter.Get("/auth/:platform/connect", authController.AppAuthRedirect)
+	orchRouter.Get("/auth/:platform/connect", authMiddleware.AddRequestPlatformToCtx, authController.AppAuthRedirect)
 	// the callback that the auth platform will redirect to and this is where we handle the redirect and generate an auth token for the user, as response
-	orchRouter.Get("/auth/:platform/callback", authController.HandleAppAuthRedirect)
+	orchRouter.Get("/auth/:platform/callback", authMiddleware.AddRequestPlatformToCtx, authController.HandleAppAuthRedirect)
 	// this is for the apple music auth. its a POST as it carries a body
-	orchRouter.Post("/auth/:platform/callback", authController.HandleAppAuthRedirect)
-	orchRouter.Post("/entity/convert", authMiddleware.AddReadOnlyDeveloperToContext, middleware.ExtractLinkInfoFromBody, platformsControllers.ConvertEntity)
-
-	orchRouter.Get("/app/:appId", devAppController.FetchApp)
+	orchRouter.Post("/auth/:platform/callback", authMiddleware.AddRequestPlatformToCtx, authController.HandleAppAuthRedirect)
+	orchRouter.Post("/entity/convert", authMiddleware.AddReadOnlyDeveloperToContext,
+		middleware.ExtractLinkInfoFromBody, platformsControllers.ConvertEntity)
 
 	orchRouter.Get("/task/:taskId", authMiddleware.AddReadOnlyDeveloperToContext, conversionController.GetPlaylistTask)
-	orchRouter.Post("/playlist/:platform/add", authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.AddPlaylistToAccount)
-	orchRouter.Get("/account/", authMiddleware.AddReadWriteDeveloperToContext, userController.FetchUserProfile)
-	orchRouter.Get("/account/:userId/:platform/playlists", authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformPlaylists)
-	orchRouter.Get("/account/:userId/:platform/artists", authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformArtists)
-	orchRouter.Get("/account/:userId/:platform/albums", authMiddleware.AddReadWriteDeveloperToContext, authMiddleware.VerifyUserActionDeveloper, platformsControllers.FetchPlatformAlbums)
+	orchRouter.Post("/playlist/:platform/add", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.AddPlaylistToAccount)
+	// this is the account of the *DEVELOPER* not the user,
+	// todo: implement user account fetching using the user id or email, and verify that the developer has access to the user account, by checking
+	// 		for user apps that have the developer id
+	orchRouter.Get("/account", authMiddleware.AddReadWriteDeveloperToContext, userController.FetchUserInfoByIdentifier)
+	orchRouter.Get("/me", authMiddleware.AddReadWriteDeveloperToContext, userController.FetchUserProfile)
+	orchRouter.Get("/account/:userId/:platform/playlists", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformPlaylists)
+	// todo: add nb_artists to data response
+	orchRouter.Get("/account/:userId/:platform/artists", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformArtists)
+	orchRouter.Get("/account/:userId/:platform/albums", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, authMiddleware.VerifyUserActionDeveloper, platformsControllers.FetchPlatformAlbums)
 	// TODO: implement for tidal
-	orchRouter.Get("/account/:userId/:platform/history/tracks", authMiddleware.AddReadWriteDeveloperToContext, authMiddleware.VerifyUserActionDeveloper, platformsControllers.FetchTrackListeningHistory)
+	orchRouter.Get("/account/:userId/:platform/history/tracks", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, authMiddleware.VerifyUserActionDeveloper, platformsControllers.FetchTrackListeningHistory)
 
-	orchRouter.Post("/follow", authMiddleware.AddReadWriteDeveloperToContext, followController.FollowPlaylist)
+	orchRouter.Post("/follow", authMiddleware.AddReadWriteDeveloperToContext, userController.FollowPlaylist)
 	orchRouter.Post("/waitlist/add", authMiddleware.AddReadWriteDeveloperToContext, userController.AddToWaitlist)
 
-	appRouter := app.Group("/v1/app")
-	appRouter.Use(jwtware.New(jwtware.Config{
-		SigningKey: []byte(os.Getenv("JWT_SECRET")), // TODO: change this to use the .env value
+	orgRouter := app.Group("/v1/org")
+	orgRouter.Use(jwtware.New(jwtware.Config{
+		SigningKey: []byte(os.Getenv("JWT_SECRET")),
 		Claims:     &blueprint.OrchdioUserToken{},
 		ContextKey: "authToken",
 		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
 			log.Printf("Error validating auth token %v:\n", err)
-			return util.ErrorResponse(ctx, http.StatusUnauthorized, "internal error", "Invalid or Expired token")
+			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Authorization error", "Invalid or Expired token")
 		},
 	}), middleware.VerifyToken)
+
+	appRouter := app.Group("/v1/app")
+	appRouter.Use(jwtware.New(jwtware.Config{
+		SigningKey: []byte(os.Getenv("JWT_SECRET")),
+		Claims:     &blueprint.OrchdioUserToken{},
+		ContextKey: "authToken",
+		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
+			log.Printf("Error validating auth token %v:\n", err)
+			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Authorization error", "Invalid or Expired token")
+		},
+	}), middleware.VerifyToken)
+
+	orchRouter.Get("/app/:appId", devAppController.FetchApp)
+	orgRouter.Post("/new", userController.CreateOrg)
+	orgRouter.Delete("/:orgId", userController.DeleteOrg)
+	orgRouter.Put("/:orgId", userController.UpdateOrg)
+	orgRouter.Get("/all", userController.FetchUserOrgs)
 
 	appRouter.Get("/me", userController.FetchProfile)
 	// developer endpoints
 	appRouter.Get("/:appId/keys", devAppController.FetchKeys)
-	appRouter.Get("/:appId", devAppController.FetchApp)
+	//appRouter.Get("/:appId", devAppController.FetchApp)
 	app.Get("/v1/apps/all", devAppController.FetchAllDeveloperApps)
 	appRouter.Post("/new", devAppController.CreateApp)
 	baseRouter.Post("/v1/app/disable", devAppController.DisableApp)
@@ -579,7 +515,7 @@ func main() {
 
 	entryId, cErr := c.AddFunc("@every 1m", func() {
 		log.Printf("\n[main] [info] - Process background tasks")
-		follow.SyncFollowsHandler(db, redisClient, asyncClient, asynqMux)
+		follow2.SyncFollowsHandler(db, redisClient, asyncClient, asynqMux)
 	})
 
 	if cErr != nil {
