@@ -425,3 +425,44 @@ type UserTrackListeningHistoryResponse struct {
 	Total int    `json:"total"`
 	Next  string `json:"next"`
 }
+
+type ProfileInfo struct {
+	Id                             int      `json:"id"`
+	Name                           string   `json:"name"`
+	Lastname                       string   `json:"lastname"`
+	Firstname                      string   `json:"firstname"`
+	Email                          string   `json:"email"`
+	Status                         int      `json:"status"`
+	Birthday                       string   `json:"birthday"`
+	InscriptionDate                string   `json:"inscription_date"`
+	Gender                         string   `json:"gender"`
+	Link                           string   `json:"link"`
+	Picture                        string   `json:"picture"`
+	PictureSmall                   string   `json:"picture_small"`
+	PictureMedium                  string   `json:"picture_medium"`
+	PictureBig                     string   `json:"picture_big"`
+	PictureXl                      string   `json:"picture_xl"`
+	Country                        string   `json:"country"`
+	Lang                           string   `json:"lang"`
+	IsKid                          bool     `json:"is_kid"`
+	ExplicitContentLevel           string   `json:"explicit_content_level"`
+	ExplicitContentLevelsAvailable []string `json:"explicit_content_levels_available"`
+	Tracklist                      string   `json:"tracklist"`
+	Type                           string   `json:"type"`
+}
+
+type ProfileOptions struct {
+	Streaming         bool   `json:"streaming"`
+	StreamingDuration int    `json:"streaming_duration"`
+	Offline           bool   `json:"offline"`
+	Hq                bool   `json:"hq"`
+	AdsDisplay        bool   `json:"ads_display"`
+	AdsAudio          bool   `json:"ads_audio"`
+	TooManyDevices    bool   `json:"too_many_devices"`
+	CanSubscribe      bool   `json:"can_subscribe"`
+	RadioSkips        int    `json:"radio_skips"`
+	Lossless          bool   `json:"lossless"`
+	Preview           bool   `json:"preview"`
+	Radio             bool   `json:"radio"`
+	Type              string `json:"type"`
+}

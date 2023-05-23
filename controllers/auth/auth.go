@@ -22,6 +22,7 @@ import (
 	"orchdio/db/queries"
 	"orchdio/queue"
 	"orchdio/services"
+	"orchdio/services/applemusic"
 	"orchdio/services/deezer"
 	"orchdio/services/spotify"
 	"orchdio/util"
@@ -313,18 +314,6 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		Token      []byte `json:"token,omitempty"`
 	}{}
 
-	//userNames := struct {
-	//	Deezer     string `json:"deezer,omitempty"`
-	//	Spotify    string `json:"spotify,omitempty"`
-	//	AppleMusic string `json:"applemusic,omitempty"`
-	//}{}
-	//
-	//userPlatformIds := struct {
-	//	Deezer     string `json:"deezer,omitempty"`
-	//	Spotify    string `json:"spotify,omitempty"`
-	//	AppleMusic string `json:"applemusic,omitempty"`
-	//}{}
-
 	var authedUserEmail string
 	var userPlatformToken []byte
 	// we fetch the developer app using the app id and grab the redirect url from there. this is different from the integration redirect url
@@ -359,7 +348,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 	redirectURL := fmt.Sprintf("%s/v1/auth/%s/callback", hostname, ctxPlatform)
 	switch decodedState.Platform {
 	// spotify auth flow
-	case "spotify":
+	case spotify.IDENTIFIER:
 		// create a new http request to be used for the spotify auth
 		r, err := http.NewRequest("GET", string(ctx.Request().RequestURI()), nil)
 		if err != nil {
@@ -467,7 +456,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		redirectURL = fmt.Sprintf("%s?state=%s", app.RedirectURL, app.UID.String())
 
 		// deezer auth flow
-	case "deezer":
+	case deezer.IDENTIFIER:
 		log.Printf("[controllers][HandleAppAuthRedirect] developer -  deezer auth flow")
 		if code == "" {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: no code provided for deezer auth.\n")
@@ -554,7 +543,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		redirectURL = fmt.Sprintf("%s?token=%s", app.RedirectURL, string(authToken))
 
 		// apple music auth flow
-	case "applemusic":
+	case applemusic.IDENTIFIER:
 		log.Printf("[controllers][HandleAppAuthRedirect] developer -  apple music auth flow")
 		body := &blueprint.AppleMusicAuthBody{}
 		err := ctx.BodyParser(body)

@@ -218,7 +218,7 @@ func (a *AuthMiddleware) HandleTrolls(ctx *fiber.Ctx) error {
 //	// find the user in the db with the id
 //	database := db.NewDB{DB: a.DB}
 //	//user, err := database.FindUserByUUID(userId, platform)
-//	user, err := database.FetchPlatformAndUserInfoByUserID(userId, appId, platform, "id")
+//	user, err := database.FetchPlatformAndUserInfoByIdentifier(userId, appId, platform, "id")
 //	if err != nil {
 //		if err == sql.ErrNoRows {
 //			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "App not found. User might not have authorized this app")
@@ -255,7 +255,7 @@ func (a *AuthMiddleware) VerifyUserActionDeveloper(ctx *fiber.Ctx) error {
 	}
 	database := db.NewDB{DB: a.DB}
 	//user, err := database.FindUserByUUID(userId, platform)
-	user, err := database.FetchPlatformAndUserInfoByUserID(userId, app.UID.String(), platform)
+	user, err := database.FetchPlatformAndUserInfoByIdentifier(userId, app.UID.String(), platform)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User not found")

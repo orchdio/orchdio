@@ -27,10 +27,24 @@ func FetchSingleTrack(id string) (*ytmusic.TrackItem, error) {
 	return result, nil
 }
 
-// SearchTrackWithLink fetches a track from the ID using the link.
-func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.TrackSearchResult, error) {
+type Service struct {
+	RedisClient          *redis.Client
+	IntegrationAppSecret string
+	IntegrationAppID     string
+}
+
+func NewService(redisClient *redis.Client) *Service {
+	return &Service{
+		RedisClient: redisClient,
+		//IntegrationAppID:     integrationAppID,
+		//IntegrationAppSecret: integrationAppSecret,
+	}
+}
+
+// SearchTrackWithID fetches a track from the ID using the link.
+func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackSearchResult, error) {
 	cacheKey := "ytmusic:track:" + info.EntityID
-	cachedTrack, err := red.Get(context.Background(), cacheKey).Result()
+	cachedTrack, err := s.RedisClient.Get(context.Background(), cacheKey).Result()
 	if err != nil && err != redis.Nil {
 		log.Printf("[services][ytmusic][SearchTrackWithLink] Error fetching track from cache: %v\n", err)
 		return nil, err
@@ -58,7 +72,7 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 			artistes = append(artistes, artist.Name)
 		}
 
-		red.Set(context.Background(), cacheKey, track, time.Hour*24)
+		s.RedisClient.Set(context.Background(), cacheKey, track, time.Hour*24)
 		// TODO: add more fields to the result in the ytmusic library
 		thumbnail := ""
 		if len(track.Thumbnails) > 0 {
@@ -89,14 +103,14 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 	return nil, nil
 }
 
-func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
+func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackSearchResult, error) {
 	cleanedArtiste := fmt.Sprintf("ytmusic-%s-%s", util.NormalizeString(artiste), title)
 
 	log.Printf("Searching with stripped artiste: %s. Original artiste: %s", cleanedArtiste, artiste)
 
-	if red.Exists(context.Background(), cleanedArtiste).Val() == 1 {
+	if s.RedisClient.Exists(context.Background(), cleanedArtiste).Val() == 1 {
 		log.Printf("[services][ytmusic][SearchTrackWithTitle] Track found in cache: %v\n", cleanedArtiste)
-		cachedTrack, err := red.Get(context.Background(), cleanedArtiste).Result()
+		cachedTrack, err := s.RedisClient.Get(context.Background(), cleanedArtiste).Result()
 		if err != nil {
 			log.Printf("[services][ytmusic][SearchTrackWithTitle] Error fetching track from cache: %v\n", err)
 			return nil, err
@@ -110,8 +124,8 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 		return &result, nil
 	}
 	log.Printf("[services][ytmusic][SearchTrackWithTitle] Track not found in cache, fetching from YT Music: %v\n", cleanedArtiste)
-	s := ytmusic.Search(fmt.Sprintf("%s %s", artiste, title))
-	r, err := s.Next()
+	search := ytmusic.Search(fmt.Sprintf("%s %s", artiste, title))
+	r, err := search.Next()
 	if err != nil {
 		log.Printf("[services][ytmusic][SearchTrackWithTitle] Error fetching track from YT Music: %v\n", err)
 		return nil, err
@@ -173,7 +187,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	newHashIdentifier := util.HashIdentifier(fmt.Sprintf("ytmusic-%s-%s", artistes[0], track.Title))
 
 	trackResultIdentifier := util.HashIdentifier(fmt.Sprintf("ytmusic:track:%s", track.VideoID))
-	err = red.MSet(context.Background(), newHashIdentifier, serviceResult, trackResultIdentifier, serviceResult).Err()
+	err = s.RedisClient.MSet(context.Background(), newHashIdentifier, serviceResult, trackResultIdentifier, serviceResult).Err()
 	keys := map[string]interface{}{
 		newHashIdentifier:     serviceResult,
 		trackResultIdentifier: serviceResult,
@@ -183,7 +197,7 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	// set the value to the serviceResult (which is the marshalled track result) and set the expiration to 24 hours
 	// the former is used to search for the track by its video id, and the latter is used to search for the track by its title and artiste
 	for k, v := range keys {
-		err = red.Set(context.Background(), k, v, time.Hour*24).Err()
+		err = s.RedisClient.Set(context.Background(), k, v, time.Hour*24).Err()
 		if err != nil {
 			log.Printf("[services][ytmusic][SearchTrackWithTitle] Error caching track: %v\n", err)
 			return nil, err
@@ -193,8 +207,8 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 	return result, nil
 }
 
-func SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup, red *redis.Client) {
-	track, err := SearchTrackWithTitle(title, artiste, red)
+func (s *Service) SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
+	track, err := s.SearchTrackWithTitle(title, artiste)
 	if err != nil {
 		log.Printf("[services][ytmusic][SearchTrackWithTitleChan] Error searching track: %v\n", err)
 		defer wg.Done()
@@ -209,7 +223,7 @@ func SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSear
 }
 
 // FetchTracks searches for the tracks passed and return the results on youtube music.
-func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]blueprint.TrackSearchResult, error) {
+func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]blueprint.TrackSearchResult, error) {
 	var fetchedTracks []blueprint.TrackSearchResult
 	var omittedTracks []blueprint.OmittedTracks
 	var wg sync.WaitGroup
@@ -232,7 +246,7 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]
 			fetchedTracks = append(fetchedTracks, deserializedTrack)
 			continue
 		}
-		go SearchTrackWithTitleChan(track.Title, track.Artistes[0], c, &wg, red)
+		go s.SearchTrackWithTitleChan(track.Title, track.Artistes[0], c, &wg)
 		outputTracks := <-c
 		if outputTracks != nil {
 			log.Printf("[services][ytmusic][FetchTracks] no track found for title : %v\n", track.Title)

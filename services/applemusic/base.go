@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/go-redis/redis/v8"
+	"github.com/jmoiron/sqlx"
 	"github.com/minchao/go-apple-music"
 	"github.com/samber/lo"
 	"github.com/vicanso/go-axios"
@@ -20,10 +20,26 @@ import (
 	"time"
 )
 
-// SearchTrackWithLink fetches a track from the ID using the link.
-func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprint.TrackSearchResult, error) {
+type Service struct {
+	IntegrationID     string
+	integrationSecret string
+	RedisClient       *redis.Client
+	PgClient          *sqlx.DB
+}
+
+func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client) *Service {
+	return &Service{
+		IntegrationID:     credentials.AppID,
+		integrationSecret: credentials.AppSecret,
+		RedisClient:       redisClient,
+		PgClient:          pgClient,
+	}
+}
+
+// SearchTrackWithID fetches a track from the ID using the link.
+func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackSearchResult, error) {
 	cacheKey := "applemusic:track:" + info.EntityID
-	_, err := red.Get(context.Background(), cacheKey).Result()
+	_, err := s.RedisClient.Get(context.Background(), cacheKey).Result()
 	if err != nil && err != redis.Nil {
 		log.Printf("[services][applemusic][SearchTrackWithLink] Error fetching track from cache: %v\n", err)
 		return nil, err
@@ -86,7 +102,7 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 		log.Printf("[services][applemusic][SearchTrackWithLink] Error serializing track: %v\n", err)
 		return nil, err
 	}
-	err = red.Set(context.Background(), cacheKey, serializeTrack, time.Hour*24).Err()
+	err = s.RedisClient.Set(context.Background(), cacheKey, serializeTrack, time.Hour*24).Err()
 	if err != nil {
 		log.Printf("[services][applemusic][SearchTrackWithLink] Error caching track: %v\n", err)
 		return nil, err
@@ -96,7 +112,7 @@ func SearchTrackWithLink(info *blueprint.LinkInfo, red *redis.Client) (*blueprin
 }
 
 // SearchTrackWithTitle searches for a track using the query.
-func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
+func (s *Service) SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
 	strippedTitleInfo := util.ExtractTitle(title)
 	// if the title is in the format of "title (feat. artiste)" then we search for the title without the feat. artiste
 	log.Printf("Apple music: Searching with stripped artiste: %s. Original artiste: %s", strippedTitleInfo.Title, artiste)
@@ -190,8 +206,8 @@ func SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.
 }
 
 // SearchTrackWithTitleChan searches for tracks using title and artistes but do so asynchronously.
-func SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup, red *redis.Client) {
-	track, err := SearchTrackWithTitle(title, artiste, red)
+func (s *Service) SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup, red *redis.Client) {
+	track, err := s.SearchTrackWithTitle(title, artiste, red)
 	if err != nil {
 		log.Printf("[services][applemusic][SearchTrackWithTitleChan] Error fetching track: %v\n", err)
 		defer wg.Done()
@@ -206,7 +222,7 @@ func SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSear
 }
 
 // FetchTracks asynchronously fetches a list of tracks using the track id
-func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks, error) {
+func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks, error) {
 	var omittedTracks []blueprint.OmittedTracks
 	var results []blueprint.TrackSearchResult
 	var ch = make(chan *blueprint.TrackSearchResult, len(tracks))
@@ -228,7 +244,7 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]
 			results = append(results, *deserializedTrack)
 			continue
 		}
-		go SearchTrackWithTitleChan(track.Title, track.Artistes[0], ch, &wg, red)
+		go s.SearchTrackWithTitleChan(track.Title, track.Artistes[0], ch, &wg, red)
 		chTracks := <-ch
 		if chTracks == nil {
 			omittedTracks = append(omittedTracks, blueprint.OmittedTracks{
@@ -243,8 +259,8 @@ func FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]
 	return &results, &omittedTracks, nil
 }
 
-// FetchPlaylistTrackList fetches a list of tracks for a playlist and saves the last modified date to redis
-func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSearchResult, error) {
+// SearchPlaylistWithID fetches a list of tracks for a playlist and saves the last modified date to redis
+func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResult, error) {
 	tp := applemusic.Transport{Token: os.Getenv("APPLE_MUSIC_API_KEY")}
 	client := applemusic.NewClient(tp.Client())
 	playlist := &blueprint.PlaylistSearchResult{}
@@ -253,25 +269,24 @@ func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSe
 	var tracks []blueprint.TrackSearchResult
 
 	//for page = 1; ; page++ {
-	log.Printf("[services][applemusic][FetchPlaylistTrackList] Fetching playlist tracks: %v\n", id)
+	log.Printf("[services][applemusic][SearchPlaylistWithID] Fetching playlist tracks: %v\n", id)
 	//id = strings.ReplaceAll(id, "/", "")
 	playlistId := strings.ReplaceAll(id, "/", "")
-	log.Printf("[services][applemusic][FetchPlaylistTrackList] Playlist id: %v\n", playlistId)
+	log.Printf("[services][applemusic][SearchPlaylistWithID] Playlist id: %v\n", playlistId)
 	results, response, err := client.Catalog.GetPlaylist(context.Background(), "us", playlistId, nil)
 
 	if err != nil {
-		log.Printf("[services][applemusic][FetchPlaylistTrackList][error] - could not fetch playlist tracks:")
-		spew.Dump(response.StatusCode)
+		log.Printf("[services][applemusic][SearchPlaylistWithID][error] - could not fetch playlist tracks:")
 		return nil, err
 	}
 
 	if response.StatusCode != 200 {
-		log.Printf("[services][applemusic][FetchPlaylistTrackList][GetPlaylist] Status - %v could not fetch playlist tracks: %v\n", response.StatusCode, err)
+		log.Printf("[services][applemusic][SearchPlaylistWithID][GetPlaylist] Status - %v could not fetch playlist tracks: %v\n", response.StatusCode, err)
 		return nil, blueprint.EUNKNOWN
 	}
 
 	if len(results.Data) == 0 {
-		log.Printf("[services][applemusic][FetchPlaylistTrackList] result data is empty. Could not fetch playlist tracks: %v\n", err)
+		log.Printf("[services][applemusic][SearchPlaylistWithID] result data is empty. Could not fetch playlist tracks: %v\n", err)
 		return nil, err
 	}
 
@@ -281,7 +296,7 @@ func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSe
 		tr, err := t.Parse()
 		track := tr.(*applemusic.Song)
 		if err != nil {
-			log.Printf("[services][applemusic][FetchPlaylistTrackList] Error parsing track: %v\n", err)
+			log.Printf("[services][applemusic][SearchPlaylistWithID] Error parsing track: %v\n", err)
 			return nil, err
 		}
 
@@ -297,12 +312,12 @@ func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSe
 		if tribute != nil {
 			r, err := json.Marshal(tribute)
 			if err != nil {
-				log.Printf("[services][applemusic][FetchPlaylistTrackList] Error serializing preview url: %v\n", err)
+				log.Printf("[services][applemusic][SearchPlaylistWithID] Error serializing preview url: %v\n", err)
 				return nil, err
 			}
 			err = json.Unmarshal(r, &previewStruct)
 			if err != nil {
-				log.Printf("[services][applemusic][FetchPlaylistTrackList] Error deserializing preview url: %v\n", err)
+				log.Printf("[services][applemusic][SearchPlaylistWithID] Error deserializing preview url: %v\n", err)
 				return nil, err
 			}
 			previewURL = previewStruct[0].Url
@@ -348,19 +363,19 @@ func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSe
 		},
 	})
 
-	log.Printf("[services][applemusic][FetchPlaylistTrackList] Request configs ")
+	log.Printf("[services][applemusic][SearchPlaylistWithID] Request configs ")
 
 	_allTracksRes, tErr := ax.Get(fmt.Sprintf("/v1/catalog/us/playlists/%s/tracks", playlistId), p)
 
 	if tErr != nil {
-		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error fetching playlist tracks from apple music %v\n", tErr.Error())
+		log.Printf("[services][applemusic][SearchPlaylistWithID] Error fetching playlist tracks from apple music %v\n", tErr.Error())
 		return nil, tErr
 	}
 
 	// if the response is a 404 and the length of the tracks we got earlier is 0, that means we really cant get the playlist tracks
 	if _allTracksRes.Status == 404 {
 		if len(tracks) == 0 {
-			log.Printf("[services][applemusic][FetchPlaylistTrackList] Could not fetch playlist tracks: %v\n", err)
+			log.Printf("[services][applemusic][SearchPlaylistWithID] Could not fetch playlist tracks: %v\n", err)
 			return nil, blueprint.EUNKNOWN
 		}
 		result := blueprint.PlaylistSearchResult{
@@ -376,7 +391,7 @@ func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSe
 	}
 
 	if _allTracksRes.Status != 200 {
-		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error fetching playlist tracks: %v\n", string(_allTracksRes.Data))
+		log.Printf("[services][applemusic][SearchPlaylistWithID] Error fetching playlist tracks: %v\n", string(_allTracksRes.Data))
 		log.Printf("original req url %v", _allTracksRes.Request.URL)
 		return nil, err
 	}
@@ -385,7 +400,7 @@ func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSe
 	err = json.Unmarshal(_allTracksRes.Data, &allTracksRes)
 
 	if err != nil {
-		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error fetching playlist tracks: %v\n", err)
+		log.Printf("[services][applemusic][SearchPlaylistWithID] Error fetching playlist tracks: %v\n", err)
 		return nil, err
 	}
 
@@ -420,9 +435,9 @@ func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSe
 	}
 
 	// save the last updated at to redis under the key "applemusic:playlist:<id>"
-	err = red.Set(context.Background(), fmt.Sprintf("applemusic:playlist:%s", id), playlistData.Attributes.LastModifiedDate, 0).Err()
+	err = s.RedisClient.Set(context.Background(), fmt.Sprintf("applemusic:playlist:%s", id), playlistData.Attributes.LastModifiedDate, 0).Err()
 	if err != nil {
-		log.Printf("[services][applemusic][FetchPlaylistTrackList] Error setting last updated at: %v\n", err)
+		log.Printf("[services][applemusic][SearchPlaylistWithID] Error setting last updated at: %v\n", err)
 		return nil, err
 	}
 
@@ -436,13 +451,13 @@ func FetchPlaylistTrackList(id string, red *redis.Client) (*blueprint.PlaylistSe
 		Cover:   playlistCover,
 	}
 
-	log.Printf("[services][applemusic][FetchPlaylistTrackList] Done fetching playlist tracks: %v\n", playlist)
+	log.Printf("[services][applemusic][SearchPlaylistWithID] Done fetching playlist tracks: %v\n", playlist)
 	return playlist, nil
 }
 
-// FetchPlaylistSearchResult fetches the tracks for a playlist based on the search result
+// SearchPlaylistWithTracks fetches the tracks for a playlist based on the search result
 // from another platform
-func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Client) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
+func (s *Service) SearchPlaylistWithTracks(p *blueprint.PlaylistSearchResult) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
 	var trackSearch []blueprint.PlatformSearchTrack
 	for _, track := range p.Tracks {
 		trackSearch = append(trackSearch, blueprint.PlatformSearchTrack{
@@ -450,15 +465,15 @@ func FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Cli
 			Artistes: track.Artists,
 		})
 	}
-	tracks, omittedTracks, err := FetchTracks(trackSearch, red)
+	tracks, omittedTracks, err := s.FetchTracks(trackSearch, s.RedisClient)
 	if err != nil {
-		log.Printf("[services][applemusic][FetchPlaylistSearchResult] Error fetching tracks: %v\n", err)
+		log.Printf("[services][applemusic][FetchPlaylistTrackResultsSearchPlaylistTracks] Error fetching tracks: %v\n", err)
 		return nil, nil
 	}
 	return tracks, omittedTracks
 }
 
-func CreateNewPlaylist(title, description, musicToken string, tracks []string) ([]byte, error) {
+func (s *Service) CreateNewPlaylist(title, description, musicToken string, tracks []string) ([]byte, error) {
 	log.Printf("[services][applemusic][CreateNewPlaylist] Creating new playlist: %v\n", title)
 	log.Printf("App Applemusic token is: %v\n", musicToken)
 	tp := applemusic.Transport{Token: os.Getenv("APPLE_MUSIC_API_KEY"), MusicUserToken: musicToken}
@@ -533,7 +548,7 @@ func CreateNewPlaylist(title, description, musicToken string, tracks []string) (
 }
 
 // FetchUserPlaylists fetches the user's playlists
-func FetchUserPlaylists(token string) ([]UserPlaylistResponse, error) {
+func (s *Service) FetchUserPlaylists(token string) ([]UserPlaylistResponse, error) {
 	log.Printf("[services][applemusic][FetchUserPlaylists] Fetching user playlists\n")
 	tp := applemusic.Transport{Token: os.Getenv("APPLE_MUSIC_API_KEY"), MusicUserToken: token}
 	client := applemusic.NewClient(tp.Client())
@@ -637,7 +652,7 @@ func FetchUserPlaylists(token string) ([]UserPlaylistResponse, error) {
 }
 
 // FetchUserArtists fetches the user's artists
-func FetchUserArtists(token string) (*blueprint.UserLibraryArtists, error) {
+func (s *Service) FetchUserArtists(token string) (*blueprint.UserLibraryArtists, error) {
 	// get the user's artists
 	inst := axios.NewInstance(&axios.InstanceConfig{
 		BaseURL: "https://api.music.apple.com/v1",

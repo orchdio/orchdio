@@ -93,6 +93,7 @@ func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "You are trying to convert a playlist. Please specify a target platform.")
 		}
 
+		log.Printf("\n[middleware][ExtractLinkInfoFromBody] method - converting from '%s' to '%s'\n", strings.ToUpper(linkInfo.Platform), strings.ToUpper(conversionBody["target_platform"]))
 		// if the target platform is set, we'll check if it's valid. if it's not, we'll exit here.
 		playlistPlatforms := []string{"spotify", "deezer", "applemusic", "tidal"}
 		if !lo.Contains(playlistPlatforms, conversionBody["target_platform"]) {

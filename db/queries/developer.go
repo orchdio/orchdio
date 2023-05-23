@@ -50,7 +50,7 @@ const FetchAppBySecretKey = `SELECT Id, uuid, name, description, developer, secr
        COALESCE(spotify_credentials, '') AS spotify_credentials, COALESCE(applemusic_credentials, '') AS applemusic_credentials, COALESCE(deezer_credentials, '') AS deezer_credentials, COALESCE(tidal_credentials, '') AS tidal_credentials,
             webhook_url, verify_token, created_at, updated_at, authorized, organization, coalesce(deezer_state, '') AS deezer_state FROM apps WHERE secret_key = $1`
 
-const FetchAuthorizedAppDeveloperByPublicKey = `SELECT u.email, u.usernames, u.username, u.id, u.uuid, u.created_at, u.updated_at, u.refresh_token, u.platform_id FROM apps a JOIN users u on a.developer = u.uuid WHERE a.public_key = $1 AND a.authorized = true`
+const FetchAuthorizedAppDeveloperByPublicKey = `SELECT u.email, u.id, u.uuid, u.created_at, u.updated_at FROM apps a JOIN users u on a.developer = u.uuid WHERE a.public_key = $1 AND a.authorized = true`
 const FetchAuthorizedAppDeveloperBySecretKey = `SELECT u.email, u.id, u.uuid, u.created_at, u.updated_at FROM apps a JOIN users u on a.developer = u.uuid WHERE a.secret_key = $1 AND a.authorized = true`
 
 // UpdateApp updates the developer app with data passed. If the values are empty, it falls back to what the original value of the column is
@@ -120,9 +120,13 @@ and uapps.app = $2
          WHERE ( CASE WHEN $3 = 'id' THEN u.uuid::text = $1 ELSE u.email = $1 END )
 	AND app IS NOT NULL`
 
+// since for a user app, there is only an app for each plaform, so we can narrow down using platform when filtering
+// by user app's app's id
+
 const FetchUserAppAndInfoByPlatform = `SELECT uapps.uuid as app_id, uapps.platform, coalesce(uapps.platform_id, '') as platform_id,
 uapps.refresh_token, coalesce(uapps.username, '') as username, u.email, "user" as user_id
-	FROM user_apps uapps JOIN users u on uapps."user" = $1 AND uapps.app = $2 WHERE uapps.platform = $3`
+	FROM user_apps uapps JOIN users u on uapps."user" = u.uuid AND uapps.app = $2 
+	WHERE (CASE WHEN $3 = 'id' THEN u.uuid::text = $1 ELSE u.email = $1 END) AND platform = $4`
 
 // update user platform token based on the streaming platform user provides
 

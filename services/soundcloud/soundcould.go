@@ -13,7 +13,7 @@ func (s *Soundcloud) FetchAuthURL() string {
 	return ""
 }
 
-//func (s *Soundcloud) FetchSingleTrack(id string) {
+//func (s *Soundcloud) SearchTrackWithID(id string) {
 //	var soundcloudAccessToken = os.Getenv("SOUNDCLOUD_ACCESS_TOKEN")
 //
 //}

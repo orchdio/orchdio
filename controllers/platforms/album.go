@@ -38,7 +38,24 @@ func (p *Platforms) FetchPlatformAlbums(ctx *fiber.Ctx) error {
 
 	case deezer.IDENTIFIER:
 		log.Printf("[platforms][FetchPlatformAlbums] info - Fetching user library albums from Deezer")
-		albums, err := deezer.FetchLibraryAlbums(userCtx.RefreshToken)
+		var deezerCredentials blueprint.IntegrationCredentials
+		if app.DeezerCredentials == nil {
+			log.Printf("[platforms][FetchPlatformAlbums] error - Deezer credentials are nil")
+			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "authorization error", "The developer has not provided deezer credentials for this app and cannot access this resource.")
+		}
+		credBytes, err := util.Decrypt(app.DeezerCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if err != nil {
+			log.Printf("[platforms][FetchPlatformAlbums] error - could not decrypt app's deezer credentials while fetching user library albums%s", err.Error())
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to decrypt Deezer credentials")
+		}
+		err = json.Unmarshal(credBytes, &deezerCredentials)
+		if err != nil {
+			log.Printf("[platforms][FetchPlatformAlbums] error - could not unmarshal app's deezer credentials while fetching user library albums%s", err.Error())
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to decrypt Deezer credentials")
+		}
+
+		deezerService := deezer.NewService(&deezerCredentials, p.DB, p.Redis)
+		albums, err := deezerService.FetchLibraryAlbums(userCtx.RefreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformAlbums] error - %s", err.Error())
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to fetch albums from Deezer")
@@ -65,7 +82,7 @@ func (p *Platforms) FetchPlatformAlbums(ctx *fiber.Ctx) error {
 			log.Printf("[platforms][FetchPlatformAlbums] error - could not unmarshal app's spotify credentials while fetching user library albums%s", err.Error())
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to decrypt Spotify credentials")
 		}
-		spotifyService := spotify.NewService(credentials.AppID, credentials.AppSecret, p.Redis)
+		spotifyService := spotify.NewService(&credentials, p.DB, p.Redis)
 		albums, err := spotifyService.FetchLibraryAlbums(userCtx.RefreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformAlbums] error - %s", err.Error())
@@ -81,7 +98,24 @@ func (p *Platforms) FetchPlatformAlbums(ctx *fiber.Ctx) error {
 	case tidal.IDENTIFIER:
 		log.Printf("[platforms][FetchPlatformAlbums] info - Fetching user library albums from Tidal")
 		log.Printf("[platforms][FetchPlatformAlbums] info - Platform ID: %s", userCtx.PlatformID)
-		albums, err := tidal.FetchLibraryAlbums(userCtx.PlatformID)
+		var tidalCredentials blueprint.IntegrationCredentials
+		if app.TidalCredentials == nil {
+			log.Printf("[platforms][FetchPlatformAlbums] error - Tidal credentials are nil")
+			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "authorization error", "The developer has not provided tidal credentials for this app and cannot access this resource.")
+		}
+
+		credBytes, err := util.Decrypt(app.TidalCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if err != nil {
+			log.Printf("[platforms][FetchPlatformAlbums] error - could not decrypt app's tidal credentials while fetching user library albums%s", err.Error())
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to decrypt Tidal credentials")
+		}
+		err = json.Unmarshal(credBytes, &tidalCredentials)
+		if err != nil {
+			log.Printf("[platforms][FetchPlatformAlbums] error - could not unmarshal app's tidal credentials while fetching user library albums%s", err.Error())
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to decrypt Tidal credentials")
+		}
+		tidalService := tidal.NewService(&tidalCredentials, p.DB, p.Redis)
+		albums, err := tidalService.FetchLibraryAlbums(userCtx.PlatformID)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformAlbums] error - %s", err.Error())
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to fetch albums from Tidal")

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/go-redis/redis/v8"
+	"github.com/jmoiron/sqlx"
 	"github.com/samber/lo"
 	"github.com/zmb3/spotify/v2"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
@@ -34,33 +35,44 @@ type Service struct {
 	IntegrationAppID     string
 	IntegrationAppSecret string
 	RedisClient          *redis.Client
+	PgClient             *sqlx.DB
 }
 
-func NewService(integrationAppID, integrationAppSecret string, redisClient *redis.Client) *Service {
+func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client) *Service {
 	return &Service{
-		IntegrationAppID:     integrationAppID,
-		IntegrationAppSecret: integrationAppSecret,
-		RedisClient:          redisClient,
+		IntegrationAppID:     credentials.AppID,
+		IntegrationAppSecret: credentials.AppSecret,
+		// the refreshtoken is optional for this so we're not declaring it
+		RedisClient: redisClient,
+		PgClient:    pgClient,
 	}
 }
 
-func (s *Service) FetchNewAuthToken(integrationAppID, integrationAppSecret string) *oauth2.Token {
+// NewAuthToken returns a new auth token for the spotify integration. This is to be called
+// everytime we make a call that requires user authentication or authorization or uses a specific scope.
+func (s *Service) NewAuthToken() *oauth2.Token {
 	config := &clientcredentials.Config{
-		ClientID:     integrationAppID,
-		ClientSecret: integrationAppSecret,
+		ClientID:     s.IntegrationAppID,
+		ClientSecret: s.IntegrationAppSecret,
 		TokenURL:     spotifyauth.TokenURL,
 	}
 
 	token, err := config.Token(context.Background())
 	if err != nil {
 		if err.Error() == "oauth2: cannot fetch token: 503 Service Unavailable" {
-			log.Printf("\n[services][spotify][base][FetchSingleTrack] error - 503 Service Unavailable\n")
+			log.Printf("\n[services][spotify][base][SearchTrackWithID] error - 503 Service Unavailable\n")
 			return nil
 		}
-		log.Printf("\n[services][spotify][base][FetchSingleTrack] error  - could not fetch spotify token: %v\n", err)
+		log.Printf("\n[services][spotify][base][SearchTrackWithID] error  - could not fetch spotify token: %v\n", err)
 		return nil
 	}
 	return token
+}
+
+// NewClient returns a new spotify client
+func (s *Service) NewClient(ctx context.Context, token *oauth2.Token) *spotify.Client {
+	httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(ctx, token)
+	return spotify.New(httpClient)
 }
 
 // FetchSingleTrack returns a single track by searching with the title
@@ -73,7 +85,7 @@ func (s *Service) FetchSingleTrack(title, artiste, integrationAppID, integration
 
 	token, err := config.Token(context.Background())
 	if err != nil {
-		log.Printf("\n[services][spotify][base][FetchSingleTrack] error  - could not fetch spotify token: %v\n", err)
+		log.Printf("\n[services][spotify][base][SearchTrackWithID] error  - could not fetch spotify token: %v\n", err)
 		return nil
 	}
 
@@ -90,8 +102,8 @@ func (s *Service) FetchSingleTrack(title, artiste, integrationAppID, integration
 }
 
 // SearchTrackWithTitleChan searches a for a track using the title and channel
-func (s *Service) SearchTrackWithTitleChan(title, artiste, integrationAppID, integrationAppSecret string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup, red *redis.Client) {
-	result, err := s.SearchTrackWithTitle(title, artiste, integrationAppID, integrationAppSecret, red)
+func (s *Service) SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup, red *redis.Client) {
+	result, err := s.SearchTrackWithTitle(title, artiste)
 	if err != nil {
 		log.Printf("\nError fetching track %s with channels\n. Error: %v", title, err)
 		defer wg.Done()
@@ -110,7 +122,7 @@ func (s *Service) SearchTrackWithTitleChan(title, artiste, integrationAppID, int
 // SearchTrackWithTitle searches spotify using the title of a track
 // This is typically expected to be used when the track we want to fetch is the one we just
 // want to search on. That is, the other platforms that the user is trying to convert to.
-func (s *Service) SearchTrackWithTitle(title, artiste, integrationAppID, integrationAppSecret string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
+func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackSearchResult, error) {
 	strippedArtiste := ExtractArtiste(artiste)
 	cleanedArtiste := fmt.Sprintf("spotify-%s-%s", util.NormalizeString(artiste), title)
 
@@ -119,11 +131,11 @@ func (s *Service) SearchTrackWithTitle(title, artiste, integrationAppID, integra
 	// And how do we know if we have cached it before?
 	// We store the hash of the title and artiste of the track in redis. we check if the hash of the
 	// track we want to search exist.
-	if red.Exists(context.Background(), cleanedArtiste).Val() == 1 {
+	if s.RedisClient.Exists(context.Background(), cleanedArtiste).Val() == 1 {
 		log.Printf("Spotify: Found cached result for %s", cleanedArtiste)
 		// deserialize the result from redis
 		var result *blueprint.TrackSearchResult
-		cachedResult, err := red.Get(context.Background(), cleanedArtiste).Result()
+		cachedResult, err := s.RedisClient.Get(context.Background(), cleanedArtiste).Result()
 		if err != nil {
 			log.Printf("\n[services][spotify][base][SearchTrackWithTitle] error - could not get cached result for track. This is an unexpected error: %v\n", err)
 			return nil, err
@@ -136,7 +148,7 @@ func (s *Service) SearchTrackWithTitle(title, artiste, integrationAppID, integra
 		return result, nil
 	}
 
-	spotifySearch := s.FetchSingleTrack(title, strippedArtiste, integrationAppID, integrationAppSecret)
+	spotifySearch := s.FetchSingleTrack(title, strippedArtiste, s.IntegrationAppID, s.IntegrationAppSecret)
 	if spotifySearch == nil {
 		log.Printf("\n[controllers][platforms][spotify][ConvertEntity] error - error fetching single track on spotify\n")
 		// panic for now.. at least until i figure out how to handle it if it can fail at all or not or can fail but be taken care of
@@ -202,7 +214,7 @@ func (s *Service) SearchTrackWithTitle(title, artiste, integrationAppID, integra
 	trackCacheKey := "spotify:track:" + fetchedSpotifyTrack.ID
 
 	if lo.Contains(fetchedSpotifyTrack.Artists, artiste) {
-		err = red.MSet(context.Background(), map[string]interface{}{
+		err = s.RedisClient.MSet(context.Background(), map[string]interface{}{
 			cleanedArtiste: string(serializedTrack),
 		}).Err()
 		if err != nil {
@@ -218,7 +230,7 @@ func (s *Service) SearchTrackWithTitle(title, artiste, integrationAppID, integra
 	//	log.Printf("\n[services][spotify][base][SearchTrackWithTitle] error - could not marshal track: %v\n", err)
 	//	return nil, err
 	//}
-	err = red.Set(context.Background(), trackCacheKey, serializedTrack, time.Hour*24).Err()
+	err = s.RedisClient.Set(context.Background(), trackCacheKey, serializedTrack, time.Hour*24).Err()
 	// cache in redis. since this is for a track that we're just searching by the title and artiste,
 	// we're saving the hash with a scheme of: "spotify-artist-title". e.g "spotify-taylor-swift-blink-182"
 	// so we save the fetched track under that hash and assumed that was what the user searched for and wanted.
@@ -238,10 +250,10 @@ func (s *Service) SearchTrackWithTitle(title, artiste, integrationAppID, integra
 // the user wants to convert. i.e the track is what the user wants to convert
 // and from the link, we can get the trackID.
 // Basically, the platform the user is trying to convert from.
-func (s *Service) SearchTrackWithID(id, integrationAppID, integrationAppSecret string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
+func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackSearchResult, error) {
 	// the cacheKey. scheme is "spotify:track_id"
-	cacheKey := "spotify:track:" + id
-	cachedTrack, err := red.Get(context.Background(), cacheKey).Result()
+	cacheKey := "spotify:track:" + info.EntityID
+	cachedTrack, err := s.RedisClient.Get(context.Background(), cacheKey).Result()
 
 	if err != nil && err != redis.Nil {
 		log.Printf("\n[services][SearchTrackWithID] error - Could not fetch record from cache. This is an unexpected error\n")
@@ -251,21 +263,23 @@ func (s *Service) SearchTrackWithID(id, integrationAppID, integrationAppSecret s
 	// we have not cached this track before
 	if err != nil && err == redis.Nil {
 		log.Printf("\n[services][SearchTrackWithID] function track has not been cached")
-		config := &clientcredentials.Config{
-			ClientID:     integrationAppID,
-			ClientSecret: integrationAppSecret,
-			TokenURL:     spotifyauth.TokenURL,
-		}
-
-		token, err := config.Token(context.Background())
-		if err != nil {
-			log.Printf("\n[services][spotify][base][FetchSingleTrack] error  - could not fetch spotify token: %v\n", err)
-			return nil, err
-		}
-
-		httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), token)
-		client := spotify.New(httpClient)
-		results, err := client.GetTrack(context.Background(), spotify.ID(id))
+		//config := &clientcredentials.Config{
+		//	ClientID:     s.IntegrationAppID,
+		//	ClientSecret: s.IntegrationAppSecret,
+		//	TokenURL:     spotifyauth.TokenURL,
+		//}
+		//
+		//token, err := config.Token(context.Background())
+		//if err != nil {
+		//	log.Printf("\n[services][spotify][base][SearchTrackWithID] error  - could not fetch spotify token: %v\n", err)
+		//	return nil, err
+		//}
+		//
+		//httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), token)
+		//client := spotify.New(httpClient)
+		token := s.NewAuthToken()
+		client := s.NewClient(context.Background(), token)
+		results, err := client.GetTrack(context.Background(), spotify.ID(info.EntityID))
 		if err != nil {
 			log.Printf("\n[services][spotify][base][FetchingSingleTrack] error - could not search for track: %v\n", err)
 			return nil, err
@@ -299,14 +313,14 @@ func (s *Service) SearchTrackWithID(id, integrationAppID, integrationAppSecret s
 
 		serialized, err := json.Marshal(out)
 		if err != nil {
-			log.Printf("\n[services][spotify][base][FetchSingleTrack] error - could not serialize track: %v\n", err)
+			log.Printf("\n[services][spotify][base][SearchTrackWithID] error - could not serialize track: %v\n", err)
 		}
 
-		err = red.Set(context.Background(), cacheKey, serialized, time.Hour*24).Err()
+		err = s.RedisClient.Set(context.Background(), cacheKey, serialized, time.Hour*24).Err()
 		if err != nil {
-			log.Printf("\n[services][spotify][base][FetchSingleTrack] error - could not cache track: %v\n", err)
+			log.Printf("\n[services][spotify][base][SearchTrackWithID] error - could not cache track: %v\n", err)
 		} else {
-			log.Printf("\n[services][spotify][base][FetchSingleTrack] success - track cached\n")
+			log.Printf("\n[services][spotify][base][SearchTrackWithID] success - track cached\n")
 		}
 		return &out, nil
 	}
@@ -320,20 +334,24 @@ func (s *Service) SearchTrackWithID(id, integrationAppID, integrationAppSecret s
 	return &deserializedTrack, nil
 }
 
-// FetchPlaylistTracksAndInfo fetches a playlist and returns a list of tracks and the playlist info with pagination info
+// SearchPlaylistWithID fetches a playlist and returns a list of tracks and the playlist info with pagination info
 // This function caches each of the tracks in the playlist, the playlist snapshop id in the scheme: "spotify:snapshot:id"
 // and the playlist id in the scheme: "spotify:playlist:id"
-func (s *Service) FetchPlaylistTracksAndInfo(id, integrationAppID, integrationAppSecret string, red *redis.Client) (*blueprint.PlaylistSearchResult, *blueprint.Pagination, error) {
-	//client := createNewSpotifyUInstance()
-	token := s.FetchNewAuthToken(integrationAppID, integrationAppSecret)
+func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResult, error) {
+	token := s.NewAuthToken()
+	if token == nil {
+		log.Printf("\n[services][spotify][base][SearchPlaylistWithID] error - could not fetch token\n")
+		return nil, errors.New("could not fetch token")
+	}
 	ctx := context.Background()
 	if token == nil {
-		log.Printf("\n[services][spotify][base][FetchPlaylistTracksAndInfo] error - could not fetch token\n")
-		return nil, nil, errors.New("could not fetch token")
+		log.Printf("\n[services][spotify][base][SearchPlaylistWithID] error - could not fetch token\n")
+		return nil, errors.New("could not fetch token")
 	}
-	httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(ctx, token)
-	client := spotify.New(httpClient)
-
+	//httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID),
+	//	spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(ctx, token)
+	//client := spotify.New(httpClient)
+	client := s.NewClient(ctx, token)
 	options := spotify.Fields("description,uri,external_urls,snapshot_id,name,images")
 
 	// --id--: 55JFgMW6BkDzIIHA7D3Wwo
@@ -342,16 +360,16 @@ func (s *Service) FetchPlaylistTracksAndInfo(id, integrationAppID, integrationAp
 	// first get the snapshot id from cache. if it exists and its the same as the one in the playlist,
 	// then we want to return the cached data. however, if the snapshot id is different, we want to
 	// fetch the data from the spotify api and cache it.
-	cachedSnapshot, cacheErr := red.Get(context.Background(), "spotify:playlist:"+id).Result()
+	cachedSnapshot, cacheErr := s.RedisClient.Get(context.Background(), "spotify:playlist:"+id).Result()
 	if cacheErr != nil && cacheErr != redis.Nil {
-		log.Printf("\n[services][FetchPlaylistTracksAndInfo] error - Could not fetch snapshot id from cache\n")
-		return nil, nil, cacheErr
+		log.Printf("\n[services][SearchPlaylistWithID] error - Could not fetch snapshot id from cache\n")
+		return nil, cacheErr
 	}
 
-	cachedSnapshotID, snapshotErr := red.Get(context.Background(), "spotify:snapshot:"+id).Result()
+	cachedSnapshotID, snapshotErr := s.RedisClient.Get(context.Background(), "spotify:snapshot:"+id).Result()
 	if snapshotErr != nil && snapshotErr != redis.Nil {
-		log.Printf("\n[services][FetchPlaylistTracksAndInfo] error - Could not fetch snapshot id from cache\n")
-		return nil, nil, snapshotErr
+		log.Printf("\n[services][SearchPlaylistWithID] error - Could not fetch snapshot id from cache\n")
+		return nil, snapshotErr
 	}
 
 	info, err := client.GetPlaylist(context.Background(), spotify.ID(id), options)
@@ -360,10 +378,10 @@ func (s *Service) FetchPlaylistTracksAndInfo(id, integrationAppID, integrationAp
 	// then we want to fetch the tracks and cache them.
 	if cacheErr != nil && cacheErr == redis.Nil || cachedSnapshotID != info.SnapshotID {
 
-		playlist, err := client.GetPlaylistItems(ctx, spotify.ID(id))
-		if err != nil {
-			log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - Could not fetch playlist from spotify: %v\n", err)
-			return nil, nil, err
+		playlist, cErr := client.GetPlaylistItems(ctx, spotify.ID(id))
+		if cErr != nil {
+			log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - Could not fetch playlist from spotify: %v\n", cErr)
+			return nil, cErr
 		}
 		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - playlist fetched from spotify: %v\n", len(playlist.Items))
 
@@ -376,8 +394,8 @@ func (s *Service) FetchPlaylistTracksAndInfo(id, integrationAppID, integrationAp
 				break
 			}
 			if paginationErr != nil {
-				log.Printf("\n[services][spotify][base][FetchPlaylistTracksAndInfo] error - could not fetch playlist: %v\n", err)
-				return nil, nil, err
+				log.Printf("\n[services][spotify][base][SearchPlaylistWithID] error - could not fetch playlist: %v\n", err)
+				return nil, paginationErr
 			}
 			playlist.Items = append(playlist.Items, out.Items...)
 		}
@@ -419,7 +437,7 @@ func (s *Service) FetchPlaylistTracksAndInfo(id, integrationAppID, integrationAp
 			if err != nil {
 				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not serialize track: %v\n", err)
 			}
-			err = red.Set(context.Background(), cacheKey, string(serialized), time.Hour*24).Err()
+			err = s.RedisClient.Set(context.Background(), cacheKey, string(serialized), time.Hour*24).Err()
 			if err != nil {
 				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not cache track: %v\n", err)
 			} else {
@@ -441,7 +459,7 @@ func (s *Service) FetchPlaylistTracksAndInfo(id, integrationAppID, integrationAp
 		}
 
 		// update the snapshotID in the cache
-		err = red.Set(context.Background(), "spotify:snapshot:"+id, info.SnapshotID, 0).Err()
+		err = s.RedisClient.Set(context.Background(), "spotify:snapshot:"+id, info.SnapshotID, 0).Err()
 		if err != nil {
 			log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not cache snapshot id: %v\n", err)
 		} else {
@@ -454,8 +472,8 @@ func (s *Service) FetchPlaylistTracksAndInfo(id, integrationAppID, integrationAp
 			log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not serialize playlist: %v\n", err)
 		}
 
-		err = red.Set(context.Background(), "spotify:playlist:"+id, string(serializedPlaylist), 0).Err()
-		return &playlistResult, nil, nil
+		err = s.RedisClient.Set(context.Background(), "spotify:playlist:"+id, string(serializedPlaylist), 0).Err()
+		return &playlistResult, nil
 	}
 
 	// if we get here, then the snapshot id is the same as the one in the cache.
@@ -464,10 +482,10 @@ func (s *Service) FetchPlaylistTracksAndInfo(id, integrationAppID, integrationAp
 	err = json.Unmarshal([]byte(cachedSnapshot), &playlistResult)
 	if err != nil {
 		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not unmarshal playlist: %v\n", err)
-		return nil, nil, err
+		return nil, err
 	}
 
-	return &playlistResult, nil, nil
+	return &playlistResult, nil
 }
 
 // FetchTracks fetches tracks in a playlist concurrently using channels
@@ -478,13 +496,13 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 	var wg sync.WaitGroup
 	for _, t := range tracks {
 		// FIXME: unhandled slice index
-		go s.SearchTrackWithTitleChan(t.Title, t.Artistes[0], integrationAppID, integrationAppSecret, ch, &wg, red)
+		go s.SearchTrackWithTitleChan(t.Title, t.Artistes[0], ch, &wg, red)
 		outputTrack := <-ch
 		// for some reason, there is no spotify url which means could not fetch track, we
 		// want to add to the list of "not found" tracks.
 		if outputTrack == nil || outputTrack.URL == "" {
 			// log info about empty track
-			log.Printf("\n[services][spotify][base][FetchPlaylistSearchResult][warn] - Could not find track for %s\n", t.Title)
+			log.Printf("\n[services][spotify][base][SearchPlaylistWithTracks][warn] - Could not find track for %s\n", t.Title)
 			omittedTracks = append(omittedTracks, blueprint.OmittedTracks{
 				Title: t.Title,
 				URL:   t.URL,
@@ -501,9 +519,9 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 	return &fetchedTracks, &omittedTracks
 }
 
-// FetchPlaylistSearchResult fetches the track for a playlist based on the search result
+// SearchPlaylistWithTracks fetches the track for a playlist based on the search result
 // from another platform
-func (s *Service) FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, red *redis.Client, integrationAppID, integrationAppSecret string) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
+func (s *Service) SearchPlaylistWithTracks(p *blueprint.PlaylistSearchResult) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
 	var trackSearch []blueprint.PlatformSearchTrack
 	for _, track := range p.Tracks {
 		trackSearch = append(trackSearch, blueprint.PlatformSearchTrack{
@@ -513,17 +531,18 @@ func (s *Service) FetchPlaylistSearchResult(p *blueprint.PlaylistSearchResult, r
 			URL:      track.URL,
 		})
 	}
-	track, omittedTracks := s.FetchTracks(trackSearch, red, integrationAppID, integrationAppSecret)
+	track, omittedTracks := s.FetchTracks(trackSearch, s.RedisClient, s.IntegrationAppID, s.IntegrationAppSecret)
 	return track, omittedTracks
 }
 
 func (s *Service) FetchPlaylistHash(playlistId string, integrationAppID, integrationAppSecret string) []byte {
-	token := s.FetchNewAuthToken(integrationAppID, integrationAppSecret)
+	token := s.NewAuthToken()
 	if token == nil {
 		return nil
 	}
-	httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), token)
-	client := spotify.New(httpClient)
+	//httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), token)
+	//client := spotify.New(httpClient)
+	client := s.NewClient(context.Background(), token)
 	opts := spotify.Fields("snapshot_id")
 
 	info, err := client.GetPlaylist(context.Background(), spotify.ID(playlistId), opts)
@@ -537,8 +556,9 @@ func (s *Service) FetchPlaylistHash(playlistId string, integrationAppID, integra
 
 // FetchUserPlaylist fetches the user's playlist
 func (s *Service) FetchUserPlaylist(token string) (*spotify.SimplePlaylistPage, error) {
-	httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), &oauth2.Token{RefreshToken: token})
-	client := spotify.New(httpClient)
+	client := s.NewClient(context.Background(), &oauth2.Token{RefreshToken: token})
+	//httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), &oauth2.Token{RefreshToken: token})
+	//client := spotify.New(httpClient)
 	playlists, err := client.CurrentUsersPlaylists(context.Background())
 	if err != nil {
 		log.Printf("\n[services][spotify][base][FetchUserPlaylist] error - could not fetch playlist: %v\n", err)
@@ -563,8 +583,9 @@ func (s *Service) FetchUserPlaylist(token string) (*spotify.SimplePlaylistPage, 
 
 func (s *Service) FetchUserArtists(token string) (*blueprint.UserLibraryArtists, error) {
 	log.Printf("\n[services][spotify][base][FetchUserArtists] - fetching user's libraryArtists\n")
-	httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), &oauth2.Token{RefreshToken: token})
-	client := spotify.New(httpClient)
+	//httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), &oauth2.Token{RefreshToken: token})
+	//client := spotify.New(httpClient)
+	client := s.NewClient(context.Background(), &oauth2.Token{RefreshToken: token})
 	values := url.Values{}
 	values.Set("limit", "50")
 	libraryArtists, err := client.CurrentUsersFollowedArtists(context.Background(), spotify.Limit(50))
@@ -613,8 +634,9 @@ func (s *Service) FetchUserArtists(token string) (*blueprint.UserLibraryArtists,
 }
 
 func (s *Service) FetchTrackListeningHistory(token string) ([]blueprint.TrackSearchResult, error) {
-	httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), &oauth2.Token{RefreshToken: token})
-	client := spotify.New(httpClient)
+	//httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), &oauth2.Token{RefreshToken: token})
+	//client := spotify.New(httpClient)
+	client := s.NewClient(context.Background(), &oauth2.Token{RefreshToken: token})
 	values := url.Values{}
 	values.Set("limit", "50")
 	libraryArtists, err := client.CurrentUsersTopTracks(context.Background(), spotify.Limit(50), spotify.Timerange("short_term"))
@@ -682,8 +704,9 @@ func (s *Service) FetchUserInfo(token string) (*blueprint.UserPlatformInfo, erro
 	log.Printf("\n[services][spotify][base][FetchUserInfo] - fetching user's info\n")
 
 	// first, we want to create the endpoint to fetch the user info
-	httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), &oauth2.Token{RefreshToken: token})
-	client := spotify.New(httpClient)
+	//httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), &oauth2.Token{RefreshToken: token})
+	//client := spotify.New(httpClient)
+	client := s.NewClient(context.Background(), &oauth2.Token{RefreshToken: token})
 	user, err := client.CurrentUser(context.Background())
 	if err != nil {
 		log.Printf("\n[services][spotify][base][FetchUserInfo] error - could not fetch user info: %v\n", err)

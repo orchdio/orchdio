@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/antoniodipinto/ikisocket"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
@@ -160,7 +161,7 @@ func main() {
 					notFound := asynq.NotFound(context.Background(), task)
 
 					if notFound != nil {
-						log.Printf("[main] [QueueErrorHandler] Task not found in queue. Seems this task is orphaned.. Going to retry the handler needed to be run")
+						log.Printf("[main] [QueueErrorHandler] Going to retry the handler needed to be run")
 						emailQueue := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
 						var emailData blueprint.EmailTaskData
 						err = json.Unmarshal(task.Payload(), &emailData)
@@ -185,7 +186,6 @@ func main() {
 				// conversion queue
 				isConversionQueue := util.IsTaskType(task.Type(), "playlist:conversion")
 				if isConversionQueue {
-					log.Printf("[main][QueueErrorHandler][info] This middleware is called when the queue server encounters an error and rescheduling the queues")
 					// check that the queue isnt paused
 					queueInfo, qErr := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
 					if qErr != nil {
@@ -209,24 +209,20 @@ func main() {
 					// check if task has already been scheduled (has an handler), by fetching task from queue
 					notFound := asynq.NotFound(context.Background(), task)
 					if notFound != nil {
-						log.Printf("[main] [QueueErrorHandler][warning] Task not scheduled")
-						asynqMux.Handle(task.Type(), asynq.HandlerFunc(func(ctx context.Context, t *asynq.Task) error {
-							log.Printf("[main] [QueueErrorHandler] Custom running handler here%v", err)
-							// create new taskHandler that will then process this job. From the ```queue.LoggerMiddleware``` method,
-							// we check for "orphaned" tasks, these tasks are tasks that were created but were never fully processed,
-							// for example during server restart or shutdown during task processing, even though we detect queue pauses and pause them
-							// when we do this, the next task the queue server picks up the task, we'll attach this handler to it and just process it.
-							taskHandler := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
-							err = taskHandler.PlaylistHandler(t.ResultWriter().TaskID(), taskData.ShortURL, taskData.LinkInfo, taskData.App.UID.String())
-							if err != nil {
-								log.Printf("[main] [QueueErrorHandler] Error processing task %v", err)
-								return err
-							}
-							log.Printf("[main] [QueueErrorHandler] Task processed successfully")
-							return nil
-						}))
-						log.Printf("[main] [QueueErrorHandler][warning] Queue is not paused but an error occured")
-						return
+						log.Printf("[main] [QueueErrorHandler] Going to retry the handler needed to be run")
+						playlistQueue := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
+						// schedule the playlist conversion
+						var playlistData blueprint.PlaylistTaskData
+						err = json.Unmarshal(task.Payload(), &playlistData)
+						if err != nil {
+							log.Printf("[main][QueueErrorHandler] error - could not unmarshal playlist task data %v", err)
+							return
+						}
+						err = playlistQueue.PlaylistHandler(playlistData.TaskID, playlistData.ShortURL, playlistData.LinkInfo, playlistData.App.UID.String())
+						if err != nil {
+							log.Printf("[main][QueueErrorHandler] error - could not retry playlist conversion.. %v", err)
+							return
+						}
 					}
 
 					taskHandler := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
@@ -242,8 +238,9 @@ func main() {
 		})
 
 	asynqMux.Use(queue.CheckForOrphanedTasksMiddleware)
-	emailQueue := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
-	asynqMux.HandleFunc("send:appauth:email", emailQueue.SendEmailHandler)
+	orchdioQueue := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
+	asynqMux.HandleFunc("send:appauth:email", orchdioQueue.SendEmailHandler)
+	asynqMux.HandleFunc("playlist:conversion", orchdioQueue.PlaylistTaskHandler)
 
 	err = asynqServer.Start(asynqMux)
 	if err != nil {
@@ -266,6 +263,11 @@ func main() {
 				return util.ErrorResponse(ctx, e.Code, "internal error", e.Message)
 			}
 			log.Printf("Error in next router %v", err)
+			// todo: check the type of error it is. because for example in the method to add playlist to user's account
+			// if we couldnt fetch the userdata, we return an error. seems to kill the server
+
+			log.Printf("Incoming Next fiber error is:\n")
+			spew.Dump(err)
 			// get the PID of the asynq server and send it a kill signal to OS
 			// this is a hacky way to kill the asynq server
 			queueServer, err := inspector.Servers()
@@ -318,6 +320,7 @@ func main() {
 		return
 	}
 
+	// for each queue, check if it is paused, if it is, unpause it
 	if len(queues) > 0 {
 		for _, q := range queues {
 			queueInfo, err := inspector.GetQueueInfo(q)

@@ -3,7 +3,6 @@ package platforms
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -143,7 +142,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 		}
 
 		database := db.NewDB{DB: p.DB}
-		redisOpts, err := redis.ParseURL(os.Getenv("REDISCLOUD_URL"))
+		_, err = redis.ParseURL(os.Getenv("REDISCLOUD_URL"))
 		if err != nil {
 			log.Printf("[controller][conversion][EchoConversion] - error parsing redis url: %v", err)
 			return ctx.Status(http.StatusInternalServerError).JSON("error parsing redis url")
@@ -168,54 +167,54 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 		// CONVERSION HANDLER. WE SHOULD BE ABLE TO FIX THIS BY HAVING A HANDLER THAT
 		// ALWAYS RUNS AND FETCHES TASKS FROM A STORE AND ATTACH THEM TO A HANDLER.
 		// FIXME: more investigations
-		defer func() error {
-			// handle panic
-			if r := recover(); r != nil {
-				log.Printf("[controller][conversion][EchoConversion] - gracefully ignoring this")
-				log.Printf("[controller][conversion][EchoConversion] - task already queued%v", r)
-				inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
-				// get the task
-				_, err := inspector.GetTaskInfo(queue.PlaylistConversionQueue, uniqueId)
-				if err != nil {
-					log.Printf("[controller][conversion][EchoConversion] - error getting task info: %v", err)
-					return err
-				}
-				log.Printf("[controller][conversion][EchoConversion] - task info:")
-				queueInfo, err := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
-				if err != nil {
-					log.Printf("[controller][conversion][EchoConversion] - error getting queue info: %v", err)
-					return err
-				}
-
-				// update the task to success. because this seems to be a race condition in production where
-				// it duplicates task scheduling even though the task is already queued
-				// update task to success
-				err = database.UpdateTaskStatus(uniqueId, "pending")
-				if err != nil {
-					log.Printf("[controller][conversion][EchoConversion] - error unmarshalling task data: %v", err)
-				}
-
-				if queueInfo.Paused {
-					log.Printf("[controller][conversion][EchoConversion] - queue is paused. resuming it")
-					err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
-					if err != nil {
-						log.Printf("[controller][conversion][EchoConversion] - error resuming queue: ")
-						spew.Dump(err)
-					}
-					log.Printf("[controller][conversion][EchoConversion] - queue resumed")
-				}
-
-				log.Printf("[controller][conversion][EchoConversion] - task updated to success")
-
-				if r.(string) == "asynq: multiple registrations for playlist:conversion" {
-					log.Printf("[controller][conversion][EchoConversion] - task already queued")
-				}
-			}
-			log.Printf("[controller][conversion][EchoConversion] - recovered from panic.. task already queued")
-
-			return util.SuccessResponse(ctx, http.StatusOK, res)
-		}()
-		orchdioQueue.RunTask(fmt.Sprintf("playlist:conversion:%s", uniqueId), orchdioQueue.PlaylistTaskHandler)
+		//defer func() error {
+		//	// handle panic
+		//	if r := recover(); r != nil {
+		//		log.Printf("[controller][conversion][EchoConversion] - gracefully ignoring this")
+		//		log.Printf("[controller][conversion][EchoConversion] - task already queued%v", r)
+		//		inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
+		//		// get the task
+		//		_, err := inspector.GetTaskInfo(queue.PlaylistConversionQueue, uniqueId)
+		//		if err != nil {
+		//			log.Printf("[controller][conversion][EchoConversion] - error getting task info: %v", err)
+		//			return err
+		//		}
+		//		log.Printf("[controller][conversion][EchoConversion] - task info:")
+		//		queueInfo, err := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
+		//		if err != nil {
+		//			log.Printf("[controller][conversion][EchoConversion] - error getting queue info: %v", err)
+		//			return err
+		//		}
+		//
+		//		// update the task to success. because this seems to be a race condition in production where
+		//		// it duplicates task scheduling even though the task is already queued
+		//		// update task to success
+		//		err = database.UpdateTaskStatus(uniqueId, "pending")
+		//		if err != nil {
+		//			log.Printf("[controller][conversion][EchoConversion] - error unmarshalling task data: %v", err)
+		//		}
+		//
+		//		if queueInfo.Paused {
+		//			log.Printf("[controller][conversion][EchoConversion] - queue is paused. resuming it")
+		//			err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
+		//			if err != nil {
+		//				log.Printf("[controller][conversion][EchoConversion] - error resuming queue: ")
+		//				spew.Dump(err)
+		//			}
+		//			log.Printf("[controller][conversion][EchoConversion] - queue resumed")
+		//		}
+		//
+		//		log.Printf("[controller][conversion][EchoConversion] - task updated to success")
+		//
+		//		if r.(string) == "asynq: multiple registrations for playlist:conversion" {
+		//			log.Printf("[controller][conversion][EchoConversion] - task already queued")
+		//		}
+		//	}
+		//	log.Printf("[controller][conversion][EchoConversion] - recovered from panic.. task already queued")
+		//
+		//	return util.SuccessResponse(ctx, http.StatusOK, res)
+		//}()
+		//orchdioQueue.RunTask(fmt.Sprintf("playlist:conversion:%s", uniqueId), orchdioQueue.PlaylistTaskHandler)
 		log.Printf("[controller][conversion][EchoConversion] - task handler attached")
 		return util.SuccessResponse(ctx, http.StatusCreated, res)
 	}

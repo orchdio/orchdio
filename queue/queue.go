@@ -12,9 +12,6 @@ import (
 	"net/http"
 	"orchdio/blueprint"
 	"orchdio/db"
-	"orchdio/services/deezer"
-	"orchdio/services/spotify"
-	"orchdio/services/tidal"
 	"orchdio/universal"
 	"orchdio/util"
 	"os"
@@ -179,22 +176,58 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 		return err
 	}
 
-	var outBytes []byte
-	switch info.Platform {
-	case spotify.IDENTIFIER:
-		outBytes = app.SpotifyCredentials
-	case tidal.IDENTIFIER:
-		outBytes = app.TidalCredentials
-	case deezer.IDENTIFIER:
-		outBytes = app.DeezerCredentials
-	}
+	//var outBytes []byte
+	//switch info.Platform {
+	//case spotify.IDENTIFIER:
+	//	outBytes = app.SpotifyCredentials
+	//case tidal.IDENTIFIER:
+	//	outBytes = app.TidalCredentials
+	//case deezer.IDENTIFIER:
+	//	outBytes = app.DeezerCredentials
+	//}
 
-	var creds blueprint.IntegrationCredentials
-	err = json.Unmarshal(outBytes, &creds)
-	if err != nil {
-		log.Printf("[queue][PlaylistHandler] - could not deserialize the app integration credentials. Maybe this job was created without a meta field in the task data or database. %v", err)
-		return err
-	}
+	// update the task status to ENOCREDENTIALS
+	//p := blueprint.TaskErrorPayload{
+	//	Platform: info.Platform,
+	//	Status:   "failed",
+	//	Error:    "ENOCREDENTIALS",
+	//	Message:  fmt.Sprintf("No %s credentials found for this app.", info.Platform),
+	//}
+	//credErr, err := json.Marshal(&p)
+	//if err != nil {
+	//	log.Printf("[queue][PlaylistHandler] - could not marshal task error payload: %v", err)
+	//	return err
+	//}
+
+	//var creds blueprint.IntegrationCredentials
+	//if len(outBytes) == 0 {
+	//	log.Printf("[queue][PlaylistHandler] - could not find app integration credentials. This developer might have not updated their app with the %s integration credentials.", info.Platform)
+	//	sErr := database.UpdateTaskStatus(uid, "failed")
+	//	if sErr != nil {
+	//		return sErr
+	//	}
+	//	_, resErr := database.UpdateTaskResult(uid, string(credErr))
+	//	if resErr != nil {
+	//		return resErr
+	//	}
+	//	return blueprint.ENOCREDENTIALS
+	//}
+
+	//err = json.Unmarshal(outBytes, &creds)
+	//if err != nil {
+	//	log.Printf("[queue][PlaylistHandler] - could not deserialize the app integration credentials. Maybe this job was created without a meta field in the task data or database. %v", err)
+	//	sErr := database.UpdateTaskStatus(uid, "failed")
+	//	if sErr != nil {
+	//		return sErr
+	//	}
+	//	_, e := database.UpdateTaskResult(uid, string(credErr))
+	//	if e != nil {
+	//		log.Printf("[queue][PlaylistHandler] - could not update task result: %v", e)
+	//		return e
+	//	}
+	//
+	//	return blueprint.EBADCREDENTIALS
+	//}
 
 	// get task from db
 	task, dbErr := database.FetchTask(uid)
@@ -211,7 +244,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 
 	log.Printf("[queue][PlaylistHandler] - created or updated task: %v", taskId)
 
-	h, err := universal.ConvertPlaylist(info, o.Red, creds.AppID, creds.AppSecret)
+	h, err := universal.ConvertPlaylist(info, o.Red, o.DB)
 	var status string
 	// for now, we dont want to bother about retrying and all of that. we're simply going to mark a task as failed if it fails
 	// the reason is that it's hard handling the retry for it to worth it. In the future, we might add a proper retry system
@@ -378,7 +411,7 @@ func CheckForOrphanedTasksMiddleware(h asynq.Handler) asynq.Handler {
 			// like the best way to handle this.
 			handlerNotFoundErr := asynq.NotFound(ctx, t)
 			if handlerNotFoundErr != nil {
-				log.Printf("[queue][CheckForOrphanedTasksMiddleware][warning] - Error is a handler not found error %v", handlerNotFoundErr)
+				log.Printf("[queue][CheckForOrphanedTasksMiddleware][warning] - Error is a handler not found error")
 				return blueprint.ENORESULT
 			}
 			log.Printf("[queue][CheckForOrphanedTasksMiddleware] - error processing task: %v", err)

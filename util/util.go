@@ -22,6 +22,7 @@ import (
 	"log"
 	"orchdio/blueprint"
 	"os"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -333,6 +334,22 @@ func DeserializeAppCredentials(data []byte) (*blueprint.IntegrationCredentials, 
 	return &appCredentials, nil
 }
 
+func DeezerIsExplicitContent(explicitContent string) bool {
+	return explicitContent == "explicit_lyrics" || explicitContent == "explicit_display"
+}
+
+// DeezerSubscriptionPlan returns the subscription plan of a deezer user by checking for some fields in the opts passed
+// Deezer does not have a field in the api responses that specify subscription plan, but we can infer from the
+// info (based on personal testing) if some fields are present or have certain values, then the user is on a free plan or not.
+// for now, we just check for few fields, we may need to extend this in the future.
+func DeezerSubscriptionPlan(opts map[string]interface{}) string {
+	if opts["ads_display"] == true && opts["ads_audio"] == true && opts["radio_skips"].(int) > 0 {
+		return "free"
+	}
+	// todo: handle proper check for other plans as necessary
+	return "premium"
+}
+
 // ExtractTitle will extract the title from the track title. This is important because
 // it will remove the (feat. artiste) from the title and or normalize the title
 // in order to enhance search results.
@@ -390,4 +407,31 @@ func parseFeaturedArtistes(feat string) []string {
 		return nil
 	}
 	return regexp.MustCompile(`\s*&\s*|\s*,\s*|\s+and\s+`).Split(feat, -1)
+}
+
+func FetchMethodFromInterface(service interface{}, method string) (reflect.Value, bool) {
+	var ptr reflect.Value
+	var serviceMethod reflect.Value
+	var value reflect.Value
+
+	serviceValue := reflect.ValueOf(service)
+	if serviceValue.IsNil() {
+		return serviceMethod, false
+	}
+	if serviceValue.Type().Kind() == reflect.Ptr {
+		ptr = serviceValue
+		value = ptr.Elem()
+	} else {
+		ptr = reflect.New(reflect.TypeOf(service))
+		_temp := ptr.Elem()
+		_temp.Elem().Set(serviceValue)
+	}
+
+	_method := value.MethodByName(method)
+	if _method.IsValid() {
+		serviceMethod = _method
+	}
+
+	serviceMethod = ptr.MethodByName(method)
+	return serviceMethod, true
 }

@@ -292,7 +292,7 @@ func (u *UserController) FetchUserInfoByIdentifier(ctx *fiber.Ctx) error {
 			}
 			log.Printf("[controller][user][FetchUserInfoByIdentifier] - User's access token is %s", string(accessToken))
 
-			spotifyService := spotify.NewService(cred.AppID, cred.AppSecret, u.Redis)
+			spotifyService := spotify.NewService(&cred, u.DB, u.Redis)
 			spotifyInfo, serviceErr := spotifyService.FetchUserInfo(string(accessToken))
 			if serviceErr != nil {
 				log.Printf("[controller][user][FetchUserInfoByIdentifier	] - error fetching spotify user info: %v", serviceErr)
@@ -315,7 +315,21 @@ func (u *UserController) FetchUserInfoByIdentifier(ctx *fiber.Ctx) error {
 				log.Printf("[controller][user][FetchUserInfoByIdentifier] - error unmarshalling deezer credentials: %v", err)
 				return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not unmarshal deezer credentials")
 			}
-			deezerService := deezer
+
+			accessToken, err := util.Decrypt(user.RefreshToken, []byte(os.Getenv("ENCRYPTION_SECRET")))
+			if err != nil {
+				log.Printf("[controller][user][FetchUserInfoByIdentifier] - error decrypting deezer access token: %v", err)
+				return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not decrypt deezer access token")
+			}
+
+			deezerService := deezer.NewService(&cred, u.DB, u.Redis)
+
+			deezerInfo, err := deezerService.FetchUserInfo(string(accessToken))
+			if err != nil {
+				log.Printf("[controller][user][FetchUserInfoByIdentifier] - error fetching deezer user info: %v", err)
+				continue
+			}
+			userInfo.Deezer = deezerInfo
 		}
 	}
 

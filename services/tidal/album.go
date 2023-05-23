@@ -8,12 +8,12 @@ import (
 	"strconv"
 )
 
-func FetchLibraryAlbums(userId string) ([]blueprint.LibraryAlbum, error) {
+func (s *Service) FetchLibraryAlbums(userId string) ([]blueprint.LibraryAlbum, error) {
 	log.Printf("[tidal][FetchLibraryAlbums] info - Fetching user library albums from Tidal")
 	link := fmt.Sprintf("/users/%s/favorites/albums?offset=0&limit=50&orderDirection=DESC&countryCode=US&locale=en_US&deviceType=BROWSER", userId)
 
 	var albumResponse UserLibraryAlbumResponse
-	err := NewTidalRequest("https://listen.tidal.com/v1", map[string][]string{"Content-Type": {"application/json"}}, "").MakeRequest(link, &albumResponse)
+	err := s.MakeRequest(link, &albumResponse)
 	if err != nil {
 		log.Printf("[tidal][FetchLibraryAlbums] error - %s", err.Error())
 	}

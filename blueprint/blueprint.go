@@ -38,6 +38,8 @@ var (
 	EINVALIDPERMISSIONS = errors.New("invalid permissions")
 	ESERVICECLOSED      = errors.New("service closed")
 	EINVALIDPLATFORM    = errors.New("invalid platform")
+	ENOCREDENTIALS      = errors.New("no credentials")
+	EBADCREDENTIALS     = errors.New("bad credentials")
 )
 
 var (
@@ -192,7 +194,7 @@ type Conversion struct {
 type PlatformPlaylistTrackResult struct {
 	Tracks        *[]TrackSearchResult `json:"tracks"`
 	Length        int                  `json:"length"`
-	OmittedTracks []OmittedTracks      `json:"empty_tracks,omitempty"`
+	OmittedTracks *[]OmittedTracks     `json:"empty_tracks,omitempty"`
 }
 
 // PlaylistConversion represents the final response for a typical playlist conversion
@@ -414,13 +416,14 @@ type DeveloperApp struct {
 }
 
 type UpdateDeveloperAppData struct {
-	Name                   string `json:"name,omitempty"`
-	Description            string `json:"description,omitempty"`
-	IntegrationRedirectURL string `json:"integration_redirect_url,omitempty"`
-	IntegrationPlatform    string `json:"integration_platform,omitempty"`
-	WebhookURL             string `json:"webhook_url,omitempty"`
-	IntegrationAppID       string `json:"integration_app_id,omitempty"`
-	IntegrationAppSecret   string `json:"integration_app_secret,omitempty"`
+	Name                    string `json:"name,omitempty"`
+	Description             string `json:"description,omitempty"`
+	IntegrationRedirectURL  string `json:"integration_redirect_url,omitempty"`
+	IntegrationPlatform     string `json:"integration_platform,omitempty"`
+	WebhookURL              string `json:"webhook_url,omitempty"`
+	IntegrationAppID        string `json:"integration_app_id,omitempty"`
+	IntegrationAppSecret    string `json:"integration_app_secret,omitempty"`
+	IntegrationRefreshToken string `json:"integration_refresh_token,omitempty"`
 }
 
 type CreateNewDeveloperAppData struct {
@@ -575,9 +578,10 @@ type OrganizationResponse struct {
 }
 
 type IntegrationCredentials struct {
-	AppID     string `json:"app_id,omitempty"`
-	AppSecret string `json:"app_secret,omitempty"`
-	Platform  string `json:"app_platform"`
+	AppID           string `json:"app_id,omitempty"`
+	AppSecret       string `json:"app_secret,omitempty"`
+	AppRefreshToken string `json:"app_refresh_token,omitempty"`
+	Platform        string `json:"app_platform"`
 }
 
 type SrcTargetCredentials struct {

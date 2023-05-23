@@ -167,7 +167,8 @@ func (s *TaskCronHandler) ProcessFollowTaskHandler(ctx context.Context, task *as
 		// be able to check if the playlist has been updated. in this case, we want to create a new follow
 		if err == redis.Nil {
 			log.Printf("[queue][ProcessFollowTaskHandler] - playlist hasnt been cached")
-			convertedPlaylist, err := universal.ConvertPlaylist(linkInfo, s.Red, credentials.AppID, credentials.AppSecret)
+			// todo: watch out for this
+			convertedPlaylist, err := universal.ConvertPlaylist(linkInfo, s.Red, s.DB)
 			if err != nil {
 				log.Printf("[queue][ProcessFollowTaskHandler][conversion] - error converting playlist: %v", err)
 				return err
@@ -197,7 +198,8 @@ func (s *TaskCronHandler) ProcessFollowTaskHandler(ctx context.Context, task *as
 	// if the playlist has been updated, then update the redis snapshot with the new hash
 	if ok {
 		log.Println("[queue][ProcessFollowTaskHandler] - playlist has been updated. Converting again to fetch new tracks")
-		updatedPlaylist, err := universal.ConvertPlaylist(linkInfo, s.Red, credentials.AppID, credentials.AppSecret)
+		// todo: watch out for this
+		updatedPlaylist, err := universal.ConvertPlaylist(linkInfo, s.Red, s.DB)
 		if err != nil {
 			log.Printf("[queue][ProcessFollowTaskHandler][conversion] - error converting playlist: %v", err)
 			return err

@@ -346,7 +346,7 @@ func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId, appI
 		// TODO: implement other platforms
 		case "spotify":
 			log.Printf("[follow][FetchPlaylistHash] - checking if playlist has been updated")
-			spotifyService := spotify.NewService(creds.AppID, creds.AppSecret, s.Red)
+			spotifyService := spotify.NewService(&creds, s.DB, s.Red)
 			ent := string(spotifyService.FetchPlaylistHash(entityId, creds.AppID, creds.AppSecret))
 			if ent == "" {
 				return nil, false, nil, fmt.Errorf("could not get playlist hash")
@@ -357,7 +357,8 @@ func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId, appI
 		case "tidal":
 			log.Printf("[follow][FetchPlaylistHash] - checking if playlist has been updated")
 			platform = "tidal"
-			info, _, ok, err := tidal.FetchPlaylist(entityId, s.Red)
+			tidalService := tidal.NewService(&creds, s.DB, s.Red)
+			info, _, ok, err := tidalService.SearchPlaylistWithID(entityId)
 			if err != nil {
 				log.Printf("[follow][FetchPlaylistHash] - error fetching playlist from tidal: %v", err)
 				return nil, false, nil, err

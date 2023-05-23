@@ -2165,9 +2165,16 @@
                 "properties": {
                     "url": {
                     "type": "string",
-                    "description": "The URL of the entity to convert",
+                      "required": true,
+                      "description": "The URL of the entity to convert",
                     "example": "https://open.spotify.com/track/3Qm86XLflmIXVm1wcwkgDK?si=6a6e6f6d6e6f6f6d"
-                    }
+                    },
+                  "target_platform": {
+                    "type": "string",
+                    "description": "The platform to convert to",
+                    "example": "tidal",
+                    "required": true
+                  }
                 }
                 }
             }

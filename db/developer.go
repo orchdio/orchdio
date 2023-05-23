@@ -118,7 +118,7 @@ func (d *NewDB) FetchAppBySecretKey(secretKey []byte) (*blueprint.DeveloperApp, 
 	if err != nil {
 		log.Printf("[db][FetchAppByDeveloperId] developer -  error: could not fetch apps by developer id: %v\n", err)
 		if errors.Is(err, sql.ErrNoRows) {
-			log.Printf("[db][FetchAppByDeveloperId] developer - App does not exist%v\n", err)
+			log.Printf("[db][FetchAppByDeveloperId] developer - App does not exist")
 			return nil, sql.ErrNoRows
 		}
 		return nil, err
@@ -179,12 +179,26 @@ func (d *NewDB) UpdateApp(appId, platform, developer string, app blueprint.Updat
 	if app.IntegrationAppSecret != "" {
 		existingCredentials.AppSecret = app.IntegrationAppSecret
 	}
+	if app.IntegrationRefreshToken != "" {
+		existingCredentials.AppRefreshToken = app.IntegrationRefreshToken
+	}
+
+	// if the platform is not tidal, we should not have a refresh token,
+	// so we abort if its so.
+	// NOTE: this is just a helpful guard, we probably wont need this most of the time.
+	if platform != tidal.IDENTIFIER {
+		if app.IntegrationRefreshToken != "" {
+			log.Printf("[db][UpdateApp] warning - App has refreshtoken credentials but is not a platform that requires it. Only TIDAL does.")
+			return blueprint.EBADCREDENTIALS
+		}
+	}
 
 	integrationCredentials := blueprint.IntegrationCredentials{
 		AppID:     existingCredentials.AppID,
 		AppSecret: existingCredentials.AppSecret,
 		// FIXME: seems this is not needed to be stored in the credentials since its ([:platform]_credential) named column in the db
-		Platform: app.IntegrationPlatform,
+		Platform:        app.IntegrationPlatform,
+		AppRefreshToken: existingCredentials.AppRefreshToken,
 	}
 
 	credentials, err := json.Marshal(&integrationCredentials)
@@ -255,7 +269,7 @@ func (d *NewDB) FetchDeveloperAppWithPublicKey(publicKey string) (*blueprint.Use
 	if err != nil {
 		log.Printf("[db][FetchAuthorizedDeveloperApp] developer -  error: could not fetch authorized developer app: %v\n", err)
 		if errors.Is(err, sql.ErrNoRows) {
-			log.Printf("[db][FetchAuthorizedDeveloperApp] developer - App does not exist%v\n", err)
+			log.Printf("[db][FetchAuthorizedDeveloperApp] developer - App does not exist")
 			return nil, sql.ErrNoRows
 		}
 		return nil, err

@@ -9,8 +9,10 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/samber/lo"
 	"log"
+	"net/mail"
 	"orchdio/blueprint"
 	"orchdio/db/queries"
+	"orchdio/util"
 )
 
 // NewDB represents a new DB layer struct for performing DB related operations
@@ -634,31 +636,38 @@ func (d *NewDB) FetchUserByIdentifier(identifier, app, opt string) (*[]blueprint
 	return &res, nil
 }
 
-// FetchPlatformAndUserInfoByUserID fetches a user by the identifier (email or id) and a flag specifying which one and the platform the user
-func (d *NewDB) FetchPlatformAndUserInfoByUserID(identifier, app, platform string) (*blueprint.UserAppAndPlatformInfo, error) {
-	log.Printf("[db][FetchPlatformAndUserInfoByUserID] - fetching user profile by identifier")
+// FetchPlatformAndUserInfoByIdentifier fetches a user by the identifier (email or id) and a flag specifying which one and the platform the user
+func (d *NewDB) FetchPlatformAndUserInfoByIdentifier(identifier, app, platform string) (*blueprint.UserAppAndPlatformInfo, error) {
+	log.Printf("[db][FetchPlatformAndUserInfoByIdentifier] - fetching user profile by identifier")
 
+	isUUID := util.IsValidUUID(identifier)
+	parseEmail, err := mail.ParseAddress(identifier)
+	if err != nil {
+		log.Printf("[db][FetchPlatformAndUserInfoByIdentifier] - invalid email '%s'\n", identifier)
+		return nil, errors.New("invalid email")
+	}
+
+	if !isUUID && parseEmail == nil {
+		log.Printf("[db][FetchPlatformAndUserInfoByIdentifier] - invalid identifier '%s'\n", identifier)
+		return nil, errors.New("invalid identifier")
+	}
+
+	var opt string
+	if isUUID {
+		opt = "id"
+	} else {
+		opt = "email"
+	}
 	// 1. uuid / email
 	// 2. app id
 	// 3. platform
-	row := d.DB.QueryRowx(queries.FetchUserAppAndInfoByPlatform, identifier, app, platform)
+	row := d.DB.QueryRowx(queries.FetchUserAppAndInfoByPlatform, identifier, app, opt, platform)
 	var res blueprint.UserAppAndPlatformInfo
-	err := row.StructScan(&res)
+	err = row.StructScan(&res)
 	if err != nil {
-		log.Printf("[db][FetchPlatformAndUserInfoByUserID] error scanning user: could not fetch user app and info by platform. %v\n", err)
+		log.Printf("[db][FetchPlatformAndUserInfoByIdentifier] error scanning user: could not fetch user app and info by platform. %v\n", err)
 		return nil, err
 	}
 
 	return &res, nil
-	/// MIGHT BE USEFUL, keeping around for historical reasons, remove later
-	//func (d *NewDB) UpdateUserPlatformToken(token byte, email, platform string) error {
-	//	log.Printf("[db][UpdateUserPlatformToken] Running query %s\n", queries.UpdateUserPlatformToken)
-	//	_, err := d.DB.Exec(queries.UpdateUserPlatformToken, token, email, platform)
-	//	if err != nil {
-	//		log.Printf("[db][UpdateUserPlatformToken] error updating user platform token. %v\n", err)
-	//		return err
-	//	}
-	//	log.Printf("[db][UpdateUserPlatformToken] updated user: '%s' token to '%s'\n", email, token)
-	//	return nil
-	//}
 }

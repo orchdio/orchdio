@@ -30,7 +30,24 @@ func (p *Platforms) FetchTrackListeningHistory(ctx *fiber.Ctx) error {
 		return util.SuccessResponse(ctx, http.StatusOK, history)
 
 	case deezer.IDENTIFIER:
-		history, err := deezer.FetchTracksListeningHistory(userCtx.RefreshToken)
+		var deezerCredentials blueprint.IntegrationCredentials
+		if app.DeezerCredentials == nil {
+			log.Printf("[platforms][FetchListeningHistory] error - Deezer credentials are nil")
+			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "authorization error", "The developer has not provided deezer credentials for this app and cannot access this resource.")
+		}
+		credBytes, err := util.Decrypt(app.DeezerCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if err != nil {
+			log.Printf("[platforms][FetchListeningHistory] error - could not decrypt app's credentials while fetching user library listening history%s", err.Error())
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to fetch listening history from Deezer")
+		}
+		err = json.Unmarshal(credBytes, &deezerCredentials)
+		if err != nil {
+			log.Printf("[platforms][FetchListeningHistory] error - could not unmarshal app's credentials while fetching user library listening history%s", err.Error())
+			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "authorization error", "Failed to fetch listening history from Deezer")
+		}
+
+		deezerService := deezer.NewService(&deezerCredentials, p.DB, p.Redis)
+		history, err := deezerService.FetchTracksListeningHistory(userCtx.RefreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchListeningHistory] error - %s", err.Error())
 			if err.Error() == "unauthorized" {
@@ -58,7 +75,7 @@ func (p *Platforms) FetchTrackListeningHistory(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to fetch listening history from Spotify")
 		}
 
-		spotifyService := spotify.NewService(credentials.AppID, credentials.AppSecret, p.Redis)
+		spotifyService := spotify.NewService(&credentials, p.DB, p.Redis)
 		history, err := spotifyService.FetchTrackListeningHistory(userCtx.RefreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchListeningHistory] error - %s", err.Error())
