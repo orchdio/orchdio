@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/gofiber/fiber/v2"
 	"github.com/zmb3/spotify/v2"
+	"golang.org/x/oauth2"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
@@ -66,7 +66,7 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "App not found")
-			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "App not found")
+			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User has not authorized this app. Please authorize the app to continue.")
 		}
 		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred.")
@@ -79,9 +79,6 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error decrypting user refresh token - %v\n", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred while decrypting refresh token")
 	}
-
-	log.Printf("\n[controllers][platforms][AddPlaylistToAccount] - decrypted token is:")
-	spew.Dump(t)
 
 	var credentialsBytes []byte
 	switch platform {
@@ -113,8 +110,9 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 	switch platform {
 	case spotify2.IDENTIFIER:
 		spotifyService := spotify2.NewService(&credentials, p.DB, p.Redis)
-		token := spotifyService.NewAuthToken()
-		client := spotifyService.NewClient(context.Background(), token)
+		client := spotifyService.NewClient(context.Background(), &oauth2.Token{
+			RefreshToken: string(t),
+		})
 		createdPlaylist, pErr := client.CreatePlaylistForUser(context.Background(), user.PlatformID, createBodyData.Title, description, true, false)
 
 		if pErr != nil {
@@ -122,33 +120,32 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 			if strings.Contains(pErr.Error(), "oauth2: cannot fetch token: 400 Bad Request") {
 				return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid client. The user or developer app's credentials might be invalid")
 			}
-
 			if strings.Contains(pErr.Error(), "This request requires user authentication") {
 				return util.ErrorResponse(ctx, http.StatusInternalServerError, blueprint.EUNAUTHORIZED, "Please reauthenticate this app with the permission to read playlists and try again.")
 			}
-
-			var trackIds []spotify.ID
-			for _, track := range createBodyData.Tracks {
-				if track != "" {
-					trackIds = append(trackIds, spotify.ID(track))
-				}
-			}
-
-			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] - track ids %v\n", len(trackIds))
-			// update playlist with the tracks
-			updated, cErr := client.AddTracksToPlaylist(context.Background(), createdPlaylist.ID, trackIds...)
-			if cErr != nil {
-				log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error adding new track to playlist - %v\n", cErr)
-				if cErr.Error() == "No tracks specified." {
-					return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", cErr.Error())
-				}
-				return util.ErrorResponse(ctx, http.StatusInternalServerError, cErr.Error(), "An internal error occurred")
-			}
-
-			playlistlink = createdPlaylist.ExternalURLs["spotify"]
-
-			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] - created playlist %v\n", updated)
 		}
+
+		var trackIds []spotify.ID
+		for _, track := range createBodyData.Tracks {
+			if track != "" {
+				trackIds = append(trackIds, spotify.ID(track))
+			}
+		}
+
+		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] - track ids %v\n", len(trackIds))
+		// update playlist with the tracks
+		updated, cErr := client.AddTracksToPlaylist(context.Background(), createdPlaylist.ID, trackIds...)
+		if cErr != nil {
+			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error adding new track to playlist - %v\n", cErr)
+			if cErr.Error() == "No tracks specified." {
+				return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", cErr.Error())
+			}
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, cErr.Error(), "An internal error occurred")
+		}
+
+		playlistlink = createdPlaylist.ExternalURLs["spotify"]
+
+		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] - created playlist %v\n", updated)
 
 	case deezer.IDENTIFIER:
 		deezerService := deezer.NewService(&credentials, p.DB, p.Redis)
@@ -242,18 +239,6 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 
 	switch targetPlatform {
 	case deezer.IDENTIFIER:
-		//credBytes, err := util.Decrypt(app.DeezerCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
-		//if err != nil {
-		//	log.Printf("[platforms][FetchPlatformPlaylists] error - error decrypting deezer credentials while fetching user library playlists%v\n", err)
-		//	return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
-		//}
-		//var credentials blueprint.IntegrationCredentials
-		//err = json.Unmarshal(credBytes, &credentials)
-		//if err != nil {
-		//	log.Printf("[platforms][FetchPlatformPlaylists] error - error unmarshalling deezer credentials while fetching user library playlists%v\n", err)
-		//	return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
-		//}
-
 		// get the deezer playlists
 		var deezerCredentials blueprint.IntegrationCredentials
 		if app.DeezerCredentials == nil {
@@ -303,7 +288,7 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 			Payload: userPlaylists,
 		}
 		return util.SuccessResponse(ctx, http.StatusOK, response)
-	case "spotify":
+	case spotify2.IDENTIFIER:
 		// decrypt integration credentials of the app
 		credBytes, err := util.Decrypt(app.SpotifyCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
 		if err != nil {

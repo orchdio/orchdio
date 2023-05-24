@@ -135,7 +135,7 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 	redirectToken.Scopes = authScopes
 
 	switch platform {
-	case "spotify":
+	case spotify.IDENTIFIER:
 		if string(developerApp.SpotifyCredentials) == "" {
 			log.Printf("[controllers][AppAuthRedirect] developer -  error: no spotify integration integrationCredentials\n")
 			return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Spotify integration is not enabled for this app. Please make sure you update the app with your Spotify credentials")
@@ -168,7 +168,7 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 		response["url"] = string(authURL)
 		return util.SuccessResponse(ctx, fiber.StatusOK, response)
 
-	case "deezer":
+	case deezer.IDENTIFIER:
 		log.Printf("[controllers][AppAuthRedirect] developer -  redirecting to deezer auth url\n")
 		redirectToken.Platform = "deezer"
 
@@ -199,7 +199,7 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 		response["url"] = authURL
 		return util.SuccessResponse(ctx, fiber.StatusOK, response)
 	// TODO: handle apple music auth
-	case "applemusic":
+	case applemusic.IDENTIFIER:
 		log.Printf("[controllers][AppAuthRedirect] developer -  redirecting to apple music auth url\n")
 		return util.ErrorResponse(ctx, fiber.StatusNotImplemented, "not supported", "Apple music auth not implemented yet")
 	}

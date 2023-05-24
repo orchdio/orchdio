@@ -347,7 +347,12 @@ func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId, appI
 		case "spotify":
 			log.Printf("[follow][FetchPlaylistHash] - checking if playlist has been updated")
 			spotifyService := spotify.NewService(&creds, s.DB, s.Red)
-			ent := string(spotifyService.FetchPlaylistHash(entityId, creds.AppID, creds.AppSecret))
+			// fixme: there is a bug here. we need to pass the user's auth token to the fetchplaylisthash function
+			// 		question is: how do we get the user's auth token in this case? unless whenever we run this function,
+			// 		we let it run in the context of an authed user request, so that way we can always get the user's auth token
+			//      or we pass the developer credentials (use NewAuthToken on service) and see if it works
+			// 		since it works for normal conversions.
+			ent := string(spotifyService.FetchPlaylistHash("", entityId))
 			if ent == "" {
 				return nil, false, nil, fmt.Errorf("could not get playlist hash")
 			}

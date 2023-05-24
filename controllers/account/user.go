@@ -135,9 +135,7 @@ func (u *UserController) FetchUserProfile(ctx *fiber.Ctx) error {
 	_, err := mail.ParseAddress(email)
 	if err != nil {
 		log.Printf("\n[user][controller][FetchUserProfile] error - invalid email %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid email")
 	}
-	// get the user via the email
 	database := db.NewDB{DB: u.DB}
 	user, err := database.FindUserProfileByEmail(email)
 	if err != nil {
@@ -246,16 +244,7 @@ func (u *UserController) FetchUserInfoByIdentifier(ctx *fiber.Ctx) error {
 	}
 
 	database := db.NewDB{DB: u.DB}
-
-	var opt = ""
-
-	if isUUID {
-		opt = "id"
-	} else {
-		opt = "email"
-	}
-
-	userProfile, err := database.FetchUserByIdentifier(identifier, app.UID.String(), opt)
+	userProfile, err := database.FetchUserByIdentifier(identifier, app.UID.String())
 	if err != nil {
 		log.Printf("[controller][user][FetchUserInfoByIdentifier] - error fetching user info: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not fetch user info")

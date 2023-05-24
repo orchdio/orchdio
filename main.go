@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/antoniodipinto/ikisocket"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/compress"
@@ -248,6 +247,7 @@ func main() {
 		panic(err)
 	}
 
+	/// Go fiber server configuration
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: false,
 		AppName:               os.Getenv("APP_NAME"),
@@ -264,10 +264,8 @@ func main() {
 			}
 			log.Printf("Error in next router %v", err)
 			// todo: check the type of error it is. because for example in the method to add playlist to user's account
-			// if we couldnt fetch the userdata, we return an error. seems to kill the server
-
-			log.Printf("Incoming Next fiber error is:\n")
-			spew.Dump(err)
+			// if we couldnt fetch the userdata, we return an error. seems to kill the serve
+			//r
 			// get the PID of the asynq server and send it a kill signal to OS
 			// this is a hacky way to kill the asynq server
 			queueServer, err := inspector.Servers()
@@ -363,7 +361,6 @@ func main() {
 	}()
 
 	userController := account.NewUserController(db, redisClient)
-	//webhookController := account.NewAccountWebhookController(db)
 	authMiddleware := middleware.NewAuthMiddleware(db)
 	conversionController := conversion.NewConversionController(db, redisClient, playlistQueue, QueueFactory, asyncClient, asynqServer, asynqMux)
 	devAppController := developer.NewDeveloperController(db)

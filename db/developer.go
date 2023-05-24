@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/google/uuid"
+	"github.com/samber/lo"
 	"log"
 	"orchdio/blueprint"
 	"orchdio/db/queries"
@@ -183,12 +184,13 @@ func (d *NewDB) UpdateApp(appId, platform, developer string, app blueprint.Updat
 		existingCredentials.AppRefreshToken = app.IntegrationRefreshToken
 	}
 
-	// if the platform is not tidal, we should not have a refresh token,
+	// if the platform is not tidal oor apple music, we should not have a refresh token,
 	// so we abort if its so.
-	// NOTE: this is just a helpful guard, we probably wont need this most of the time.
-	if platform != tidal.IDENTIFIER {
+	// Apple music uses a credential called API_KEY which is a JWT, like TIDAL's developer refresh token. so we encode
+	// both as RefreshToken but in apple music service, we refer to it as API_KEY
+	if !lo.Contains([]string{applemusic.IDENTIFIER, tidal.IDENTIFIER}, platform) {
 		if app.IntegrationRefreshToken != "" {
-			log.Printf("[db][UpdateApp] warning - App has refreshtoken credentials but is not a platform that requires it. Only TIDAL does.")
+			log.Printf("[db][UpdateApp] warning - App has refreshtoken credentials but is not a platform that requires it. Only TIDAL and Apple Music do.")
 			return blueprint.EBADCREDENTIALS
 		}
 	}

@@ -730,7 +730,6 @@ func (s *Service) FetchUserInfo(token string) (*blueprint.UserPlatformInfo, erro
 		return nil, err
 	}
 
-	log.Printf("\n[services][deezer][FetchUserInfo] Fetched user deezer options: %v\n", options)
 	userInfo := blueprint.UserPlatformInfo{
 		Platform:        "deezer",
 		Username:        info.Name,

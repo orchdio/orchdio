@@ -76,10 +76,10 @@ func (s *Service) NewClient(ctx context.Context, token *oauth2.Token) *spotify.C
 }
 
 // FetchSingleTrack returns a single track by searching with the title
-func (s *Service) FetchSingleTrack(title, artiste, integrationAppID, integrationAppSecret string) *spotify.SearchResult {
+func (s *Service) FetchSingleTrack(title, artiste string) *spotify.SearchResult {
 	config := &clientcredentials.Config{
-		ClientID:     integrationAppID,
-		ClientSecret: integrationAppSecret,
+		ClientID:     s.IntegrationAppID,
+		ClientSecret: s.IntegrationAppSecret,
 		TokenURL:     spotifyauth.TokenURL,
 	}
 
@@ -148,7 +148,7 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 		return result, nil
 	}
 
-	spotifySearch := s.FetchSingleTrack(title, strippedArtiste, s.IntegrationAppID, s.IntegrationAppSecret)
+	spotifySearch := s.FetchSingleTrack(title, strippedArtiste)
 	if spotifySearch == nil {
 		log.Printf("\n[controllers][platforms][spotify][ConvertEntity] error - error fetching single track on spotify\n")
 		// panic for now.. at least until i figure out how to handle it if it can fail at all or not or can fail but be taken care of
@@ -489,7 +489,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 }
 
 // FetchTracks fetches tracks in a playlist concurrently using channels
-func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client, integrationAppID, integrationAppSecret string) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
+func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
 	var fetchedTracks []blueprint.TrackSearchResult
 	var ch = make(chan *blueprint.TrackSearchResult, len(tracks))
 	var omittedTracks []blueprint.OmittedTracks
@@ -531,18 +531,15 @@ func (s *Service) SearchPlaylistWithTracks(p *blueprint.PlaylistSearchResult) (*
 			URL:      track.URL,
 		})
 	}
-	track, omittedTracks := s.FetchTracks(trackSearch, s.RedisClient, s.IntegrationAppID, s.IntegrationAppSecret)
+	track, omittedTracks := s.FetchTracks(trackSearch, s.RedisClient)
 	return track, omittedTracks
 }
 
-func (s *Service) FetchPlaylistHash(playlistId string, integrationAppID, integrationAppSecret string) []byte {
-	token := s.NewAuthToken()
-	if token == nil {
-		return nil
-	}
+func (s *Service) FetchPlaylistHash(token, playlistId string) []byte {
 	//httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), token)
 	//client := spotify.New(httpClient)
-	client := s.NewClient(context.Background(), token)
+	t := s.NewAuthToken()
+	client := s.NewClient(context.Background(), t)
 	opts := spotify.Fields("snapshot_id")
 
 	info, err := client.GetPlaylist(context.Background(), spotify.ID(playlistId), opts)

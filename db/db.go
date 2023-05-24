@@ -601,9 +601,28 @@ func (d *NewDB) FetchOrgs(owner string) ([]blueprint.Organization, error) {
 
 // FetchUserByIdentifier fetches a user by the identifier (email or id) and a flag specifying which one
 // it is. This is used for fetching user's info (basic info and app/platform infos).
-func (d *NewDB) FetchUserByIdentifier(identifier, app, opt string) (*[]blueprint.UserAppAndPlatformInfo, error) {
+func (d *NewDB) FetchUserByIdentifier(identifier, app string) (*[]blueprint.UserAppAndPlatformInfo, error) {
 	log.Printf("[db][FetchUserByIdentifier] - fetching user profile by identifier")
+	var opt string
+	isUUID := util.IsValidUUID(identifier)
+	parsedEmail, err := mail.ParseAddress(identifier)
+	if err != nil {
+		log.Printf("[db][FetchUserByIdentifier] warning - invalid email used as identifier for fetching user info %s\n", identifier)
+		opt = "id"
+	}
 
+	isValidEmail := parsedEmail != nil
+	if !isUUID && !isValidEmail {
+		log.Printf("[db][FetchUserByIdentifier] - invalid identifier '%s'\n", identifier)
+		return nil, errors.New("invalid identifier")
+	}
+
+	//var opt string
+	//if isUUID {
+	//	opt = "id"
+	//} else {
+	//	opt = "email"
+	//}
 	// hack: for now, we're going to declare valid opts to prevent accidental SQL injection or whatever
 	opts := []string{"email", "id"}
 
@@ -640,11 +659,12 @@ func (d *NewDB) FetchUserByIdentifier(identifier, app, opt string) (*[]blueprint
 func (d *NewDB) FetchPlatformAndUserInfoByIdentifier(identifier, app, platform string) (*blueprint.UserAppAndPlatformInfo, error) {
 	log.Printf("[db][FetchPlatformAndUserInfoByIdentifier] - fetching user profile by identifier")
 
+	var opt string
 	isUUID := util.IsValidUUID(identifier)
 	parseEmail, err := mail.ParseAddress(identifier)
 	if err != nil {
 		log.Printf("[db][FetchPlatformAndUserInfoByIdentifier] - invalid email '%s'\n", identifier)
-		return nil, errors.New("invalid email")
+		opt = "id"
 	}
 
 	if !isUUID && parseEmail == nil {
@@ -652,12 +672,13 @@ func (d *NewDB) FetchPlatformAndUserInfoByIdentifier(identifier, app, platform s
 		return nil, errors.New("invalid identifier")
 	}
 
-	var opt string
 	if isUUID {
 		opt = "id"
 	} else {
 		opt = "email"
 	}
+
+	log.Printf("[db][FetchPlatformAndUserInfoByIdentifier] Running query with %s  %s %s\n", identifier, app, opt)
 	// 1. uuid / email
 	// 2. app id
 	// 3. platform

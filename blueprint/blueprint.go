@@ -416,13 +416,17 @@ type DeveloperApp struct {
 }
 
 type UpdateDeveloperAppData struct {
-	Name                    string `json:"name,omitempty"`
-	Description             string `json:"description,omitempty"`
-	IntegrationRedirectURL  string `json:"integration_redirect_url,omitempty"`
-	IntegrationPlatform     string `json:"integration_platform,omitempty"`
-	WebhookURL              string `json:"webhook_url,omitempty"`
-	IntegrationAppID        string `json:"integration_app_id,omitempty"`
-	IntegrationAppSecret    string `json:"integration_app_secret,omitempty"`
+	Name                   string `json:"name,omitempty"`
+	Description            string `json:"description,omitempty"`
+	IntegrationRedirectURL string `json:"integration_redirect_url,omitempty"`
+	IntegrationPlatform    string `json:"integration_platform,omitempty"`
+	WebhookURL             string `json:"webhook_url,omitempty"`
+	// for apple music, this is TEAM_ID
+	IntegrationAppID string `json:"integration_app_id,omitempty"`
+	// for apple music, this is KEY_ID
+	IntegrationAppSecret string `json:"integration_app_secret,omitempty"`
+	// for apple music, this is API_KEY
+	// for TIDAL, this is the Refresh Token
 	IntegrationRefreshToken string `json:"integration_refresh_token,omitempty"`
 }
 
