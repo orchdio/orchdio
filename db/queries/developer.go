@@ -6,14 +6,14 @@ const CreateNewApp = `INSERT INTO apps (uuid, name, description, redirect_url,
                   updated_at) 
 	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now()) RETURNING uuid`
 
-const UpdateAppIntegrationCredentials = `UPDATE apps SET spotify_credentials = ( CASE WHEN $3 = 'spotify' THEN $1::bytea END),
-                deezer_credentials = ( CASE WHEN $3 = 'deezer' THEN $1::bytea END), 
-applemusic_credentials = (CASE WHEN $3 = 'applemusic' THEN $1::bytea END), 
-tidal_credentials = (CASE WHEN $3 = 'tidal' THEN $1::bytea END),
--- spotify_redirect_url = (CASE WHEN $3 = 'spotify' THEN $4 END),
--- tidal_redirect_url = (CASE WHEN $3 = 'tidal' THEN $4 END),
--- deezer_redirect_url = (CASE WHEN $3 = 'deezer' THEN $4 END),
--- applemusic_redirect_url = (CASE WHEN $3 = 'applemusic' THEN $4 END),
+const UpdateAppIntegrationCredentials = `UPDATE apps SET 
+deezer_credentials = (CASE WHEN $3 = 'deezer' AND length($1::bytea) > 0 
+    THEN  $3::bytea ELSE deezer_credentials END),
+applemusic_credentials = (CASE WHEN $3 = 'applemusic' AND length($1::bytea) > 0 
+    THEN $1::bytea ELSE applemusic_credentials END),
+spotify_credentials = (CASE WHEN $3 = 'spotify' 
+        AND length($1::bytea) > 0 THEN $1::bytea ELSE spotify_credentials END),
+tidal_credentials = (CASE WHEN $3 = 'tidal' AND length($3::bytea) > 0 THEN $3::bytea ELSE tidal_credentials END),
 
 webhook_url = $4, redirect_url = $5, authorized = true, updated_at = now() WHERE uuid = $2`
 
