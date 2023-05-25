@@ -8,12 +8,12 @@ const CreateNewApp = `INSERT INTO apps (uuid, name, description, redirect_url,
 
 const UpdateAppIntegrationCredentials = `UPDATE apps SET 
 deezer_credentials = (CASE WHEN $3 = 'deezer' AND length($1::bytea) > 0 
-    THEN  $3::bytea ELSE deezer_credentials END),
+    THEN  $1::bytea ELSE deezer_credentials END),
 applemusic_credentials = (CASE WHEN $3 = 'applemusic' AND length($1::bytea) > 0 
     THEN $1::bytea ELSE applemusic_credentials END),
 spotify_credentials = (CASE WHEN $3 = 'spotify' 
         AND length($1::bytea) > 0 THEN $1::bytea ELSE spotify_credentials END),
-tidal_credentials = (CASE WHEN $3 = 'tidal' AND length($3::bytea) > 0 THEN $3::bytea ELSE tidal_credentials END),
+tidal_credentials = (CASE WHEN $3 = 'tidal' AND length($3::bytea) > 0 THEN $1::bytea ELSE tidal_credentials END),
 
 webhook_url = $4, redirect_url = $5, authorized = true, updated_at = now() WHERE uuid = $2`
 
@@ -62,12 +62,9 @@ const UpdateApp = `UPDATE apps SET  description = (CASE WHEN $1 = '' THEN descri
 webhook_url = (CASE WHEN $4 = '' THEN webhook_url ELSE $4 END),
 redirect_url = (CASE WHEN $3 = '' THEN redirect_url ELSE $3 END),
 
-deezer_credentials = (CASE WHEN $8 = 'deezer' AND length($7::bytea) > 0 
-    THEN  $7::bytea ELSE deezer_credentials END),
-applemusic_credentials = (CASE WHEN $8 = 'applemusic' AND length($7::bytea) > 0 
-    THEN $7::bytea ELSE applemusic_credentials END),
-spotify_credentials = (CASE WHEN $8 = 'spotify' 
-        AND length($7::bytea) > 0 THEN $7::bytea ELSE spotify_credentials END),
+deezer_credentials = (CASE WHEN $8 = 'deezer' AND length($7::bytea) > 0 THEN  $7::bytea ELSE deezer_credentials END),
+applemusic_credentials = (CASE WHEN $8 = 'applemusic' AND length($7::bytea) > 0 THEN $7::bytea ELSE applemusic_credentials END),
+spotify_credentials = (CASE WHEN $8 = 'spotify' AND length($7::bytea) > 0 THEN $7::bytea ELSE spotify_credentials END),
 tidal_credentials = (CASE WHEN $8 = 'tidal' AND length($7::bytea) > 0 THEN $7::bytea ELSE tidal_credentials END),
 
 updated_at = now() WHERE uuid = $5 AND developer = $6`
