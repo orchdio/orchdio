@@ -19,36 +19,34 @@ tidal_redirect_url = (CASE WHEN $2 = 'tidal' THEN $2 END),
 deezer_redirect_url = (CASE WHEN $2 = 'deezer' THEN $2 END),
 applemusic_redirect_url = (CASE WHEN $2 = 'applemusic' THEN $2 END) WHERE uuid = $1`
 
-const FetchAppByAppID = `SELECT Id, uuid, name, description, developer, secret_key, public_key,  webhook_url,
-       verify_token, created_at, updated_at, authorized, organization,
+const FetchAppByAppID = `SELECT Id, uuid, name, description, developer, secret_key, public_key,  coalesce(webhook_url, '') as webhook_url,
+       coalesce(redirect_url, '') as redirect_url, coalesce(verify_token, ''), created_at, updated_at, authorized, organization,
        COALESCE(spotify_credentials, '') AS spotify_credentials, COALESCE(applemusic_credentials, '') AS applemusic_credentials, COALESCE(deezer_credentials, '') AS deezer_credentials, COALESCE(tidal_credentials, '') AS tidal_credentials,
 --        COALESCE(spotify_redirect_url, '') AS spotify_redirect_url, COALESCE(applemusic_redirect_url, '') AS applemusic_redirect_url, COALESCE(deezer_redirect_url, '') AS deezer_redirect_url, COALESCE(tidal_redirect_url, '') AS tidal_redirect_url
-redirect_url, coalesce(deezer_state, '') AS deezer_state
-       FROM apps WHERE uuid = $1`
+coalesce(redirect_url, ''), coalesce(deezer_state, '') AS deezer_state FROM apps WHERE uuid = $1`
+
 const FetchAppByAppIDWithoutDev = `SELECT Id, uuid, name, description, 
        developer, secret_key, public_key,
        spotify_credentials, applemusic_credentials, deezer_credentials, tidal_credentials,
 --            COALESCE(spotify_redirect_url, '') AS spotify_redirect_url, COALESCE(applemusic_redirect_url, '') AS applemusic_redirect_url, COALESCE(deezer_redirect_url, '') AS deezer_redirect_url, COALESCE(tidal_redirect_url, '') AS tidal_redirect_url,
-       redirect_url,
-    webhook_url, verify_token, 
+       coalesce(redirect_url, '') as redirect_url, coalesce(webhook_url, '') as webhook_url, coalesce(verify_token, '') as verify_token, 
     created_at, updated_at, authorized, organization, coalesce(deezer_state, '') AS deezer_state FROM apps WHERE uuid = $1;`
+
 const FetchAppByPubKeyWithoutDev = `SELECT Id, uuid, name, description, developer, secret_key, public_key,
 --        COALESCE(spotify_redirect_url, '') AS spotify_redirect_url, COALESCE(applemusic_redirect_url, '') AS applemusic_redirect_url, COALESCE(deezer_redirect_url, '') AS deezer_redirect_url, COALESCE(tidal_redirect_url, '') AS tidal_redirect_url,
-       redirect_url,
+       coalesce(redirect_url, '') as redirect_url, coalesce(webhook_url, '') as webhook_url, coalesce(verify_token, '') as verify_token,
        COALESCE(spotify_credentials, '') AS spotify_credentials, COALESCE(applemusic_credentials, '') AS applemusic_credentials, COALESCE(deezer_credentials, '') AS deezer_credentials, COALESCE(tidal_credentials, '') AS tidal_credentials, 
        webhook_url, verify_token, created_at, updated_at, authorized, organization, coalesce(deezer_state, '') AS deezer_state FROM apps WHERE public_key = $1`
 
 const FetchAppByPubKey = `SELECT Id, uuid, name, description, developer, secret_key, public_key,
 --        COALESCE(spotify_redirect_url, '') AS spotify_redirect_url, COALESCE(applemusic_redirect_url, '') AS applemusic_redirect_url, COALESCE(deezer_redirect_url, '') AS deezer_redirect_url, COALESCE(tidal_redirect_url, '') AS tidal_redirect_url, webhook_url,
-       redirect_url,
-       COALESCE(spotify_credentials, '') AS spotify_credentials, COALESCE(applemusic_credentials, '') AS applemusic_credentials, COALESCE(deezer_credentials, '') AS deezer_credentials, COALESCE(tidal_credentials, '') AS tidal_credentials,
-       verify_token, created_at, updated_at, authorized, organization, coalesce(deezer_state, '') AS deezer_state FROM apps WHERE public_key = $1 AND developer = $2`
+       coalesce(redirect_url, '') as redirect_url, coalesce(verify_token, '') as verify_token, coalesce(webhook_url, '') as webhook_url,
+       COALESCE(spotify_credentials, '') AS spotify_credentials, COALESCE(applemusic_credentials, '') AS applemusic_credentials, COALESCE(deezer_credentials, '') AS deezer_credentials, COALESCE(tidal_credentials, '') AS tidal_credentials, created_at, updated_at, authorized, organization, coalesce(deezer_state, '') AS deezer_state FROM apps WHERE public_key = $1 AND developer = $2`
 
 const FetchAppBySecretKey = `SELECT Id, uuid, name, description, developer, secret_key, public_key,
 --        COALESCE(spotify_redirect_url, '') AS spotify_redirect_url, COALESCE(applemusic_redirect_url, '') AS applemusic_redirect_url, COALESCE(deezer_redirect_url, '') AS deezer_redirect_url, COALESCE(tidal_redirect_url, '') AS tidal_redirect_url, webhook_url,
-       redirect_url,
-       COALESCE(spotify_credentials, '') AS spotify_credentials, COALESCE(applemusic_credentials, '') AS applemusic_credentials, COALESCE(deezer_credentials, '') AS deezer_credentials, COALESCE(tidal_credentials, '') AS tidal_credentials,
-            webhook_url, verify_token, created_at, updated_at, authorized, organization, coalesce(deezer_state, '') AS deezer_state FROM apps WHERE secret_key = $1`
+       coalesce(redirect_url, '') as redirect_url, coalesce(verify_token, '') as verify_token, coalesce(webhook_url, '') as webhook_url,
+       COALESCE(spotify_credentials, '') AS spotify_credentials, COALESCE(applemusic_credentials, '') AS applemusic_credentials, COALESCE(deezer_credentials, '') AS deezer_credentials, COALESCE(tidal_credentials, '') AS tidal_credentials, created_at, updated_at, authorized, organization, coalesce(deezer_state, '') AS deezer_state FROM apps WHERE secret_key = $1`
 
 const FetchAuthorizedAppDeveloperByPublicKey = `SELECT u.email, u.id, u.uuid, u.created_at, u.updated_at FROM apps a JOIN users u on a.developer = u.uuid WHERE a.public_key = $1 AND a.authorized = true`
 const FetchAuthorizedAppDeveloperBySecretKey = `SELECT u.email, u.id, u.uuid, u.created_at, u.updated_at FROM apps a JOIN users u on a.developer = u.uuid WHERE a.secret_key = $1 AND a.authorized = true`
@@ -103,10 +101,11 @@ const FetchUserAppByPlatformAndApp = `SELECT uuid, scopes FROM user_apps WHERE p
 
 const FetchAppByDeezerState = `SELECT Id, uuid, name, description, 
        developer, secret_key, public_key,
-       spotify_credentials, applemusic_credentials, deezer_credentials, tidal_credentials,
+       coalesce(redirect_url, '') as redirect_url, coalesce(verify_token, '') as verify_token, coalesce(webhook_url, '') as webhook_url,
+--        spotify_credentials, applemusic_credentials, deezer_credentials, tidal_credentials,
 --            COALESCE(spotify_redirect_url, '') AS spotify_redirect_url, COALESCE(applemusic_redirect_url, '') AS applemusic_redirect_url, COALESCE(deezer_redirect_url, '') AS deezer_redirect_url, COALESCE(tidal_redirect_url, '') AS tidal_redirect_url,
-       redirect_url,
-    webhook_url, verify_token, 
+--        redirect_url, webhook_url, verify_token,
+       coalesce(spotify_credentials, '') as spotify_credentials, coalesce(applemusic_credentials, '') as applemusic_credentials, coalesce(deezer_credentials, '') as deezer_credentials, coalesce(tidal_credentials, '') as tidal_credentials,
     created_at, updated_at, authorized, organization, coalesce(deezer_state, '') AS deezer_state FROM apps WHERE deezer_state = $1`
 
 const UpdateUserAppScopes = `UPDATE user_apps uap SET scopes = ARRAY(SELECT distinct unnest(uap.scopes || $1))
@@ -114,8 +113,7 @@ FROM apps ap WHERE ap.uuid = uap.app
         AND uap.uuid = $2 AND "user" = $3 AND platform = $4 AND app = $5`
 
 const FetchUserAppAndInfo = `SELECT uapps.uuid as app_id, uapps.platform, coalesce(uapps.platform_id, '') as platform_id, 
-       uapps.refresh_token, coalesce(uapps.username, '') as username, u.email, "user" as user_id 
-FROM user_apps uapps JOIN users u on uapps."user" = u.uuid
+       uapps.refresh_token, coalesce(uapps.username, '') as username, u.email, "user" as user_id FROM user_apps uapps JOIN users u on uapps."user" = u.uuid
 and uapps.app = $2
          WHERE ( CASE WHEN $3 = 'id' THEN u.uuid::text = $1 ELSE u.email = $1 END )
 	AND app IS NOT NULL`
