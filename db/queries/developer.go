@@ -11,8 +11,9 @@ tidal_credentials = (CASE WHEN $3 = 'tidal' THEN $1::bytea END),
 -- spotify_redirect_url = (CASE WHEN $3 = 'spotify' THEN $4 END),
 -- tidal_redirect_url = (CASE WHEN $3 = 'tidal' THEN $4 END),
 -- deezer_redirect_url = (CASE WHEN $3 = 'deezer' THEN $4 END),
--- applemusic_redirect_url = (CASE WHEN $3 = 'applemusic' THEN $4 END), 
-updated_at = now() WHERE uuid = $2`
+-- applemusic_redirect_url = (CASE WHEN $3 = 'applemusic' THEN $4 END),
+
+webhook_url = $4, redirect_url = $5, updated_at = now() WHERE uuid = $2`
 
 const UpdateAppRedirect = `UPDATE apps SET spotify_redirect_url = (CASE WHEN $2 = 'spotify' THEN $2 END),
 tidal_redirect_url = (CASE WHEN $2 = 'tidal' THEN $2 END),

@@ -43,10 +43,10 @@ func (d *NewDB) CreateNewApp(name, description, redirectURL, webhookURL, publicK
 }
 
 // UpdateIntegrationCredentials updates the integration credentials for an app. this is the app id and secret for the platform
-func (d *NewDB) UpdateIntegrationCredentials(credentials []byte, appId, redirectURL, platform string) error {
+func (d *NewDB) UpdateIntegrationCredentials(credentials []byte, appId, platform, redirectURL, webhookURL string) error {
 	log.Printf("[db][UpdateIntegrationCredentials] developer -  updating integration credentials for app: %s\n", appId)
 	// create a new app
-	_, err := d.DB.Exec(queries.UpdateAppIntegrationCredentials, credentials, appId, platform, redirectURL)
+	_, err := d.DB.Exec(queries.UpdateAppIntegrationCredentials, credentials, appId, platform, redirectURL, webhookURL)
 	if err != nil {
 		log.Printf("[db][UpdateIntegrationCredentials] developer -  error: could not update integration credentials for app: %v\n", err)
 		return err

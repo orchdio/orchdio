@@ -434,12 +434,12 @@ type CreateNewDeveloperAppData struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	//RedirectURL            string `json:"redirect_url"`
-	WebhookURL             string `json:"webhook_url"`
-	Organization           string `json:"organization"`
-	IntegrationAppSecret   string `json:"integration_app_secret"`
-	IntegrationAppId       string `json:"integration_app_id"`
-	IntegrationRedirectURL string `json:"integration_redirect_url"`
-	IntegrationPlatform    string `json:"platform"`
+	WebhookURL           string `json:"webhook_url"`
+	Organization         string `json:"organization"`
+	IntegrationAppSecret string `json:"integration_app_secret"`
+	IntegrationAppId     string `json:"integration_app_id"`
+	RedirectURL          string `json:"integration_redirect_url"`
+	IntegrationPlatform  string `json:"platform"`
 }
 
 type AppAuthToken struct {
