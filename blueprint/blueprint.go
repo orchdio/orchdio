@@ -416,11 +416,11 @@ type DeveloperApp struct {
 }
 
 type UpdateDeveloperAppData struct {
-	Name                   string `json:"name,omitempty"`
-	Description            string `json:"description,omitempty"`
-	IntegrationRedirectURL string `json:"redirect_url,omitempty"`
-	IntegrationPlatform    string `json:"integration_platform,omitempty"`
-	WebhookURL             string `json:"webhook_url,omitempty"`
+	Name                string `json:"name,omitempty"`
+	Description         string `json:"description,omitempty"`
+	RedirectURL         string `json:"redirect_url,omitempty"`
+	IntegrationPlatform string `json:"integration_platform,omitempty"`
+	WebhookURL          string `json:"webhook_url,omitempty"`
 	// for apple music, this is TEAM_ID
 	IntegrationAppID string `json:"integration_app_id,omitempty"`
 	// for apple music, this is KEY_ID
@@ -585,7 +585,7 @@ type IntegrationCredentials struct {
 	AppID           string `json:"app_id,omitempty"`
 	AppSecret       string `json:"app_secret,omitempty"`
 	AppRefreshToken string `json:"app_refresh_token,omitempty"`
-	Platform        string `json:"app_platform"`
+	Platform        string `json:"app_platform,omitempty"`
 }
 
 type SrcTargetCredentials struct {

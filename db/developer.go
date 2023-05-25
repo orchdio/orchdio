@@ -218,7 +218,7 @@ func (d *NewDB) UpdateApp(appId, platform, developer string, app blueprint.Updat
 	_, err = d.DB.Exec(queries.UpdateApp,
 		app.Description,
 		app.Name,
-		app.IntegrationRedirectURL,
+		app.RedirectURL,
 		app.WebhookURL,
 		appId,
 		developer,

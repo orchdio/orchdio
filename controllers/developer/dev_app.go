@@ -127,7 +127,7 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 	}
 
 	// update the app credentials
-	err = database.UpdateIntegrationCredentials(encryptedAppData, string(uid), body.IntegrationPlatform, redirectURL, body.WebhookURL)
+	err = database.UpdateIntegrationCredentials(encryptedAppData, string(uid), body.IntegrationPlatform, body.RedirectURL, body.WebhookURL)
 	if err != nil {
 		log.Printf("[controllers][CreateApp] developer -  error: could not update app credentials: %v\n", err)
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
@@ -158,7 +158,7 @@ func (d *Controller) UpdateApp(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Could not deserialize request body. Please make sure you pass the correct data")
 	}
 
-	if body.IntegrationPlatform == "" {
+	if body.IntegrationPlatform == "" && (body.IntegrationAppID != "" || body.IntegrationAppSecret != "" || body.IntegrationRefreshToken != "") {
 		log.Printf("[controllers][UpdateApp] developer -  error: platform is empty\n")
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Platform is empty. Please pass a valid platform")
 	}
