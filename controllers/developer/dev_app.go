@@ -127,7 +127,7 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 	}
 
 	// update the app credentials
-	err = database.UpdateIntegrationCredentials(encryptedAppData, string(uid), redirectURL, body.IntegrationPlatform, body.RedirectURL)
+	err = database.UpdateIntegrationCredentials(encryptedAppData, string(uid), body.IntegrationPlatform, redirectURL, body.WebhookURL)
 	if err != nil {
 		log.Printf("[controllers][CreateApp] developer -  error: could not update app credentials: %v\n", err)
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
