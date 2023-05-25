@@ -8,11 +8,11 @@ const UpdateAppIntegrationCredentials = `UPDATE apps SET spotify_credentials = (
                 deezer_credentials = ( CASE WHEN $3 = 'deezer' THEN $1::bytea END), 
 applemusic_credentials = (CASE WHEN $3 = 'applemusic' THEN $1::bytea END), 
 tidal_credentials = (CASE WHEN $3 = 'tidal' THEN $1::bytea END),
-spotify_redirect_url = (CASE WHEN $3 = 'spotify' THEN $4 END),
-tidal_redirect_url = (CASE WHEN $3 = 'tidal' THEN $4 END),
-deezer_redirect_url = (CASE WHEN $3 = 'deezer' THEN $4 END),
-applemusic_redirect_url = (CASE WHEN $3 = 'applemusic' THEN $4 END), updated_at = now()
-WHERE uuid = $2`
+-- spotify_redirect_url = (CASE WHEN $3 = 'spotify' THEN $4 END),
+-- tidal_redirect_url = (CASE WHEN $3 = 'tidal' THEN $4 END),
+-- deezer_redirect_url = (CASE WHEN $3 = 'deezer' THEN $4 END),
+-- applemusic_redirect_url = (CASE WHEN $3 = 'applemusic' THEN $4 END), 
+updated_at = now() WHERE uuid = $2`
 
 const UpdateAppRedirect = `UPDATE apps SET spotify_redirect_url = (CASE WHEN $2 = 'spotify' THEN $2 END),
 tidal_redirect_url = (CASE WHEN $2 = 'tidal' THEN $2 END),
@@ -59,8 +59,10 @@ const UpdateApp = `UPDATE apps SET  description = (CASE WHEN $1 = '' THEN descri
 webhook_url = (CASE WHEN $4 = '' THEN webhook_url ELSE $4 END),
 redirect_url = (CASE WHEN $3 = '' THEN redirect_url ELSE $3 END),
 
-deezer_credentials = (CASE WHEN $8 = 'deezer' AND length($7::bytea) > 0 THEN  $7::bytea ELSE deezer_credentials END),
-applemusic_credentials = (CASE WHEN $8 = 'applemusic' AND length($7::bytea) > 0 THEN $7::bytea ELSE applemusic_credentials END),
+deezer_credentials = (CASE WHEN $8 = 'deezer' AND length($7::bytea) > 0 
+    THEN  $7::bytea ELSE deezer_credentials END),
+applemusic_credentials = (CASE WHEN $8 = 'applemusic' AND length($7::bytea) > 0 
+    THEN $7::bytea ELSE applemusic_credentials END),
 spotify_credentials = (CASE WHEN $8 = 'spotify' 
         AND length($7::bytea) > 0 THEN $7::bytea ELSE spotify_credentials END),
 tidal_credentials = (CASE WHEN $8 = 'tidal' AND length($7::bytea) > 0 THEN $7::bytea ELSE tidal_credentials END),
