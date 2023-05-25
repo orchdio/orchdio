@@ -1,6 +1,8 @@
 package queries
 
-const CreateNewApp = `INSERT INTO apps (uuid, name, description, redirect_url, webhook_url, public_key, developer, secret_key, verify_token, organization, created_at,
+const CreateNewApp = `INSERT INTO apps (uuid, name, description, redirect_url, 
+                  webhook_url, public_key, developer, 
+                  secret_key, verify_token, organization, created_at,
                   updated_at) 
 	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now()) RETURNING uuid`
 
@@ -13,7 +15,7 @@ tidal_credentials = (CASE WHEN $3 = 'tidal' THEN $1::bytea END),
 -- deezer_redirect_url = (CASE WHEN $3 = 'deezer' THEN $4 END),
 -- applemusic_redirect_url = (CASE WHEN $3 = 'applemusic' THEN $4 END),
 
-webhook_url = $4, redirect_url = $5, updated_at = now() WHERE uuid = $2`
+webhook_url = $4, redirect_url = $5, authorized = true, updated_at = now() WHERE uuid = $2`
 
 const UpdateAppRedirect = `UPDATE apps SET spotify_redirect_url = (CASE WHEN $2 = 'spotify' THEN $2 END),
 tidal_redirect_url = (CASE WHEN $2 = 'tidal' THEN $2 END),

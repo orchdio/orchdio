@@ -418,7 +418,7 @@ type DeveloperApp struct {
 type UpdateDeveloperAppData struct {
 	Name                   string `json:"name,omitempty"`
 	Description            string `json:"description,omitempty"`
-	IntegrationRedirectURL string `json:"integration_redirect_url,omitempty"`
+	IntegrationRedirectURL string `json:"redirect_url,omitempty"`
 	IntegrationPlatform    string `json:"integration_platform,omitempty"`
 	WebhookURL             string `json:"webhook_url,omitempty"`
 	// for apple music, this is TEAM_ID

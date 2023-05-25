@@ -135,7 +135,7 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 
 	log.Printf("[controllers][CreateApp] developer -  new app created: %s\n", body.Name)
 	res := map[string]string{
-		"app_id": pubKey,
+		"app_id": string(uid),
 	}
 	return util.SuccessResponse(ctx, fiber.StatusCreated, res)
 }
