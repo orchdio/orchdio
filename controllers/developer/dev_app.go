@@ -158,9 +158,24 @@ func (d *Controller) UpdateApp(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Could not deserialize request body. Please make sure you pass the correct data")
 	}
 
-	if body.IntegrationPlatform == "" && (body.IntegrationAppID != "" || body.IntegrationAppSecret != "" || body.IntegrationRefreshToken != "") {
-		log.Printf("[controllers][UpdateApp] developer -  error: platform is empty\n")
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Platform is empty. Please pass a valid platform")
+	//if body.IntegrationPlatform == "" && (body.IntegrationAppID != "" || body.IntegrationAppSecret != "" || body.IntegrationRefreshToken != "") {
+	//	log.Printf("[controllers][UpdateApp] developer -  error: platform is empty\n")
+	//	return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Platform is empty. Please pass a valid platform")
+	//}
+
+	if body.IntegrationPlatform == "" {
+		if body.IntegrationAppID != "" {
+			log.Printf("[controllers][UpdateApp] developer -  error: app id is empty\n")
+			return util.ErrorResponse(ctx, fiber.StatusBadRequest, "no integration id", "Please pass a valid platform alongside the app id")
+		}
+		if body.IntegrationAppSecret != "" {
+			log.Printf("[controllers][UpdateApp] developer -  error: app secret is empty\n")
+			return util.ErrorResponse(ctx, fiber.StatusBadRequest, "no integration secret", "Please pass a valid platform alongside the app secret")
+		}
+		if body.IntegrationRefreshToken != "" {
+			log.Printf("[controllers][UpdateApp] developer -  error: refresh token is empty\n")
+			return util.ErrorResponse(ctx, fiber.StatusBadRequest, "no refresh token", "Please pass a valid platform alongside the refresh token")
+		}
 	}
 
 	// update the app
