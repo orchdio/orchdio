@@ -166,15 +166,15 @@ func (d *Controller) UpdateApp(ctx *fiber.Ctx) error {
 	if body.IntegrationPlatform == "" {
 		if body.IntegrationAppID != "" {
 			log.Printf("[controllers][UpdateApp] developer -  error: app id is empty\n")
-			return util.ErrorResponse(ctx, fiber.StatusBadRequest, "no integration id", "Please pass a valid platform alongside the app id")
+			return util.ErrorResponse(ctx, fiber.StatusBadRequest, "no platform", "Please pass a valid platform alongside the app id")
 		}
 		if body.IntegrationAppSecret != "" {
 			log.Printf("[controllers][UpdateApp] developer -  error: app secret is empty\n")
-			return util.ErrorResponse(ctx, fiber.StatusBadRequest, "no integration secret", "Please pass a valid platform alongside the app secret")
+			return util.ErrorResponse(ctx, fiber.StatusBadRequest, "no platform", "Please pass a valid platform alongside the app secret")
 		}
 		if body.IntegrationRefreshToken != "" {
 			log.Printf("[controllers][UpdateApp] developer -  error: refresh token is empty\n")
-			return util.ErrorResponse(ctx, fiber.StatusBadRequest, "no refresh token", "Please pass a valid platform alongside the refresh token")
+			return util.ErrorResponse(ctx, fiber.StatusBadRequest, "no platform", "Please pass a valid platform alongside the refresh token")
 		}
 	}
 
