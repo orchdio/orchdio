@@ -382,6 +382,8 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
+		//log.Printf("[controllers][HandleAppAuthRedirect] developer -  spotify credentials: %v\n", integrationCredentials)
+
 		client, refreshToken, err := spotify.CompleteUserAuth(ctx.Context(), r, redirectURL, integrationCredentials)
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to complete spotify user auth: %v\n", err)
@@ -421,9 +423,9 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		}
 
 		newUser := a.DB.QueryRowx(queries.CreateUserQuery, user.Email, uniqueId)
-		err = newUser.StructScan(userProfile)
-		if err != nil {
-			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to scan user during final auth: %v\n", err)
+		scErr := newUser.StructScan(userProfile)
+		if scErr != nil {
+			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to scan user during final auth: %v\n", scErr)
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
@@ -670,7 +672,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			"SCOPES":   services.BuildScopesExplanation(decodedState.Scopes, decodedState.Platform),
 		},
 		TaskID:     taskID,
-		TemplateID: 1,
+		TemplateID: 2,
 	}
 	// schedule a job to send notification email
 	emailQueue := queue.NewOrchdioQueue(a.AsyncClient, a.DB, a.Redis, a.AsynqRouter)

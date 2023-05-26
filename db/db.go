@@ -617,6 +617,12 @@ func (d *NewDB) FetchUserByIdentifier(identifier, app string) (*[]blueprint.User
 		return nil, errors.New("invalid identifier")
 	}
 
+	if isUUID {
+		opt = "id"
+	} else {
+		opt = "email"
+	}
+
 	// hack: for now, we're going to declare valid opts to prevent accidental SQL injection or whatever
 	opts := []string{"email", "id"}
 
