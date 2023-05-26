@@ -313,8 +313,8 @@ type PlaylistTaskData struct {
 
 // TaskRecord representsUs a task record in the database
 type TaskRecord struct {
-	Id         int       `json:"id,omitempty" db:"id"`
-	User       uuid.UUID `json:"user,omitempty" db:"user"`
+	Id int `json:"id,omitempty" db:"id"`
+	//User       uuid.UUID `json:"user,omitempty" db:"user"`
 	UID        uuid.UUID `json:"uid,omitempty" db:"uuid"`
 	CreatedAt  time.Time `json:"created_at,omitempty" db:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at,omitempty" db:"updated_at"`

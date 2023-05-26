@@ -6,6 +6,7 @@ package universal
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/jmoiron/sqlx"
 	"log"
@@ -63,7 +64,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 	case spotify.IDENTIFIER:
 		if app.SpotifyCredentials == nil {
 			log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - no spotify credentials provided\n")
-			return nil, blueprint.ECREDENTIALSMISSING
+			return nil, errors.New("spotify credentials not provided")
 		}
 
 		var credentials blueprint.IntegrationCredentials
@@ -83,7 +84,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 	case tidal.IDENTIFIER:
 		if len(app.TidalCredentials) == 0 {
 			log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - no tidal credentials provided\n")
-			return nil, blueprint.ECREDENTIALSMISSING
+			return nil, errors.New("tidal credentials not provided")
 		}
 
 		var credentials blueprint.IntegrationCredentials
@@ -102,7 +103,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 	case deezer.IDENTIFIER:
 		if len(app.DeezerCredentials) == 0 {
 			log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - no deezer credentials provided\n")
-			return nil, blueprint.ECREDENTIALSMISSING
+			return nil, errors.New("deezer credentials not provided")
 		}
 
 		credBytes, decErr := util.Decrypt(app.DeezerCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
@@ -120,7 +121,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 	case applemusic.IDENTIFIER:
 		if len(app.AppleMusicCredentials) == 0 {
 			log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - no apple music credentials provided\n")
-			return nil, blueprint.ECREDENTIALSMISSING
+			return nil, errors.New("apple music credentials not provided")
 		}
 		var credentials blueprint.IntegrationCredentials
 		credBytes, decErr := util.Decrypt(app.AppleMusicCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))

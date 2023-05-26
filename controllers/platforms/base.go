@@ -57,9 +57,9 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 				return util.ErrorResponse(ctx, http.StatusNotImplemented, "not supported", "Not implemented")
 			}
 
-			if conversionError == blueprint.ECREDENTIALSMISSING {
+			if strings.Contains(conversionError.Error(), "credential not provided") {
 				log.Printf("\n[controllers][platforms][deezer][ConvertEntity] error - %v\n", "Credentials missing")
-				return util.ErrorResponse(ctx, http.StatusUnauthorized, "credentials missing", fmt.Sprintf("Credentials missing for %v. Please update your app with your %s credentials and try again.", linkInfo.TargetPlatform, strings.ToUpper(linkInfo.TargetPlatform)))
+				return util.ErrorResponse(ctx, http.StatusUnauthorized, "credentials missing", fmt.Sprintf("%s. Please update your app with the missing platform's credentials.", conversionError.Error()))
 			}
 
 			log.Printf("\n[controllers][platforms][base][ConvertEntity] - Could not convert track")
