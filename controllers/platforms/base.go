@@ -59,7 +59,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 
 			log.Printf("\n[controllers][platforms][deezer][ConvertEntity] error - %v\n", conversionError.Error())
 
-			if strings.Contains(conversionError.Error(), "credential not provided") {
+			if strings.Contains(conversionError.Error(), "credentials not provided") {
 				log.Printf("\n[controllers][platforms][deezer][ConvertEntity] error - %v\n", "Credentials missing")
 				return util.ErrorResponse(ctx, http.StatusUnauthorized, "credentials missing", fmt.Sprintf("%s. Please update your app with the missing platform's credentials.", conversionError.Error()))
 			}
