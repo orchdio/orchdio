@@ -8,14 +8,15 @@ import (
 	"net/http"
 	"orchdio/blueprint"
 	"orchdio/db"
+	"orchdio/db/queries"
 	"orchdio/util"
 )
 
 // CreateOrg creates a new org
 func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 	log.Printf("[controller][account][CreateOrg] - creating org")
-
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+	// todo: implement email verification for org owner creation when they pass their email
+	//claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
 
 	var body blueprint.CreateOrganizationData
 	err := ctx.BodyParser(&body)
@@ -29,9 +30,35 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "name is empty", "Could not create organization. Name is empty")
 	}
 
-	uniqueId := uuid.NewString()
+	if body.OwnerEmail == "" {
+		log.Printf("[controller][account][CreateOrg] - owner email is empty")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "owner email is empty", "Could not create organization. Owner email is empty")
+	}
+
 	database := db.NewDB{DB: u.DB}
-	uid, err := database.CreateOrg(uniqueId, body.Name, body.Description, claims.UUID.String())
+	uniqueId := uuid.NewString()
+	var userId string
+	// if the user has been created, then we need the user id to create the org. if not, we need to create the user first
+	userInf, err := database.FindUserByEmail(body.OwnerEmail)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// create user
+			ubx := uuid.NewString()
+			_, dErr := u.DB.Exec(queries.CreateUserQuery, body.OwnerEmail, ubx)
+			if dErr != nil {
+				log.Printf("[controller][account][CreateOrg] - error creating user: %v", dErr)
+				return util.ErrorResponse(ctx, http.StatusInternalServerError, dErr, "Could not create organization")
+			}
+			log.Printf("[controller][account][CreateOrg] - user created new user with email %s and id: %s", body.OwnerEmail, ubx)
+			userId = ubx
+		}
+	}
+
+	if userInf != nil {
+		userId = userInf.UUID.String()
+	}
+	// todo: send email verification to user
+	uid, err := database.CreateOrg(uniqueId, body.Name, body.Description, userId)
 	if err != nil {
 		log.Printf("[controller][account][CreateOrg] - error creating org: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not create organization")

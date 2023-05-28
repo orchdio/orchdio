@@ -433,6 +433,7 @@ func main() {
 	orchRouter.Post("/waitlist/add", authMiddleware.AddReadWriteDeveloperToContext, userController.AddToWaitlist)
 
 	orgRouter := app.Group("/v1/org")
+	orgRouter.Post("/new", userController.CreateOrg)
 	orgRouter.Use(jwtware.New(jwtware.Config{
 		SigningKey: []byte(os.Getenv("JWT_SECRET")),
 		Claims:     &blueprint.OrchdioUserToken{},
@@ -455,7 +456,6 @@ func main() {
 	}), middleware.VerifyToken)
 
 	orchRouter.Get("/app/:appId", devAppController.FetchApp)
-	orgRouter.Post("/new", userController.CreateOrg)
 	orgRouter.Delete("/:orgId", userController.DeleteOrg)
 	orgRouter.Put("/:orgId", userController.UpdateOrg)
 	orgRouter.Get("/all", userController.FetchUserOrgs)

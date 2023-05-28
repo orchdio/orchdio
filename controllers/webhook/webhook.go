@@ -33,7 +33,7 @@ func (c *Controller) AuthenticateWebhook(ctx *fiber.Ctx) error {
 }
 
 func (c *Controller) Handle(ctx *fiber.Ctx) error {
-	claims := ctx.Locals("developer").(*blueprint.OrchdioUserToken)
+	//claims := ctx.Locals("developer").(*blueprint.OrchdioUserToken)
 	if ctx.Method() == "GET" {
 		log.Printf("[controller][webhook][Handle] - GET request. Might be webhook verification")
 		return ctx.SendStatus(http.StatusOK)
@@ -52,7 +52,7 @@ func (c *Controller) Handle(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid JSON")
 	}
 
-	user, uErr := database.FindUserByEmail(os.Getenv("ZOOVE_ADMIN_EMAIL"), claims.Platform)
+	user, uErr := database.FindUserByEmail(os.Getenv("ZOOVE_ADMIN_EMAIL"))
 	if uErr != nil {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error")
 	}

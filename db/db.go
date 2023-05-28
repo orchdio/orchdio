@@ -21,8 +21,8 @@ type NewDB struct {
 }
 
 // FindUserByEmail finds a user by their email
-func (d *NewDB) FindUserByEmail(email, platform string) (*blueprint.User, error) {
-	result := d.DB.QueryRowx(queries.FindUserByEmail, email, platform)
+func (d *NewDB) FindUserByEmail(email string) (*blueprint.User, error) {
+	result := d.DB.QueryRowx(queries.FindUserByEmail, email)
 	user := &blueprint.User{}
 
 	err := result.StructScan(user)
@@ -540,6 +540,7 @@ func (d *NewDB) CreateOrg(uid, name, description, owner string) ([]byte, error) 
 	log.Printf("[db][CreateOrg] Running query %s\n", queries.CreateNewOrg)
 	r := d.DB.QueryRowx(queries.CreateNewOrg, uid, name, description, owner)
 	var res string
+
 	err := r.Scan(&res)
 	if err != nil {
 		log.Printf("[db][CreateOrg] error creating new org. %v\n", err)
