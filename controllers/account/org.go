@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 	"log"
 	"net/http"
+	"net/mail"
 	"orchdio/blueprint"
 	"orchdio/db"
 	"orchdio/db/queries"
@@ -35,16 +37,38 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "owner email is empty", "Could not create organization. Owner email is empty")
 	}
 
+	if body.OwnerPassword == "" {
+		log.Printf("[controller][account][CreateOrg] - owner password is empty")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "owner password is empty", "Could not create organization. Owner password is empty")
+	}
+
+	validEmail, err := mail.ParseAddress(body.OwnerEmail)
+	if err != nil {
+		log.Printf("[controller][account][CreateOrg] - invalid email: %v", err)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, err, "Could not create organization. Invalid email")
+	}
+	if validEmail.Address != body.OwnerEmail {
+		log.Printf("[controller][account][CreateOrg] - invalid email: %v", err)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, err, "Could not create organization. Invalid email")
+	}
+
 	database := db.NewDB{DB: u.DB}
 	uniqueId := uuid.NewString()
 	var userId string
+
+	hashedPass, bErr := bcrypt.GenerateFromPassword([]byte(body.OwnerPassword), 20)
+	if bErr != nil {
+		log.Printf("[controller][account][CreateOrg] - error hashing password: %v", bErr)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, bErr, "Could not create organization")
+	}
+
 	// if the user has been created, then we need the user id to create the org. if not, we need to create the user first
 	userInf, err := database.FindUserByEmail(body.OwnerEmail)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// create user
 			ubx := uuid.NewString()
-			_, dErr := u.DB.Exec(queries.CreateUserQuery, body.OwnerEmail, ubx)
+			_, dErr := u.DB.Exec(queries.CreateNewOrgUser, body.OwnerEmail, ubx, string(hashedPass))
 			if dErr != nil {
 				log.Printf("[controller][account][CreateOrg] - error creating user: %v", dErr)
 				return util.ErrorResponse(ctx, http.StatusInternalServerError, dErr, "Could not create organization")
@@ -54,9 +78,18 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 		}
 	}
 
+	log.Printf("Hashed pass: %s", string(hashedPass))
 	if userInf != nil {
+		// in the case where the user was created from authing with a platform for example, there will be no password
+		// so in this case we need to update the user with the password
 		userId = userInf.UUID.String()
+		_, dErr := u.DB.Exec(queries.UpdateUserPassword, string(hashedPass), userId)
+		if dErr != nil {
+			log.Printf("[controller][account][CreateOrg] - error updating user password: %v", dErr)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, dErr, "Could not create organization")
+		}
 	}
+
 	// todo: send email verification to user
 	uid, err := database.CreateOrg(uniqueId, body.Name, body.Description, userId)
 	if err != nil {

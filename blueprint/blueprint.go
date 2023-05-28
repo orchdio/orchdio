@@ -553,9 +553,10 @@ type AuthMiddlewareUserInfo struct {
 }
 
 type CreateOrganizationData struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	OwnerEmail  string `json:"owner_email"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	OwnerEmail    string `json:"owner_email"`
+	OwnerPassword string `json:"owner_password"`
 }
 
 type Organization struct {
