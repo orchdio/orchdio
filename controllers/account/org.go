@@ -56,7 +56,7 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 	uniqueId := uuid.NewString()
 	var userId string
 
-	hashedPass, bErr := bcrypt.GenerateFromPassword([]byte(body.OwnerPassword), 20)
+	hashedPass, bErr := bcrypt.GenerateFromPassword([]byte(body.OwnerPassword), bcrypt.DefaultCost)
 	if bErr != nil {
 		log.Printf("[controller][account][CreateOrg] - error hashing password: %v", bErr)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, bErr, "Could not create organization")
@@ -78,7 +78,6 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 		}
 	}
 
-	log.Printf("Hashed pass: %s", string(hashedPass))
 	if userInf != nil {
 		// in the case where the user was created from authing with a platform for example, there will be no password
 		// so in this case we need to update the user with the password
