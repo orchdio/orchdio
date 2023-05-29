@@ -9,6 +9,7 @@ const CreateNewOrgUser = `INSERT INTO "users" (
                      email, uuid, password, created_at, updated_at
 ) VALUES ($1, $2, $3, now(), now()) ON CONFLICT DO NOTHING RETURNING id`
 const UpdateUserPassword = `UPDATE "users" SET password = $1 WHERE uuid = $2`
+const FetchUserEmailAndPassword = `SELECT id, email, password, uuid FROM users WHERE email = $1`
 
 //const UpdateUserPlatformToken = `UPDATE "users" SET spotify_token =
 //    (case when $1 = 'spotify' then spotify_token = $2 end),

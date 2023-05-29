@@ -566,7 +566,7 @@ type Organization struct {
 	Description string    `json:"description,omitempty" db:"description"`
 	CreatedAt   string    `json:"created_at,omitempty" db:"created_at"`
 	UpdatedAt   string    `json:"updated_at,omitempty" db:"updated_at"`
-	Owner       uuid.UUID `json:"owner,omitempty" db:"owner"`
+	Owner       uuid.UUID `json:"owner,omitempty" db:"owner,omitempty"`
 }
 
 type UpdateOrganizationData struct {
@@ -689,11 +689,17 @@ type User struct {
 	UUID      uuid.UUID `json:"uuid" db:"uuid"`
 	CreatedAt string    `json:"created_at" db:"created_at"`
 	UpdatedAt string    `json:"updated_at" db:"updated_at"`
+	Password  string    `json:"password,omitempty" db:"password,omitempty"`
 
 	//RefreshToken []byte      `json:"refresh_token" db:"refresh_token,omitempty"`
 	//PlatformID  string      `json:"platform_id" db:"platform_id"`
 	//Authorized  bool        `json:"authorized,omitempty" db:"authorized,omitempty"`
 	//PlatformIDs interface{} `json:"platform_ids,omitempty" db:"platform_ids,omitempty"`
+}
+
+type LoginToOrgData struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
 }
 
 //// DeveloperAppWithUserApp is similar to ```DeveloperApp``` but includes the user app id and other user app info

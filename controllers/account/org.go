@@ -187,3 +187,68 @@ func (u *UserController) FetchUserOrgs(ctx *fiber.Ctx) error {
 
 	return util.SuccessResponse(ctx, http.StatusOK, orgs)
 }
+
+func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
+	log.Printf("[controller][account][LoginUserToOrg] - logging user into org")
+	var body blueprint.LoginToOrgData
+	err := ctx.BodyParser(&body)
+	if err != nil {
+		log.Printf("[controller][account][LoginUserToOrg] - error parsing body: %v", err)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, err, "Could not login to organization. Invalid body passed")
+	}
+
+	if body.Email == "" {
+		log.Printf("[controller][account][LoginUserToOrg] - error: email is empty")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Email is empty. Please pass a valid email")
+	}
+	isValidEmail, err := mail.ParseAddress(body.Email)
+	if err != nil {
+		log.Printf("[controller][account][LoginUserToOrg] - error: email is invalid")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Email is invalid. Please pass a valid email")
+	}
+	if isValidEmail.Address != body.Email {
+		log.Printf("[controller][account][LoginUserToOrg] - error: email is invalid")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Email is invalid. Please pass a valid email")
+	}
+
+	if body.Password == "" {
+		log.Printf("[controller][account][LoginUserToOrg] - error: password is empty")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Password is empty. Please pass a valid password")
+	}
+	// todo: implement db method to login user login for user, returning the org id, name and description
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
+	if err != nil {
+		log.Printf("[controller][account][LoginUserToOrg] - error: %v", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not login to organization")
+	}
+
+	database := db.NewDB{DB: u.DB}
+	scanRes := u.DB.QueryRowx(queries.FetchUserEmailAndPassword, body.Email, string(passwordHash))
+	var user blueprint.User
+	err = scanRes.StructScan(&user)
+	if err != nil {
+		log.Printf("[controller][account][LoginUserToOrg] - error: %v", err)
+		if err == sql.ErrNoRows {
+			log.Printf("[controller][account][LoginUserToOrg] - error: could not find user with email %s during login attempt", body.Email)
+			return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid login", "Could not login to organization. Password or email is incorrect.")
+		}
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not login to organization")
+	}
+
+	ct := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(body.Password))
+	if ct != nil {
+		log.Printf("[controller][account][LoginUserToOrg] - error: %v", err)
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid login", "Could not login to organization. Password or email is incorrect.")
+	}
+
+	org, err := database.FetchOrgs(user.UUID.String())
+	if err != nil {
+		log.Printf("[controller][account][LoginUserToOrg] - error getting orgs: %v", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not get organizations")
+	}
+	for _, o := range org {
+		o.Owner = uuid.Nil
+	}
+
+	return util.SuccessResponse(ctx, http.StatusOK, org)
+}
