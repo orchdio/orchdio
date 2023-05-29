@@ -693,5 +693,3 @@ func (d *NewDB) FetchPlatformAndUserInfoByIdentifier(identifier, app, platform s
 
 	return &res, nil
 }
-
-func (d *NewDB)
