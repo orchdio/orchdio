@@ -216,14 +216,8 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Password is empty. Please pass a valid password")
 	}
 	// todo: implement db method to login user login for user, returning the org id, name and description
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
-	if err != nil {
-		log.Printf("[controller][account][LoginUserToOrg] - error: %v", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not login to organization")
-	}
-
 	database := db.NewDB{DB: u.DB}
-	scanRes := u.DB.QueryRowx(queries.FetchUserEmailAndPassword, body.Email, string(passwordHash))
+	scanRes := u.DB.QueryRowx(queries.FetchUserEmailAndPassword, body.Email)
 	var user blueprint.User
 	err = scanRes.StructScan(&user)
 	if err != nil {
