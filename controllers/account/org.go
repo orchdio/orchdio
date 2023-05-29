@@ -97,7 +97,9 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 	}
 
 	res := map[string]string{
-		"org_id": string(uid),
+		"org_id":      string(uid),
+		"name":        body.Name,
+		"description": body.Description,
 	}
 
 	log.Printf("[controller][account][CreateOrg] - org created with unique id: %s %s", body.Name, uid)

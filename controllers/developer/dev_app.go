@@ -348,9 +348,11 @@ func (d *Controller) FetchAllDeveloperApps(ctx *fiber.Ctx) error {
 
 	// get the developer from the context
 	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+	orgID := ctx.Params("orgId")
+
 	// fetch the apps
 	database := db.NewDB{DB: d.DB}
-	apps, err := database.FetchApps(claims.UUID.String())
+	apps, err := database.FetchApps(claims.UUID.String(), orgID)
 	if err != nil {
 		log.Printf("[controllers][FetchAllDeveloperApps] developer -  error: could not fetch apps in Database: %v\n", err)
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occured.")

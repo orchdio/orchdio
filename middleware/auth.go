@@ -299,3 +299,12 @@ func (a *AuthMiddleware) AddRequestPlatformToCtx(ctx *fiber.Ctx) error {
 	ctx.Locals("platform", platform)
 	return ctx.Next()
 }
+
+func (a *AuthMiddleware) CheckOrgID(ctx *fiber.Ctx) error {
+	orgID := ctx.Params("orgId")
+	if orgID == "" {
+		log.Printf("[middleware][CheckOrgID] developer -  error: orgId is empty\n")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Org ID is empty. Please pass a valid org ID.")
+	}
+	return ctx.Next()
+}

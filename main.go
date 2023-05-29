@@ -464,11 +464,11 @@ func main() {
 	// developer endpoints
 	appRouter.Get("/:appId/keys", devAppController.FetchKeys)
 	//appRouter.Get("/:appId", devAppController.FetchApp)
-	app.Get("/v1/apps/all", devAppController.FetchAllDeveloperApps)
-	appRouter.Post("/new", devAppController.CreateApp)
-	baseRouter.Post("/v1/app/disable", devAppController.DisableApp)
-	baseRouter.Post("/v1/app/enable", devAppController.EnableApp)
-	appRouter.Delete("/app/delete", devAppController.DeleteApp)
+	app.Get("/v1/:orgId/apps/all", devAppController.FetchAllDeveloperApps)
+	appRouter.Post("/:orgId/new", devAppController.CreateApp)
+	baseRouter.Post("/v1/:orgId/app/disable", devAppController.DisableApp)
+	baseRouter.Post("/v1/:orgId/app/enable", devAppController.EnableApp)
+	appRouter.Delete("/:orgId/app/delete", devAppController.DeleteApp)
 	appRouter.Put("/:appId", devAppController.UpdateApp)
 	appRouter.Post("/:appId/keys/revoke", devAppController.RevokeAppKeys)
 

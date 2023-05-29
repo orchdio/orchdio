@@ -77,7 +77,7 @@ const DisableApp = `UPDATE apps SET authorized = false WHERE uuid = $1 AND devel
 const EnableApp = `UPDATE apps SET authorized = true WHERE uuid = $1 AND developer = $2;`
 const FetchAppKeysByID = `SELECT public_key, secret_key, verify_token, spotify_credentials FROM apps WHERE uuid = $1 AND developer = $2;`
 
-const FetchAppsByDeveloper = `SELECT * FROM apps WHERE developer = $1`
+const FetchAppsByDeveloper = `SELECT * FROM apps WHERE developer = $1 and organization = $2`
 const UpdateAppKeys = `UPDATE apps SET public_key = $1, secret_key = $2, verify_token = $3, deezer_state = $4 WHERE uuid = $5`
 
 const CreateNewOrg = `INSERT INTO 
