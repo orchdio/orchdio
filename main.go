@@ -434,7 +434,7 @@ func main() {
 
 	orgRouter := app.Group("/v1/org")
 	orgRouter.Post("/new", userController.CreateOrg)
-	orgRouter.Post("/login")
+	orgRouter.Post("/login", userController.LoginUserToOrg)
 	orgRouter.Use(jwtware.New(jwtware.Config{
 		SigningKey: []byte(os.Getenv("JWT_SECRET")),
 		Claims:     &blueprint.OrchdioUserToken{},
