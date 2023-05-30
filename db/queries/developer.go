@@ -86,7 +86,7 @@ VALUES ($1, $2, $3, now(), now(), $4) RETURNING uuid`
 
 const DeleteOrg = `DELETE FROM organizations WHERE uuid = $1 AND owner = $2`
 const UpdateOrg = `UPDATE organizations SET description = (CASE WHEN $1 = '' THEN description ELSE $1 END), name = (CASE WHEN $2 = '' THEN name ELSE $2 END), updated_at = now() WHERE uuid = $3 AND owner = $4 `
-const FetchUserOrgs = `SELECT * FROM organizations WHERE owner = $1`
+const FetchUserOrgs = `SELECT * FROM organizations WHERE owner = $1 order by updated_at desc`
 
 const FetchUserApp = `SELECT * FROM user_apps WHERE uuid = $1 AND "user" = $2`
 const FetchUserAppByPlatform = `SELECT uuid, refresh_token, "user", authed_at, 

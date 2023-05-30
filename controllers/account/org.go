@@ -89,21 +89,35 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 		}
 	}
 
-	// todo: send email verification to user
-	uid, err := database.CreateOrg(uniqueId, body.Name, body.Description, userId)
+	// fetch all the orgs
+	orgs, err := database.FetchOrgs(userId)
 	if err != nil {
-		log.Printf("[controller][account][CreateOrg] - error creating org: %v", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not create organization")
+		if err == sql.ErrNoRows {
+			log.Printf("[controller][account][CreateOrg] - no orgs found for user: %s. Going to create user", userId)
+
+			// todo: send email verification to user
+			uid, cErr := database.CreateOrg(uniqueId, body.Name, body.Description, userId)
+			if cErr != nil {
+				log.Printf("[controller][account][CreateOrg] - error creating org: %v", err)
+				return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not create organization")
+			}
+
+			res := map[string]string{
+				"org_id":      string(uid),
+				"name":        body.Name,
+				"description": body.Description,
+			}
+
+			log.Printf("[controller][account][CreateOrg] - org created with unique id: %s %s", body.Name, uid)
+			return util.SuccessResponse(ctx, http.StatusCreated, res)
+		}
 	}
 
-	res := map[string]string{
-		"org_id":      string(uid),
-		"name":        body.Name,
-		"description": body.Description,
+	if len(orgs) > 0 {
+		log.Printf("[controller][account][CreateOrg] - user already has orgs. Cannot create another")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "user already has orgs", "Could not create organization. User already has orgs")
 	}
-
-	log.Printf("[controller][account][CreateOrg] - org created with unique id: %s %s", body.Name, uid)
-	return util.SuccessResponse(ctx, http.StatusCreated, res)
+	return nil
 }
 
 // DeleteOrg deletes  an org belonging to the user.
@@ -235,14 +249,27 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid login", "Could not login to organization. Password or email is incorrect.")
 	}
 
-	org, err := database.FetchOrgs(user.UUID.String())
+	orgs, err := database.FetchOrgs(user.UUID.String())
 	if err != nil {
 		log.Printf("[controller][account][LoginUserToOrg] - error getting orgs: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not get organizations")
 	}
-	for _, o := range org {
-		o.Owner = uuid.Nil
+
+	firstOrg := orgs[0]
+	// fetch the apps belonging to the org
+	apps, err := database.FetchApps(user.UUID.String(), firstOrg.UID.String())
+	if err != nil {
+		log.Printf("[controller][account][LoginUserToOrg] - error getting apps: %v", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not get apps")
 	}
 
-	return util.SuccessResponse(ctx, http.StatusOK, org)
+	result := map[string]interface{}{
+		"description": firstOrg.Description,
+		"name":        firstOrg.Name,
+		"org_id":      firstOrg.UID,
+		"apps":        apps,
+	}
+
+	// return a single org for now.
+	return util.SuccessResponse(ctx, http.StatusOK, result)
 }
