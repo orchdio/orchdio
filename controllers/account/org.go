@@ -263,11 +263,17 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not get apps")
 	}
 
+	// encrypt the result as a JWT
+	token, err := util.SignOrgLoginJWT(&blueprint.LoginOrgToken{
+		OrgID:       firstOrg.UID.String(),
+		Name:        firstOrg.Name,
+		Description: firstOrg.Description,
+		Apps:        apps,
+	})
+
 	result := map[string]interface{}{
-		"description": firstOrg.Description,
-		"name":        firstOrg.Name,
-		"org_id":      firstOrg.UID,
-		"apps":        apps,
+		"org_id": firstOrg.UID.String(),
+		"token":  string(token),
 	}
 
 	// return a single org for now.

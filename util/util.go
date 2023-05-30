@@ -102,6 +102,28 @@ func ErrorResponse(ctx *fiber.Ctx, statusCode int, err interface{}, message stri
 	})
 }
 
+// SignOrgLoginJWT signs the org login jwt token with the passed params
+func SignOrgLoginJWT(claims *blueprint.LoginOrgToken) ([]byte, error) {
+	to := jwt.NewWithClaims(jwt.SigningMethodHS256, &blueprint.LoginOrgToken{
+		Description: claims.Description,
+		Name:        claims.Name,
+		OrgID:       claims.OrgID,
+		Apps:        claims.Apps,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 12)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	})
+
+	token, err := to.SignedString([]byte(os.Getenv("jwt_secret")))
+	if err != nil {
+		log.Printf("[util]: [SignOrgLoginJWT] error -  could not sign token %v", err)
+		return nil, err
+	}
+
+	return []byte(token), nil
+}
+
 // SignJwt create a new jwt token
 func SignJwt(claims *blueprint.OrchdioUserToken) ([]byte, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &blueprint.OrchdioUserToken{

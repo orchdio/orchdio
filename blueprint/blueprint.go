@@ -702,6 +702,14 @@ type LoginToOrgData struct {
 	Password string `json:"password"`
 }
 
+type LoginOrgToken struct {
+	jwt.RegisteredClaims
+	Description string     `json:"description"`
+	Name        string     `json:"name"`
+	OrgID       string     `json:"org_id"`
+	Apps        *[]AppInfo `json:"apps"`
+}
+
 //// DeveloperAppWithUserApp is similar to ```DeveloperApp``` but includes the user app id and other user app info
 //type DeveloperAppWithUserApp struct {
 //	ID                    int            `json:"id,omitempty" db:"id"`
