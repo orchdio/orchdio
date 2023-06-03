@@ -26,7 +26,9 @@ const FetchUserEmailAndPassword = `SELECT id, email, password, uuid FROM users W
 
 const FindUserByEmail = `SELECT id, email, uuid FROM users where email = $1`
 
-const FindUserByUUID = `SELECT id, email, coalesce(username, '') AS username, uuid, created_at, updated_at, usernames, (case when $2 ILIKE '%spotify%' then spotify_token when $2 ILIKE '%deezer%' then deezer_token when $2 ILIKE '%applemusic%' then applemusic_token end) AS refresh_token, platform_ids  FROM users where uuid = $1 AND platform_id IS NOT NULL`
+//const FindUserByUUID = `SELECT id, email, coalesce(username, '') AS username, uuid, created_at, updated_at, usernames, (case when $2 ILIKE '%spotify%' then spotify_token when $2 ILIKE '%deezer%' then deezer_token when $2 ILIKE '%applemusic%' then applemusic_token end) AS refresh_token, platform_ids  FROM users where uuid = $1 AND platform_id IS NOT NULL`
+
+const FindUserByUUID = `SELECT id, email, uuid FROM users where uuid = $1`
 
 // FindUserProfileByEmail is similar to FindUserByEmail with the fact that they both fetch profile info for a user except this one fetches just the user profile we want to return
 // without including the refreshtoken and other fields. the above is currently used in the code and it has its own usecases. They are similar, but it seems there are more fields needed

@@ -437,8 +437,8 @@ func main() {
 	orgRouter.Post("/login", userController.LoginUserToOrg)
 	orgRouter.Use(jwtware.New(jwtware.Config{
 		SigningKey: []byte(os.Getenv("JWT_SECRET")),
-		Claims:     &blueprint.OrchdioUserToken{},
-		ContextKey: "authToken",
+		Claims:     &blueprint.AppJWT{},
+		ContextKey: "appToken",
 		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
 			log.Printf("Error validating auth token %v:\n", err)
 			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Authorization error", "Invalid or Expired token")
@@ -448,24 +448,33 @@ func main() {
 	appRouter := app.Group("/v1/app")
 	appRouter.Use(jwtware.New(jwtware.Config{
 		SigningKey: []byte(os.Getenv("JWT_SECRET")),
-		Claims:     &blueprint.OrchdioUserToken{},
-		ContextKey: "authToken",
+		Claims:     &blueprint.AppJWT{},
+		ContextKey: "appToken",
 		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
 			log.Printf("Error validating auth token %v:\n", err)
 			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Authorization error", "Invalid or Expired token")
 		},
-	}), middleware.VerifyToken)
-
+	}), middleware.VerifyAppJWT)
 	orchRouter.Get("/app/:appId", devAppController.FetchApp)
+
 	orgRouter.Delete("/:orgId", userController.DeleteOrg)
 	orgRouter.Put("/:orgId", userController.UpdateOrg)
 	orgRouter.Get("/all", userController.FetchUserOrgs)
 
 	appRouter.Get("/me", userController.FetchProfile)
 	// developer endpoints
+	app.Get("/v1/:orgId/apps/all", jwtware.New(jwtware.Config{
+		SigningKey: []byte(os.Getenv("JWT_SECRET")),
+		Claims:     &blueprint.AppJWT{},
+		ContextKey: "appToken",
+		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
+			log.Printf("Error validating auth token %v:\n", err)
+			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Authorization error", "Invalid or Expired token")
+		},
+	}), middleware.VerifyAppJWT, devAppController.FetchAllDeveloperApps)
+
 	appRouter.Get("/:appId/keys", devAppController.FetchKeys)
 	//appRouter.Get("/:appId", devAppController.FetchApp)
-	app.Get("/v1/:orgId/apps/all", devAppController.FetchAllDeveloperApps)
 	appRouter.Post("/:orgId/new", devAppController.CreateApp)
 	baseRouter.Post("/v1/:orgId/app/disable", devAppController.DisableApp)
 	baseRouter.Post("/v1/:orgId/app/enable", devAppController.EnableApp)

@@ -38,7 +38,8 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 
 	// get the claims from the context
 	// FIXME: perhaps use reflection to check type and gracefully handle
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken) // THIS WILL MOST LIKELY CRASH
+	//claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken) // THIS WILL MOST LIKELY CRASH
+	claims := ctx.Locals("app_jwt").(blueprint.AppJWT)
 	// deserialize the request body
 	var body blueprint.CreateNewDeveloperAppData
 	if err := ctx.BodyParser(&body); err != nil {
@@ -110,7 +111,7 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 
 	// create new developer app
 	database := db.NewDB{DB: d.DB}
-	uid, err := database.CreateNewApp(body.Name, body.Description, redirectURL, body.WebhookURL, pubKey, claims.UUID.String(), secretKey, verifySecret, body.Organization)
+	uid, err := database.CreateNewApp(body.Name, body.Description, redirectURL, body.WebhookURL, pubKey, claims.DeveloperID, secretKey, verifySecret, body.Organization)
 	if err != nil {
 		log.Printf("[controllers][CreateApp] developer -  error: could not create new developer app: %v\n", err)
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
@@ -137,6 +138,7 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 	res := map[string]string{
 		"app_id": string(uid),
 	}
+
 	return util.SuccessResponse(ctx, fiber.StatusCreated, res)
 }
 
@@ -144,7 +146,7 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 func (d *Controller) UpdateApp(ctx *fiber.Ctx) error {
 	// TODO: implement transferring organizations
 	log.Printf("[controllers][UpdateApp] developer -  updating app\n")
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken) // THIS WILL MOST LIKELY CRASH
+	claims := ctx.Locals("app_jwt").(*blueprint.AppJWT) // THIS WILL MOST LIKELY CRASH
 
 	if ctx.Params("appId") == "" {
 		log.Printf("[controllers][UpdateApp] developer -  error: App ID is empty\n")
@@ -180,7 +182,7 @@ func (d *Controller) UpdateApp(ctx *fiber.Ctx) error {
 
 	// update the app
 	database := db.NewDB{DB: d.DB}
-	err := database.UpdateApp(ctx.Params("appId"), body.IntegrationPlatform, claims.UUID.String(), body)
+	err := database.UpdateApp(ctx.Params("appId"), body.IntegrationPlatform, claims.DeveloperID, body)
 	if err != nil {
 		log.Printf("[controllers][UpdateApp] developer -  error: could not update app in Database: %v\n", err)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -196,7 +198,7 @@ func (d *Controller) UpdateApp(ctx *fiber.Ctx) error {
 func (d *Controller) DeleteApp(ctx *fiber.Ctx) error {
 	log.Printf("[controllers][DeleteApp] developer -  deleting app\n")
 
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken) // THIS WILL MOST LIKELY CRASH
+	claims := ctx.Locals("app_jwt").(*blueprint.AppJWT) // THIS WILL MOST LIKELY CRASH
 	if ctx.Params("appId") == "" {
 		log.Printf("[controllers][DeleteApp] developer -  error: appId is empty\n")
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "App ID is empty. Please pass a valid app ID")
@@ -204,7 +206,7 @@ func (d *Controller) DeleteApp(ctx *fiber.Ctx) error {
 
 	// delete the app
 	database := db.NewDB{DB: d.DB}
-	err := database.DeleteApp(ctx.Params("appId"), claims.UUID.String())
+	err := database.DeleteApp(ctx.Params("appId"), claims.DeveloperID)
 	if err != nil {
 		log.Printf("[controllers][DeleteApp] developer -  error: could not delete app in Database: %v\n", err)
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occured")
@@ -216,7 +218,6 @@ func (d *Controller) DeleteApp(ctx *fiber.Ctx) error {
 func (d *Controller) FetchApp(ctx *fiber.Ctx) error {
 	log.Printf("[controllers][FetchApp] developer -  fetching app\n")
 
-	//claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken) // THIS WILL MOST LIKELY CRASH
 	appId := ctx.Params("appId")
 	if appId == "" {
 		log.Printf("[controllers][FetchApp] developer -  error: appId is empty\n")
@@ -277,7 +278,7 @@ func (d *Controller) FetchApp(ctx *fiber.Ctx) error {
 func (d *Controller) DisableApp(ctx *fiber.Ctx) error {
 	log.Printf("[controllers][DisableApp] developer -  disabling app\n")
 	appId := ctx.Params("appId")
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken) // THIS WILL MOST LIKELY CRASH
+	claims := ctx.Locals("app_jwt").(*blueprint.AppJWT) // THIS WILL MOST LIKELY CRASH
 	if appId == "" {
 		log.Printf("[controllers][DisableApp] developer -  error: appId is empty\n")
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "appId is empty")
@@ -285,7 +286,7 @@ func (d *Controller) DisableApp(ctx *fiber.Ctx) error {
 
 	// disable the app
 	database := db.NewDB{DB: d.DB}
-	err := database.DisableApp(appId, claims.UUID.String())
+	err := database.DisableApp(appId, claims.DeveloperID)
 	if err != nil {
 		log.Printf("[controllers][DisableApp] developer -  error: could not disable app in Database: %v\n", err)
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred.")
@@ -297,7 +298,7 @@ func (d *Controller) DisableApp(ctx *fiber.Ctx) error {
 
 func (d *Controller) EnableApp(ctx *fiber.Ctx) error {
 	log.Printf("[controllers][EnableApp] developer -  enabling app\n")
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken) // THIS WILL MOST LIKELY CRASH
+	claims := ctx.Locals("app_jwt").(*blueprint.AppJWT) // THIS WILL MOST LIKELY CRASH
 	appId := ctx.Params("appId")
 	if appId == "" {
 		log.Printf("[controllers][EnableApp] developer -  error: appId is empty\n")
@@ -306,7 +307,7 @@ func (d *Controller) EnableApp(ctx *fiber.Ctx) error {
 
 	// enable the app
 	database := db.NewDB{DB: d.DB}
-	err := database.EnableApp(appId, claims.UUID.String())
+	err := database.EnableApp(appId, claims.DeveloperID)
 	if err != nil {
 		log.Printf("[controllers][EnableApp] developer -  error: could not enable app in Database: %v\n", err)
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred")
@@ -318,7 +319,7 @@ func (d *Controller) EnableApp(ctx *fiber.Ctx) error {
 
 func (d *Controller) FetchKeys(ctx *fiber.Ctx) error {
 	log.Printf("[controllers][FetchKeys] developer -  fetching keys\n")
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken) // THIS WILL MOST LIKELY CRASH
+	claims := ctx.Locals("app_jwt").(*blueprint.AppJWT) // THIS WILL MOST LIKELY CRASH
 
 	appId := ctx.Params("appId")
 	if appId == "" {
@@ -328,7 +329,7 @@ func (d *Controller) FetchKeys(ctx *fiber.Ctx) error {
 
 	// fetch the app
 	database := db.NewDB{DB: d.DB}
-	keys, err := database.FetchAppKeys(appId, claims.UUID.String())
+	keys, err := database.FetchAppKeys(appId, claims.DeveloperID)
 	if err != nil {
 		log.Printf("[controllers][FetchKeys] developer -  error: could not fetch app keys from the Database: %v\n", err)
 		if err == sql.ErrNoRows {
@@ -347,18 +348,21 @@ func (d *Controller) FetchAllDeveloperApps(ctx *fiber.Ctx) error {
 	log.Printf("[controllers][FetchAllDeveloperApps] developer -  fetching all apps\n")
 
 	// get the developer from the context
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+	claims := ctx.Locals("app_jwt").(*blueprint.AppJWT)
 	orgID := ctx.Params("orgId")
 
 	// fetch the apps
 	database := db.NewDB{DB: d.DB}
-	apps, err := database.FetchApps(claims.UUID.String(), orgID)
+	apps, err := database.FetchApps(claims.DeveloperID, orgID)
 	if err != nil {
 		log.Printf("[controllers][FetchAllDeveloperApps] developer -  error: could not fetch apps in Database: %v\n", err)
+		if err == sql.ErrNoRows {
+			return util.ErrorResponse(ctx, fiber.StatusNotFound, "not found", "No apps found for this organization.")
+		}
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occured.")
 	}
 
-	log.Printf("[controllers][FetchAllDeveloperApps] developer -  apps fetched: %s\n", claims.UUID.String())
+	log.Printf("[controllers][FetchAllDeveloperApps] developer -  apps fetched: %s\n", claims.DeveloperID)
 	return util.SuccessResponse(ctx, fiber.StatusOK, apps)
 }
 

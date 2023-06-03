@@ -28,6 +28,20 @@ func VerifyToken(ctx *fiber.Ctx) error {
 	return ctx.Next()
 }
 
+func VerifyAppJWT(ctx *fiber.Ctx) error {
+	log.Printf("[middleware][VerifyAppJWT] method - Verifying app JWT...\n")
+	jt := ctx.Locals("appToken")
+	if jt == nil {
+		log.Printf("[middlware][VerifyAppJWT] method - JWT header missing")
+		return util.ErrorResponse(ctx, http.StatusUnauthorized, "unauthorized", "JWT header is missing")
+	}
+	jwtToken := jt.(*jwt.Token)
+	claims := jwtToken.Claims.(*blueprint.AppJWT)
+	ctx.Locals("app_jwt", claims)
+	log.Printf("[middleware][VerifyAppJWT] method - Token verified. Claims set")
+	return ctx.Next()
+}
+
 func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 	// adding all in order to support wildcard. when the option is empty, we can presume they want to convert
 	// to all platforms (that they have added their credentials for and the user has authed, that is)

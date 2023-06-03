@@ -319,7 +319,7 @@ func (d *NewDB) FetchAppKeys(appId, developer string) (*blueprint.AppKeys, error
 
 // FetchApps fetches all the apps that belong to a developer.
 func (d *NewDB) FetchApps(developerId, orgID string) (*[]blueprint.AppInfo, error) {
-	log.Printf("[db][FetchAppKeys] developer - fetching apps that belong to developer: %s\n", developerId)
+	log.Printf("[db][FetchAppKeys] developer - fetching apps that belong to developer and org: %s %s\n", developerId, orgID)
 	var apps []blueprint.AppInfo
 	rows, err := d.DB.Queryx(queries.FetchAppsByDeveloper, developerId, orgID)
 	if err != nil {
@@ -344,6 +344,11 @@ func (d *NewDB) FetchApps(developerId, orgID string) (*[]blueprint.AppInfo, erro
 			Authorized:  app.Authorized,
 		}
 		apps = append(apps, appInfo)
+	}
+
+	if len(apps) == 0 {
+		log.Printf("[db][FetchAppKeys] developer - error: no apps found for developer: %s\n", developerId)
+		return nil, sql.ErrNoRows
 	}
 
 	log.Printf("[db][FetchAppKeys] developer - apps fetched: %s\n", developerId)

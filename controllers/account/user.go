@@ -102,15 +102,15 @@ func (u *UserController) AddToWaitlist(ctx *fiber.Ctx) error {
 
 // FetchProfile fetches the user profile
 func (u *UserController) FetchProfile(ctx *fiber.Ctx) error {
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
-	if claims.Email == "" {
-		log.Printf("\n[user][controller][FetchUserProfile] warning - email not passed. Please pass email")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Email not passed")
+	claims := ctx.Locals("app_jwt").(*blueprint.AppJWT)
+	if claims.DeveloperID == "" {
+		log.Printf("\n[user][controller][FetchUserProfile] warning - developer id not passed. Please pass a valid developer id")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Developer id not passed. Please pass a valid developer id")
 	}
-	log.Printf("\n[user][controller][FetchUserProfile] fetching user profile with email %s\n", claims.Email)
+	log.Printf("\n[user][controller][FetchUserProfile] fetching user profile with id %s\n", claims.DeveloperID)
 	// get the user via the email
 	database := db.NewDB{DB: u.DB}
-	user, err := database.FindUserProfileByEmail(claims.Email)
+	user, err := database.FindUserByUUID(claims.DeveloperID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("\n[user][controller][FetchUserProfile] error - user not found %v\n", err)

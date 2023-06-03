@@ -55,8 +55,8 @@ func (d *NewDB) FindUserProfileByEmail(email string) (*blueprint.UserProfile, er
 }
 
 // FindUserByUUID finds a user by their UUID
-func (d *NewDB) FindUserByUUID(id, platform string) (*blueprint.User, error) {
-	result := d.DB.QueryRowx(queries.FindUserByUUID, id, platform)
+func (d *NewDB) FindUserByUUID(id string) (*blueprint.User, error) {
+	result := d.DB.QueryRowx(queries.FindUserByUUID, id)
 	user := &blueprint.User{}
 
 	err := result.StructScan(user)

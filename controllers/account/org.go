@@ -123,7 +123,7 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 // DeleteOrg deletes  an org belonging to the user.
 func (u *UserController) DeleteOrg(ctx *fiber.Ctx) error {
 	log.Printf("[controller][account][DeleteOrg] - deleting org")
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+	claims := ctx.Locals("app_jwt").(*blueprint.AppJWT)
 
 	orgId := ctx.Params("orgId")
 
@@ -141,7 +141,7 @@ func (u *UserController) DeleteOrg(ctx *fiber.Ctx) error {
 	// if not, return error
 
 	database := db.NewDB{DB: u.DB}
-	err := database.DeleteOrg(orgId, claims.UUID.String())
+	err := database.DeleteOrg(orgId, claims.DeveloperID)
 	if err != nil {
 		log.Printf("[controller][account][DeleteOrg] - error deleting org: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not delete organization")
@@ -154,7 +154,7 @@ func (u *UserController) DeleteOrg(ctx *fiber.Ctx) error {
 // UpdateOrg updates an org belonging to the user.
 func (u *UserController) UpdateOrg(ctx *fiber.Ctx) error {
 	log.Printf("[controller][account][UpdateOrg] - updating org")
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+	claims := ctx.Locals("app_jwt").(*blueprint.AppJWT)
 
 	orgId := ctx.Params("orgId")
 	var updateData blueprint.UpdateOrganizationData
@@ -175,7 +175,7 @@ func (u *UserController) UpdateOrg(ctx *fiber.Ctx) error {
 	}
 
 	database := db.NewDB{DB: u.DB}
-	err = database.UpdateOrg(orgId, claims.UUID.String(), &updateData)
+	err = database.UpdateOrg(orgId, claims.DeveloperID, &updateData)
 	if err != nil {
 		log.Printf("[controller][account][UpdateOrg] - error updating org: %v", err)
 		if err == sql.ErrNoRows {
@@ -190,10 +190,10 @@ func (u *UserController) UpdateOrg(ctx *fiber.Ctx) error {
 // FetchUserOrgs returns all orgs belonging to the user.
 func (u *UserController) FetchUserOrgs(ctx *fiber.Ctx) error {
 	log.Printf("[controller][account][GetOrgs] - getting orgs")
-	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+	claims := ctx.Locals("app_jwt").(*blueprint.AppJWT)
 
 	database := db.NewDB{DB: u.DB}
-	orgs, err := database.FetchOrgs(claims.UUID.String())
+	orgs, err := database.FetchOrgs(claims.DeveloperID)
 	if err != nil {
 		log.Printf("[controller][account][GetOrgs] - error getting orgs: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not get organizations")
@@ -256,19 +256,11 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 	}
 
 	firstOrg := orgs[0]
-	// fetch the apps belonging to the org
-	apps, err := database.FetchApps(user.UUID.String(), firstOrg.UID.String())
-	if err != nil {
-		log.Printf("[controller][account][LoginUserToOrg] - error getting apps: %v", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not get apps")
-	}
 
 	// encrypt the result as a JWT
-	token, err := util.SignOrgLoginJWT(&blueprint.LoginOrgToken{
+	token, err := util.SignOrgLoginJWT(&blueprint.AppJWT{
 		OrgID:       firstOrg.UID.String(),
-		Name:        firstOrg.Name,
-		Description: firstOrg.Description,
-		Apps:        apps,
+		DeveloperID: user.UUID.String(),
 	})
 
 	result := map[string]interface{}{

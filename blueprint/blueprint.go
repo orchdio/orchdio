@@ -435,13 +435,16 @@ type CreateNewDeveloperAppData struct {
 	Description string `json:"description"`
 	//RedirectURL            string `json:"redirect_url"`
 	WebhookURL           string `json:"webhook_url"`
-	Organization         string `json:"organization"`
+	Organization         string `json:"organization_id"`
 	IntegrationAppSecret string `json:"integration_app_secret"`
 	IntegrationAppId     string `json:"integration_app_id"`
 	RedirectURL          string `json:"integration_redirect_url"`
 	IntegrationPlatform  string `json:"platform"`
 }
 
+// AppAuthToken is the token generated after a user tries to authorize an app. This is the one passed to the state in the platform's redirect URL for plaforms
+// that support persisting state param in final auth redirect.
+// This is NOT the same as AppJWT that is the jwt for orchdio developer apps endpoints.
 type AppAuthToken struct {
 	jwt.RegisteredClaims
 	App         string   `json:"app_id"`
@@ -708,6 +711,13 @@ type LoginOrgToken struct {
 	Name        string     `json:"name"`
 	OrgID       string     `json:"org_id"`
 	Apps        *[]AppInfo `json:"apps"`
+}
+
+// AppJWT is the JWT token for orchdio app endpoint auths.
+type AppJWT struct {
+	jwt.RegisteredClaims
+	DeveloperID string `json:"developer_id"`
+	OrgID       string `json:"organization_id"`
 }
 
 //// DeveloperAppWithUserApp is similar to ```DeveloperApp``` but includes the user app id and other user app info

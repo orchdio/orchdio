@@ -103,12 +103,10 @@ func ErrorResponse(ctx *fiber.Ctx, statusCode int, err interface{}, message stri
 }
 
 // SignOrgLoginJWT signs the org login jwt token with the passed params
-func SignOrgLoginJWT(claims *blueprint.LoginOrgToken) ([]byte, error) {
-	to := jwt.NewWithClaims(jwt.SigningMethodHS256, &blueprint.LoginOrgToken{
-		Description: claims.Description,
-		Name:        claims.Name,
+func SignOrgLoginJWT(claims *blueprint.AppJWT) ([]byte, error) {
+	to := jwt.NewWithClaims(jwt.SigningMethodHS256, &blueprint.AppJWT{
 		OrgID:       claims.OrgID,
-		Apps:        claims.Apps,
+		DeveloperID: claims.DeveloperID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 12)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
