@@ -263,9 +263,18 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 		DeveloperID: user.UUID.String(),
 	})
 
+	apps, err := database.FetchApps(user.UUID.String(), firstOrg.UID.String())
+	if err != nil {
+		log.Printf("[controller][account][LoginUserToOrg] - error getting apps: %v", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not get apps")
+	}
+
 	result := map[string]interface{}{
-		"org_id": firstOrg.UID.String(),
-		"token":  string(token),
+		"org_id":      firstOrg.UID.String(),
+		"name":        firstOrg.Name,
+		"description": firstOrg.Description,
+		"token":       string(token),
+		"apps":        apps,
 	}
 
 	// return a single org for now.
