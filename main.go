@@ -443,8 +443,19 @@ func main() {
 			log.Printf("Error validating auth token %v:\n", err)
 			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Authorization error", "Invalid or Expired token")
 		},
-	}), middleware.VerifyToken)
+	}), middleware.VerifyAppJWT)
+	orgRouter.Post("/:orgId/app/new", devAppController.CreateApp)
+	orgRouter.Get("/:orgId/apps", devAppController.FetchAllDeveloperApps)
 
+	orgRouter.Delete("/:orgId", userController.DeleteOrg)
+	orgRouter.Put("/:orgId", userController.UpdateOrg)
+	orgRouter.Get("/all", userController.FetchUserOrgs)
+
+	// apps endpoints are mostly for the developers, accessible by an api endpoint
+	// they are a little different from the org endpoints, even though orgs call app.
+	// this is for the internal orchdio dev dashboard/apps. therefore some endpoints
+	// are essentially available to orgs and also developers (using their api keys)
+	// note: perhpas this could be resolved to avoid confusion. Sync with @marvin
 	appRouter := app.Group("/v1/app")
 	appRouter.Use(jwtware.New(jwtware.Config{
 		SigningKey: []byte(os.Getenv("JWT_SECRET")),
@@ -457,25 +468,21 @@ func main() {
 	}), middleware.VerifyAppJWT)
 	orchRouter.Get("/app/:appId", devAppController.FetchApp)
 
-	orgRouter.Delete("/:orgId", userController.DeleteOrg)
-	orgRouter.Put("/:orgId", userController.UpdateOrg)
-	orgRouter.Get("/all", userController.FetchUserOrgs)
-
 	appRouter.Get("/me", userController.FetchProfile)
 	// developer endpoints
-	app.Get("/v1/:orgId/apps/all", jwtware.New(jwtware.Config{
-		SigningKey: []byte(os.Getenv("JWT_SECRET")),
-		Claims:     &blueprint.AppJWT{},
-		ContextKey: "appToken",
-		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
-			log.Printf("Error validating auth token %v:\n", err)
-			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Authorization error", "Invalid or Expired token")
-		},
-	}), middleware.VerifyAppJWT, devAppController.FetchAllDeveloperApps)
+	//app.Get("/v1/:orgId/apps/all", jwtware.New(jwtware.Config{
+	//	SigningKey: []byte(os.Getenv("JWT_SECRET")),
+	//	Claims:     &blueprint.AppJWT{},
+	//	ContextKey: "appToken",
+	//	ErrorHandler: func(ctx *fiber.Ctx, err error) error {
+	//		log.Printf("Error validating auth token: %v\n", err)
+	//		return util.ErrorResponse(ctx, http.StatusUnauthorized, "Authorization error", "Invalid or Expired token")
+	//	},
+	//}), middleware.VerifyAppJWT, devAppController.FetchAllDeveloperApps)
 
 	appRouter.Get("/:appId/keys", devAppController.FetchKeys)
 	//appRouter.Get("/:appId", devAppController.FetchApp)
-	appRouter.Post("/:orgId/new", devAppController.CreateApp)
+
 	baseRouter.Post("/v1/:orgId/app/disable", devAppController.DisableApp)
 	baseRouter.Post("/v1/:orgId/app/enable", devAppController.EnableApp)
 	appRouter.Delete("/:orgId/app/delete", devAppController.DeleteApp)

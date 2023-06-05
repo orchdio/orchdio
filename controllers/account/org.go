@@ -233,14 +233,15 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 	database := db.NewDB{DB: u.DB}
 	scanRes := u.DB.QueryRowx(queries.FetchUserEmailAndPassword, body.Email)
 	var user blueprint.User
-	err = scanRes.StructScan(&user)
-	if err != nil {
-		log.Printf("[controller][account][LoginUserToOrg] - error: %v", err)
-		if err == sql.ErrNoRows {
+	sErr := scanRes.StructScan(&user)
+	if sErr != nil {
+		log.Printf("[controller][account][LoginUserToOrg] - error: %v", sErr)
+		if sErr == sql.ErrNoRows {
 			log.Printf("[controller][account][LoginUserToOrg] - error: could not find user with email %s during login attempt", body.Email)
 			return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid login", "Could not login to organization. Password or email is incorrect.")
 		}
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not login to organization")
+		log.Printf("[controller][account][LoginUserToOrg] - error: %v", sErr)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, sErr, "Could not login to organization")
 	}
 
 	ct := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(body.Password))
@@ -264,7 +265,7 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 	})
 
 	apps, err := database.FetchApps(user.UUID.String(), firstOrg.UID.String())
-	if err != nil {
+	if err != nil && err != sql.ErrNoRows {
 		log.Printf("[controller][account][LoginUserToOrg] - error getting apps: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not get apps")
 	}

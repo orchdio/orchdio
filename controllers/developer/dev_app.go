@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -39,13 +38,19 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 	// get the claims from the context
 	// FIXME: perhaps use reflection to check type and gracefully handle
 	//claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken) // THIS WILL MOST LIKELY CRASH
-	claims := ctx.Locals("app_jwt").(blueprint.AppJWT)
+	claims := ctx.Locals("app_jwt").(*blueprint.AppJWT)
 	// deserialize the request body
 	var body blueprint.CreateNewDeveloperAppData
 	if err := ctx.BodyParser(&body); err != nil {
 		log.Printf("[controllers][CreateApp] developer -  error: could not deserialize request body: %v\n", err)
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Could not deserialize request body")
 	}
+	orgId := ctx.Params("orgId")
+	if orgId == "" {
+		log.Printf("[controllers][CreateApp] developer -  error: organization id is empty\n")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Organization ID is empty. Please pass a valid organization id")
+	}
+
 	pubKey := uuid.NewString()
 	secretKey := uuid.NewString()
 	verifySecret := uuid.NewString()
@@ -234,32 +239,33 @@ func (d *Controller) FetchApp(ctx *fiber.Ctx) error {
 
 	log.Printf("[controllers][FetchApp] developer -  app fetched: %s\n", appId)
 
-	var deezerOutBytes []byte
-	var spotifyOutBytes []byte
-	//var appleOutBytes []byte
+	var creds []blueprint.IntegrationCredentials
 
-	if string(app.DeezerCredentials) != "" {
-		log.Printf("[controllers][FetchApp] developer -  decrypting deezer credentials\n")
-		deezerOutBytes, err = util.Decrypt(app.DeezerCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
-		if err != nil {
-			log.Printf("[controllers][FetchApp] developer -  error: could not decrypt deezer credentials: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred. Could not decrypt deezer credentials")
-		}
-
-		log.Printf("[controllers][FetchApp] developer -  deezer credentials decrypted\n")
-		spew.Dump(string(deezerOutBytes))
+	var credK = map[string][]byte{
+		"spotify":    app.SpotifyCredentials,
+		"deezer":     app.DeezerCredentials,
+		"applemusic": app.AppleMusicCredentials,
+		"tidal":      app.TidalCredentials,
 	}
 
-	if string(app.SpotifyCredentials) != "" {
-		log.Printf("[controllers][FetchApp] developer -  decrypting spotify credentials\n")
-		spotifyOutBytes, err = util.Decrypt(app.SpotifyCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
-		if err != nil {
-			log.Printf("[controllers][FetchApp] developer -  error: could not decrypt spotify credentials: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred. Could not decrypt spotify credentials")
-		}
+	for k, v := range credK {
+		log.Printf("[controllers][FetchApp] developer -  decrypting %s credentials\n", k)
+		if len(v) > 0 {
+			outBytes, err := util.Decrypt(v, []byte(os.Getenv("ENCRYPTION_SECRET")))
+			if err != nil {
+				log.Printf("[controllers][FetchApp] developer -  error: could not decrypt %s credentials: %v\n", k, err)
+				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred. Could not decrypt credentials")
+			}
 
-		log.Printf("[controllers][FetchApp] developer -  spotify credentials decrypted\n")
-		spew.Dump(string(spotifyOutBytes))
+			log.Printf("[controllers][FetchApp] developer -  %s credentials decrypted\n", k)
+			var cred blueprint.IntegrationCredentials
+			err = json.Unmarshal(outBytes, &cred)
+			if err != nil {
+				log.Printf("[controllers][FetchApp] developer -  error: could not deserialize %s credentials: %v\n", k, err)
+				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred. Could not deserialize credentials")
+			}
+			creds = append(creds, cred)
+		}
 	}
 
 	info := &blueprint.AppInfo{
@@ -269,7 +275,8 @@ func (d *Controller) FetchApp(ctx *fiber.Ctx) error {
 		RedirectURL: app.RedirectURL,
 		WebhookURL:  app.WebhookURL,
 		PublicKey:   app.PublicKey.String(),
-		Authorized:  false,
+		Authorized:  app.Authorized,
+		Credentials: creds,
 	}
 
 	return util.SuccessResponse(ctx, fiber.StatusOK, info)
