@@ -396,7 +396,6 @@ func main() {
 		Header:     "x-orchdio-request-id",
 		ContextKey: "orchdio-request-id",
 	}))
-	app.Get("/kanye/info", monitor.New(monitor.Config{Title: "Orchdio-Core health info"}))
 	baseRouter := app.Group("/api/v1")
 	orchRouter := app.Group("/v1")
 

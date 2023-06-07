@@ -112,13 +112,13 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 }
 
 // SearchTrackWithTitle searches for a track using the query.
-func (s *Service) SearchTrackWithTitle(title, artiste string, red *redis.Client) (*blueprint.TrackSearchResult, error) {
+func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackSearchResult, error) {
 	strippedTitleInfo := util.ExtractTitle(title)
 	// if the title is in the format of "title (feat. artiste)" then we search for the title without the feat. artiste
 	log.Printf("Apple music: Searching with stripped artiste: %s. Original artiste: %s", strippedTitleInfo.Title, artiste)
-	if red.Exists(context.Background(), artiste).Val() == 1 {
+	if s.RedisClient.Exists(context.Background(), artiste).Val() == 1 {
 		log.Printf("[services][applemusic][SearchTrackWithTitle] Track found in cache: %v\n", artiste)
-		track, err := red.Get(context.Background(), util.NormalizeString(artiste)).Result()
+		track, err := s.RedisClient.Get(context.Background(), util.NormalizeString(artiste)).Result()
 		if err != nil {
 			log.Printf("[services][applemusic][SearchTrackWithTitle] Error fetching track from cache: %v\n", err)
 			return nil, err
@@ -192,7 +192,7 @@ func (s *Service) SearchTrackWithTitle(title, artiste string, red *redis.Client)
 	}
 
 	if lo.Contains(track.Artists, artiste) {
-		err = red.MSet(context.Background(), map[string]interface{}{
+		err = s.RedisClient.MSet(context.Background(), map[string]interface{}{
 			util.NormalizeString(artiste): string(serializedTrack),
 		}).Err()
 		if err != nil {
@@ -206,8 +206,8 @@ func (s *Service) SearchTrackWithTitle(title, artiste string, red *redis.Client)
 }
 
 // SearchTrackWithTitleChan searches for tracks using title and artistes but do so asynchronously.
-func (s *Service) SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup, red *redis.Client) {
-	track, err := s.SearchTrackWithTitle(title, artiste, red)
+func (s *Service) SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
+	track, err := s.SearchTrackWithTitle(title, artiste)
 	if err != nil {
 		log.Printf("[services][applemusic][SearchTrackWithTitleChan] Error fetching track: %v\n", err)
 		defer wg.Done()
@@ -244,7 +244,7 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 			results = append(results, *deserializedTrack)
 			continue
 		}
-		go s.SearchTrackWithTitleChan(track.Title, track.Artistes[0], ch, &wg, red)
+		go s.SearchTrackWithTitleChan(track.Title, track.Artistes[0], ch, &wg)
 		chTracks := <-ch
 		if chTracks == nil {
 			omittedTracks = append(omittedTracks, blueprint.OmittedTracks{

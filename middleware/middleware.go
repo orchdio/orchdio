@@ -85,7 +85,7 @@ func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "URL info not found.")
 	}
 
-	if conversionBody["target_platform"] == "" {
+	if conversionBody["target_platform"] == "" || conversionBody["target_platform"] == "all" {
 		log.Printf("\n[middleware][ExtractLinkInfoFromBody] warning - Track conversion but no target platform specified. \n")
 		conversionBody["target_platform"] = "all"
 	}
