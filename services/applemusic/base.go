@@ -244,6 +244,7 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 			results = append(results, *deserializedTrack)
 			continue
 		}
+		// async goes brrrr
 		go s.SearchTrackWithTitleChan(track.Title, track.Artistes[0], ch, &wg)
 		chTracks := <-ch
 		if chTracks == nil {
