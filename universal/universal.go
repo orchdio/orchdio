@@ -322,6 +322,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 	}
 
 	for _, tR := range toResult {
+		// copy target result into a temp cp variable to avoid concurrency issues
 		cp := tR
 		for k, v := range cp {
 			plat := k
@@ -340,19 +341,6 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 			}
 		}
 	}
-
-	//switch info.TargetPlatform {
-	//case spotify.IDENTIFIER:
-	//	conversion.Platforms.Spotify = toResult[0]
-	//case tidal.IDENTIFIER:
-	//	conversion.Platforms.Tidal = toResult[0]
-	//case applemusic.IDENTIFIER:
-	//	conversion.Platforms.AppleMusic = toResult[0]
-	//case deezer.IDENTIFIER:
-	//	conversion.Platforms.Deezer = toResult[0]
-	//case ytmusic.IDENTIFIER:
-	//	conversion.Platforms.YTMusic = toResult[0]
-	//}
 
 	log.Printf("[controllers][platforms][deezer][ConvertEntity] info - conversion done")
 	return &conversion, nil
