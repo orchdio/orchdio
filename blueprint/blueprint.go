@@ -67,11 +67,13 @@ type UserProfile struct {
 //}
 
 type AppleMusicAuthBody struct {
-	Token     string `json:"token"`
-	Email     string `json:"email"`
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
-	State     string `json:"state"`
+	MusicToken    string `json:"token"`
+	Email         string `json:"email"`
+	FirstName     string `json:"first_name"`
+	LastName      string `json:"last_name"`
+	State         string `json:"state"`
+	EmailVerified bool   `json:"email_verified,omitempty"`
+	App           string `json:"app,omitempty"`
 }
 
 // swagger:response redirectAuthResponse
@@ -426,7 +428,7 @@ type UpdateDeveloperAppData struct {
 	// for apple music, this is KEY_ID
 	IntegrationAppSecret string `json:"integration_app_secret,omitempty"`
 	// for apple music, this is API_KEY
-	// for TIDAL, this is the Refresh Token
+	// for TIDAL, this is the Refresh MusicToken
 	IntegrationRefreshToken string `json:"integration_refresh_token,omitempty"`
 }
 
@@ -621,6 +623,7 @@ type CreateNewUserAppData struct {
 	RefreshToken []byte    `json:"refreshToken"`
 	Scopes       []string  `json:"scopes"`
 	User         uuid.UUID `json:"user"`
+	// todo: remove this. make it automatically use current timestamp. assignee: @jhym3s
 	LastAuthedAt string    `json:"last_authed_at"`
 	App          uuid.UUID `json:"app"`
 	Platform     string    `json:"platform"`

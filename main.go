@@ -368,6 +368,8 @@ func main() {
 	platformsControllers := platforms.NewPlatform(redisClient, db, asyncClient, asynqMux)
 	whController := webhook.NewWebhookController(db, redisClient)
 
+	// Migrate
+	//dbDriver, err := migrate.NewWithDatabaseInstance("file://./db/migrations", "postgres", db)
 	/**
 	 ==================================================================
 	+
@@ -378,7 +380,9 @@ func main() {
 	 ==================================================================
 	*/
 
-	app.Use(cors.New(), authMiddleware.LogIncomingRequest, authMiddleware.HandleTrolls)
+	app.Use(cors.New(cors.Config{
+		AllowMethods: "GET,POST,HEAD,PUT,DELETE,PATCH",
+	}), authMiddleware.LogIncomingRequest, authMiddleware.HandleTrolls)
 	app.Use(compress.New(compress.Config{
 		Level: compress.LevelBestSpeed,
 	}))
@@ -424,9 +428,9 @@ func main() {
 	orchRouter.Get("/account/:userId/:platform/playlists", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformPlaylists)
 	// todo: add nb_artists to data response
 	orchRouter.Get("/account/:userId/:platform/artists", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformArtists)
-	orchRouter.Get("/account/:userId/:platform/albums", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, authMiddleware.VerifyUserActionDeveloper, platformsControllers.FetchPlatformAlbums)
+	orchRouter.Get("/account/:userId/:platform/albums", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, authMiddleware.VerifyUserActionApp, platformsControllers.FetchPlatformAlbums)
 	// TODO: implement for tidal
-	orchRouter.Get("/account/:userId/:platform/history/tracks", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, authMiddleware.VerifyUserActionDeveloper, platformsControllers.FetchTrackListeningHistory)
+	orchRouter.Get("/account/:userId/:platform/history/tracks", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, authMiddleware.VerifyUserActionApp, platformsControllers.FetchTrackListeningHistory)
 
 	orchRouter.Post("/follow", authMiddleware.AddReadWriteDeveloperToContext, userController.FollowPlaylist)
 	orchRouter.Post("/waitlist/add", authMiddleware.AddReadWriteDeveloperToContext, userController.AddToWaitlist)
@@ -447,7 +451,7 @@ func main() {
 	orgRouter.Get("/:orgId/apps", devAppController.FetchAllDeveloperApps)
 
 	orgRouter.Delete("/:orgId", userController.DeleteOrg)
-	orgRouter.Put("/:orgId", userController.UpdateOrg)
+	orgRouter.Patch("/:orgId", userController.UpdateOrg)
 	orgRouter.Get("/all", userController.FetchUserOrgs)
 
 	// apps endpoints are mostly for the developers, accessible by an api endpoint
@@ -485,7 +489,9 @@ func main() {
 	baseRouter.Post("/v1/:orgId/app/disable", devAppController.DisableApp)
 	baseRouter.Post("/v1/:orgId/app/enable", devAppController.EnableApp)
 	appRouter.Delete("/:orgId/app/delete", devAppController.DeleteApp)
-	appRouter.Put("/:appId", devAppController.UpdateApp)
+	appRouter.Patch("/:appId", devAppController.UpdateApp)
+	appRouter.Delete("/:appId/credentials/:platform", devAppController.DeletePlatformIntegrationCredentials)
+
 	appRouter.Post("/:appId/keys/revoke", devAppController.RevokeAppKeys)
 
 	//baseRouter.Get("/heartbeat", getInfo)

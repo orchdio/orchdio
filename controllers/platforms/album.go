@@ -17,14 +17,23 @@ import (
 // FetchPlatformAlbums fetches the user's library albums from the specified platform
 func (p *Platforms) FetchPlatformAlbums(ctx *fiber.Ctx) error {
 	log.Println("[platforms][FetchPlatformAlbums] info - Fetching platform albums")
-	userCtx := ctx.Locals("userCtx").(*blueprint.AuthMiddlewareUserInfo)
+	appCtx := ctx.Locals("appCtx").(*blueprint.AuthMiddlewareUserInfo)
 	app := ctx.Locals("app").(*blueprint.DeveloperApp)
-	platform := userCtx.Platform
+	platform := appCtx.Platform
 
 	switch platform {
 	case applemusic.IDENTIFIER:
+		decryptedCredentials, err := util.DecryptIntegrationCredentials(app.AppleMusicCredentials)
+		if err != nil {
+			if err == blueprint.ENOCREDENTIALS {
+				log.Printf("[platforms][FetchPlatformAlbums] error - Apple Music credentials are nil")
+				return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "authorization error", "The developer has not provided Apple Music credentials for this app and cannot access this resource.")
+			}
+		}
 		// TODO: implement fetching user library albums from apple music api
-		albums, err := applemusic.FetchLibraryAlbums(userCtx.RefreshToken)
+		// remember that for applemjsic, app refresh token field is equal to the apple api key. its encrypted
+		// under the refreshtoken field for conformity with the other platforms.
+		albums, err := applemusic.FetchLibraryAlbums(decryptedCredentials.AppRefreshToken, appCtx.RefreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformAlbums] error - %s", err.Error())
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to fetch albums from Apple Music")
@@ -55,7 +64,7 @@ func (p *Platforms) FetchPlatformAlbums(ctx *fiber.Ctx) error {
 		}
 
 		deezerService := deezer.NewService(&deezerCredentials, p.DB, p.Redis)
-		albums, err := deezerService.FetchLibraryAlbums(userCtx.RefreshToken)
+		albums, err := deezerService.FetchLibraryAlbums(appCtx.RefreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformAlbums] error - %s", err.Error())
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to fetch albums from Deezer")
@@ -83,7 +92,7 @@ func (p *Platforms) FetchPlatformAlbums(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to decrypt Spotify credentials")
 		}
 		spotifyService := spotify.NewService(&credentials, p.DB, p.Redis)
-		albums, err := spotifyService.FetchLibraryAlbums(userCtx.RefreshToken)
+		albums, err := spotifyService.FetchLibraryAlbums(appCtx.RefreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformAlbums] error - %s", err.Error())
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to fetch albums from Spotify")
@@ -97,7 +106,7 @@ func (p *Platforms) FetchPlatformAlbums(ctx *fiber.Ctx) error {
 
 	case tidal.IDENTIFIER:
 		log.Printf("[platforms][FetchPlatformAlbums] info - Fetching user library albums from Tidal")
-		log.Printf("[platforms][FetchPlatformAlbums] info - Platform ID: %s", userCtx.PlatformID)
+		log.Printf("[platforms][FetchPlatformAlbums] info - Platform ID: %s", appCtx.PlatformID)
 		var tidalCredentials blueprint.IntegrationCredentials
 		if app.TidalCredentials == nil {
 			log.Printf("[platforms][FetchPlatformAlbums] error - Tidal credentials are nil")
@@ -115,7 +124,7 @@ func (p *Platforms) FetchPlatformAlbums(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to decrypt Tidal credentials")
 		}
 		tidalService := tidal.NewService(&tidalCredentials, p.DB, p.Redis)
-		albums, err := tidalService.FetchLibraryAlbums(userCtx.PlatformID)
+		albums, err := tidalService.FetchLibraryAlbums(appCtx.PlatformID)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformAlbums] error - %s", err.Error())
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to fetch albums from Tidal")

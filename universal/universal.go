@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/jmoiron/sqlx"
 	"log"
 	"orchdio/blueprint"
@@ -99,6 +100,14 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not unmarshal tidal credentials: %v\n", err)
 			return nil, err
 		}
+
+		log.Printf("Creating new TIDAL service instance with the credentials:: =>")
+		spew.Dump(&credentials)
+		if credentials.AppRefreshToken == "" {
+			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - tidal refresh token not present in TIDAL credentials. Please update the app and try again.\n")
+			return nil, blueprint.EBADCREDENTIALS
+		}
+
 		fromService = tidal.NewService(&credentials, pg, red)
 		//fromPlatformIntegrationCreds = credentials
 	case deezer.IDENTIFIER:
@@ -135,6 +144,12 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not unmarshal apple music credentials: %v\n", err)
 			return nil, err
 		}
+
+		if credentials.AppRefreshToken == "" {
+			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - apple music credentials not provided\n")
+			return nil, blueprint.EBADCREDENTIALS
+		}
+
 		fromService = applemusic.NewService(&credentials, pg, red)
 	case ytmusic.IDENTIFIER:
 		// we dont need credentials for ytmusic yet but we still need to initialize the service
@@ -176,6 +191,11 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 			return nil, err
 		}
 
+		if credentials.AppRefreshToken == "" {
+			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - tidal credentials not provided\n")
+			return nil, blueprint.EBADCREDENTIALS
+		}
+
 		s := tidal.NewService(&credentials, pg, red)
 		toService = append(toService, map[string]interface{}{tidal.IDENTIFIER: s})
 	case deezer.IDENTIFIER:
@@ -213,6 +233,11 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not unmarshal apple music credentials: %v\n", err)
 			return nil, err
 		}
+		if credentials.AppRefreshToken == "" {
+			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - apple music credentials not provided\n")
+			return nil, blueprint.EBADCREDENTIALS
+		}
+
 		s := applemusic.NewService(&credentials, pg, red)
 		toService = append(toService, map[string]interface{}{applemusic.IDENTIFIER: s})
 	}
@@ -227,7 +252,6 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 		}
 
 		for t, appCred := range appCredentials {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] creating integration credentials for all platforms. Current platform ==> %s\n", t)
 			// copy the key and value to avoid concurrency issues. dont trust the original map.
 			plat := t
 			encryptedCred := appCred
@@ -253,7 +277,6 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 				s := applemusic.NewService(decryptedCredentials, pg, red)
 				toService = append(toService, map[string]interface{}{applemusic.IDENTIFIER: s})
 			}
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] created integration credentials for all platforms. Current platform ==> %s\n", t)
 		}
 	}
 
@@ -279,7 +302,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 		fromResult = res
 
 		// fetch the conversion methods for the target platforms.
-		for _, tS := range toService {
+		for idx, tS := range toService {
 			cp := tS
 			for k, v := range cp {
 				plat := k
@@ -290,6 +313,15 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 				}
 
 				// todo: implement nil check
+				if res == nil && idx == 0 {
+					log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - search result is nil\n")
+					return nil, blueprint.EUNKNOWN
+				}
+
+				if res == nil {
+					continue
+				}
+
 				if methodSearchTrackWithTitle.IsValid() {
 					ins2 := make([]reflect.Value, 2)
 					ins2[0] = reflect.ValueOf(res.Title)
@@ -518,6 +550,8 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (
 		ins := make([]reflect.Value, 1)
 		ins[0] = reflect.ValueOf(info.EntityID)
 		outs := methodSearchPlaylistWithID.Call(ins)
+		log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist] Playlist conversion stuff here ")
+		spew.Dump(outs)
 		if len(outs) > 0 {
 			if outs[0].Interface() == nil {
 				return nil, blueprint.ENORESULT

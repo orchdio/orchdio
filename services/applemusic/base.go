@@ -21,16 +21,21 @@ import (
 )
 
 type Service struct {
-	IntegrationID     string
-	integrationSecret string
+	IntegrationTeamID string
+	IntegrationKeyID  string
+	IntegrationAPIKey string
 	RedisClient       *redis.Client
 	PgClient          *sqlx.DB
 }
 
 func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client) *Service {
 	return &Service{
-		IntegrationID:     credentials.AppID,
-		integrationSecret: credentials.AppSecret,
+		// this is the equivalent of the team id
+		IntegrationTeamID: credentials.AppID,
+		// this is equivalent to the key id
+		IntegrationKeyID: credentials.AppSecret,
+		// this is equivalent to the apple api key
+		IntegrationAPIKey: credentials.AppRefreshToken,
 		RedisClient:       redisClient,
 		PgClient:          pgClient,
 	}
@@ -46,7 +51,15 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 	}
 
 	log.Printf("[services][applemusic][SearchTrackWithLink] Track not found in cache, fetching from Apple Music: %v\n", info.EntityID)
-	tp := applemusic.Transport{Token: os.Getenv("APPLE_MUSIC_API_KEY")}
+
+	// just for dev, log if the credentials are empty
+	if s.IntegrationAPIKey != "" {
+		log.Printf("[services][applemusic][SearchTrackWithLink] Apple music API key is empty on decoded credentials\n")
+	} else {
+		log.Printf("[services][applemusic][SearchTrackWithLink] Apple music API key is not empty on decoded credentials\n")
+	}
+
+	tp := applemusic.Transport{Token: s.IntegrationAPIKey}
 	client := applemusic.NewClient(tp.Client())
 	tracks, response, err := client.Catalog.GetSong(context.Background(), "us", info.EntityID, nil)
 	if err != nil {
@@ -133,7 +146,14 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 	}
 
 	log.Printf("[services][applemusic][SearchTrackWithTitle] Track not found in cache, fetching track %s from Apple Music with artist %s\n", strippedTitleInfo.Title, util.NormalizeString(artiste))
-	tp := applemusic.Transport{Token: os.Getenv("APPLE_MUSIC_API_KEY")}
+
+	if s.IntegrationAPIKey != "" {
+		log.Printf("[services][applemusic][SearchTrackWithTitle] Apple music API key is empty on decoded credentials\n")
+	} else {
+		log.Printf("[services][applemusic][SearchTrackWithTitle] Apple music API key is not empty on decoded credentials\n")
+	}
+
+	tp := applemusic.Transport{Token: s.IntegrationAPIKey}
 	client := applemusic.NewClient(tp.Client())
 	results, response, err := client.Catalog.Search(context.Background(), "us", &applemusic.SearchOptions{
 		Term: fmt.Sprintf("%s+%s", artiste, strippedTitleInfo.Title),
@@ -262,16 +282,14 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 
 // SearchPlaylistWithID fetches a list of tracks for a playlist and saves the last modified date to redis
 func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResult, error) {
-	tp := applemusic.Transport{Token: os.Getenv("APPLE_MUSIC_API_KEY")}
+	tp := applemusic.Transport{Token: s.IntegrationAPIKey}
 	client := applemusic.NewClient(tp.Client())
 	playlist := &blueprint.PlaylistSearchResult{}
 	duration := 0
 
 	var tracks []blueprint.TrackSearchResult
 
-	//for page = 1; ; page++ {
 	log.Printf("[services][applemusic][SearchPlaylistWithID] Fetching playlist tracks: %v\n", id)
-	//id = strings.ReplaceAll(id, "/", "")
 	playlistId := strings.ReplaceAll(id, "/", "")
 	log.Printf("[services][applemusic][SearchPlaylistWithID] Playlist id: %v\n", playlistId)
 	results, response, err := client.Catalog.GetPlaylist(context.Background(), "us", playlistId, nil)
@@ -360,7 +378,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 	ax := axios.NewInstance(&axios.InstanceConfig{
 		BaseURL: "https://api.music.apple.com",
 		Headers: map[string][]string{
-			"Authorization": {fmt.Sprintf("Bearer %s", os.Getenv("APPLE_MUSIC_API_KEY"))},
+			"Authorization": {fmt.Sprintf("Bearer %s", s.IntegrationAPIKey)},
 		},
 	})
 
@@ -531,7 +549,6 @@ func (s *Service) CreateNewPlaylist(title, description, musicToken string, track
 	playlistData := applemusic.CreateLibraryPlaylistTrackData{
 		Data: playlistTracks,
 	}
-
 	response, err = client.Me.AddLibraryTracksToPlaylist(context.Background(), playlist.Data[0].Id, playlistData)
 	if err != nil {
 		log.Printf("[services][applemusic][CreateNewPlaylist] Error adding tracks to playlist: %v\n", err)
@@ -544,14 +561,13 @@ func (s *Service) CreateNewPlaylist(title, description, musicToken string, track
 	}
 
 	log.Printf("[services][applemusic][CreateNewPlaylist] Successfully created playlist: %v\n", playlist.Data[0].Href)
-
 	return []byte(fmt.Sprintf("https://music.apple.com/us/playlist/%s", playlist.Data[0].Id)), nil
 }
 
 // FetchUserPlaylists fetches the user's playlists
 func (s *Service) FetchUserPlaylists(token string) ([]UserPlaylistResponse, error) {
 	log.Printf("[services][applemusic][FetchUserPlaylists] Fetching user playlists\n")
-	tp := applemusic.Transport{Token: os.Getenv("APPLE_MUSIC_API_KEY"), MusicUserToken: token}
+	tp := applemusic.Transport{Token: s.IntegrationAPIKey, MusicUserToken: token}
 	client := applemusic.NewClient(tp.Client())
 	// get the user's playlists
 	p, _, err := client.Me.GetAllLibraryPlaylists(context.Background(), &applemusic.PageOptions{
@@ -590,8 +606,8 @@ func (s *Service) FetchUserPlaylists(token string) ([]UserPlaylistResponse, erro
 		inst := axios.NewInstance(&axios.InstanceConfig{
 			BaseURL: "https://api.music.apple.com/v1",
 			Headers: http.Header{
-				"Authorization":    []string{fmt.Sprintf("Bearer %s", os.Getenv("APPLE_MUSIC_API_KEY"))},
-				"Music-User-Token": []string{token},
+				"Authorization":         []string{fmt.Sprintf("Bearer %s", s.IntegrationAPIKey)},
+				"Music-User-MusicToken": []string{token},
 			},
 		})
 		link := fmt.Sprintf("/me/library/playlists/%s/catalog", playlist.Id)
@@ -658,8 +674,8 @@ func (s *Service) FetchUserArtists(token string) (*blueprint.UserLibraryArtists,
 	inst := axios.NewInstance(&axios.InstanceConfig{
 		BaseURL: "https://api.music.apple.com/v1",
 		Headers: http.Header{
-			"Authorization":    []string{fmt.Sprintf("Bearer %s", os.Getenv("APPLE_MUSIC_API_KEY"))},
-			"Music-User-Token": []string{token},
+			"Authorization":         []string{fmt.Sprintf("Bearer %s", s.IntegrationAPIKey)},
+			"Music-User-MusicToken": []string{token},
 		},
 	})
 
@@ -715,9 +731,9 @@ func (s *Service) FetchUserArtists(token string) (*blueprint.UserLibraryArtists,
 			return nil, err
 		}
 		artistInfo := &UserArtistInfoResponse{}
-		err = json.Unmarshal(artistResponse.Data, artistInfo)
-		if err != nil {
-			log.Printf("[services][applemusic][FetchUserArtists] Error getting deserializing artist info: %v")
+		mErr := json.Unmarshal(artistResponse.Data, artistInfo)
+		if mErr != nil {
+			log.Printf("[services][applemusic][FetchUserArtists] Error getting deserializing artist info: %v", mErr)
 		}
 		data := artistInfo.Data[0]
 		artist := blueprint.UserArtist{
@@ -736,12 +752,12 @@ func (s *Service) FetchUserArtists(token string) (*blueprint.UserLibraryArtists,
 }
 
 // FetchLibraryAlbums fetches the user's library albums
-func FetchLibraryAlbums(token string) ([]blueprint.LibraryAlbum, error) {
+func FetchLibraryAlbums(apikey, token string) ([]blueprint.LibraryAlbum, error) {
 	inst := axios.NewInstance(&axios.InstanceConfig{
 		BaseURL: "https://api.music.apple.com/v1",
 		Headers: http.Header{
-			"Authorization":    []string{fmt.Sprintf("Bearer %s", os.Getenv("APPLE_MUSIC_API_KEY"))},
-			"Music-User-Token": []string{token},
+			"Authorization":         []string{fmt.Sprintf("Bearer %s", apikey)},
+			"Music-User-MusicToken": []string{token},
 		},
 	})
 
@@ -818,12 +834,12 @@ func FetchLibraryAlbums(token string) ([]blueprint.LibraryAlbum, error) {
 }
 
 // FetchTrackListeningHistory fetches all the recently listened to tracks for a user
-func FetchTrackListeningHistory(token string) ([]blueprint.TrackSearchResult, error) {
+func FetchTrackListeningHistory(apikey, token string) ([]blueprint.TrackSearchResult, error) {
 	inst := axios.NewInstance(&axios.InstanceConfig{
 		BaseURL: "https://api.music.apple.com/v1",
 		Headers: http.Header{
-			"Authorization":    []string{fmt.Sprintf("Bearer %s", os.Getenv("APPLE_MUSIC_API_KEY"))},
-			"Music-User-Token": []string{token},
+			"Authorization":         []string{fmt.Sprintf("Bearer %s", apikey)},
+			"Music-User-MusicToken": []string{token},
 		},
 	})
 
