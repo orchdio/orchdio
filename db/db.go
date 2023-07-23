@@ -541,6 +541,8 @@ func (d *NewDB) CreateOrg(uid, name, description, owner string) ([]byte, error) 
 	r := d.DB.QueryRowx(queries.CreateNewOrg, uid, name, description, owner)
 	var res string
 
+	// note that Scan is for single fields, in this case just the newly created org id.
+	// structScan is for structs/json objects.
 	err := r.Scan(&res)
 	if err != nil {
 		log.Printf("[db][CreateOrg] error creating new org. %v\n", err)
@@ -577,27 +579,17 @@ func (d *NewDB) UpdateOrg(appId, owner string, data *blueprint.UpdateOrganizatio
 }
 
 // FetchOrgs fetches all orgs belonging to a user
-func (d *NewDB) FetchOrgs(owner string) ([]blueprint.Organization, error) {
-	log.Printf("[db][FetchOrgs] Running query %s\n", queries.FetchUserOrgs)
-	row, err := d.DB.Queryx(queries.FetchUserOrgs, owner)
+func (d *NewDB) FetchOrgs(owner string) (*blueprint.Organization, error) {
+	log.Printf("[db][FetchOrgs] Running query %s\n with owner: %s", queries.FetchUserOrg, owner)
+	row := d.DB.QueryRowx(queries.FetchUserOrg, owner)
+	var res blueprint.Organization
+	err := row.StructScan(&res)
 	if err != nil {
 		log.Printf("[db][FetchOrgs] error fetching orgs. %v\n", err)
 		return nil, err
 	}
-
-	var res []blueprint.Organization
-	for row.Next() {
-		var r blueprint.Organization
-		err = row.StructScan(&r)
-		if err != nil {
-			log.Printf("[db][FetchOrgs] error scanning org. %v\n", err)
-			return nil, err
-		}
-		res = append(res, r)
-	}
-
-	log.Printf("[db][FetchOrgs] fetched %d orgs\n", len(res))
-	return res, nil
+	log.Printf("[db][FetchOrgs] fetched orgs %v\n", res)
+	return &res, nil
 }
 
 // FetchUserByIdentifier fetches a user by the identifier (email or id) and a flag specifying which one

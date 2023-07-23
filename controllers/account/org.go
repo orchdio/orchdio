@@ -79,7 +79,7 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 	}
 
 	if userInf != nil {
-		// in the case where the user was created from authing with a platform for example, there will be no password
+		// in the case where the user was created from authing with a platform for example, there will be no existing password for the user
 		// so in this case we need to update the user with the password
 		userId = userInf.UUID.String()
 		_, dErr := u.DB.Exec(queries.UpdateUserPassword, string(hashedPass), userId)
@@ -89,8 +89,9 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 		}
 	}
 
-	// fetch all the orgs
-	orgs, err := database.FetchOrgs(userId)
+	// fetch all the orgs.
+	// TODO: allow users to have multiple orgs. for now we allow only 1.
+	org, err := database.FetchOrgs(userId)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Printf("[controller][account][CreateOrg] - no orgs found for user: %s. Going to create user", userId)
@@ -113,11 +114,13 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 		}
 	}
 
-	if len(orgs) > 0 {
-		log.Printf("[controller][account][CreateOrg] - user already has orgs. Cannot create another")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "user already has orgs", "Could not create organization. User already has orgs")
+	res := map[string]string{
+		"org_id":      org.UID.String(),
+		"name":        org.Name,
+		"description": org.Description,
 	}
-	return nil
+
+	return util.SuccessResponse(ctx, http.StatusOK, res)
 }
 
 // DeleteOrg deletes  an org belonging to the user.
@@ -250,30 +253,28 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid login", "Could not login to organization. Password or email is incorrect.")
 	}
 
-	orgs, err := database.FetchOrgs(user.UUID.String())
+	org, err := database.FetchOrgs(user.UUID.String())
 	if err != nil {
 		log.Printf("[controller][account][LoginUserToOrg] - error getting orgs: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not get organizations")
 	}
 
-	firstOrg := orgs[0]
-
 	// encrypt the result as a JWT
 	token, err := util.SignOrgLoginJWT(&blueprint.AppJWT{
-		OrgID:       firstOrg.UID.String(),
+		OrgID:       org.UID.String(),
 		DeveloperID: user.UUID.String(),
 	})
 
-	apps, err := database.FetchApps(user.UUID.String(), firstOrg.UID.String())
+	apps, err := database.FetchApps(user.UUID.String(), org.UID.String())
 	if err != nil && err != sql.ErrNoRows {
 		log.Printf("[controller][account][LoginUserToOrg] - error getting apps: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not get apps")
 	}
 
 	result := map[string]interface{}{
-		"org_id":      firstOrg.UID.String(),
-		"name":        firstOrg.Name,
-		"description": firstOrg.Description,
+		"org_id":      org.UID.String(),
+		"name":        org.Name,
+		"description": org.Description,
 		"token":       string(token),
 		"apps":        apps,
 	}
