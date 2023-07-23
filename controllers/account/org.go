@@ -103,10 +103,21 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 				return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not create organization")
 			}
 
+			appToken, sErr := util.SignOrgLoginJWT(&blueprint.AppJWT{
+				OrgID:       string(uid),
+				DeveloperID: userId,
+			})
+
+			if sErr != nil {
+				log.Printf("[controller][account][CreateOrg] - error signing app token: %v", sErr)
+				return util.ErrorResponse(ctx, http.StatusInternalServerError, sErr, "Could not create organization")
+			}
+
 			res := map[string]string{
 				"org_id":      string(uid),
 				"name":        body.Name,
 				"description": body.Description,
+				"token":       string(appToken),
 			}
 
 			log.Printf("[controller][account][CreateOrg] - org created with unique id: %s %s", body.Name, uid)
@@ -114,10 +125,16 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 		}
 	}
 
+	appToken, err := util.SignOrgLoginJWT(&blueprint.AppJWT{
+		OrgID:       org.UID.String(),
+		DeveloperID: userId,
+	})
+
 	res := map[string]string{
 		"org_id":      org.UID.String(),
 		"name":        org.Name,
 		"description": org.Description,
+		"token":       string(appToken),
 	}
 
 	return util.SuccessResponse(ctx, http.StatusOK, res)
