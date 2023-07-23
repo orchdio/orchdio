@@ -455,3 +455,19 @@ func FetchMethodFromInterface(service interface{}, method string) (reflect.Value
 	serviceMethod = ptr.MethodByName(method)
 	return serviceMethod, true
 }
+
+func DecryptIntegrationCredentials(encryptedCredentials []byte) (*blueprint.IntegrationCredentials, error) {
+	if len(encryptedCredentials) == 0 {
+		return nil, blueprint.ENOCREDENTIALS
+	}
+	decrypted, err := Decrypt(encryptedCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
+	if err != nil {
+		return nil, err
+	}
+	var credentials blueprint.IntegrationCredentials
+	err = json.Unmarshal(decrypted, &credentials)
+	if err != nil {
+		return nil, err
+	}
+	return &credentials, nil
+}

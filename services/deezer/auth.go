@@ -52,6 +52,7 @@ func (d *Deezer) FetchAccessToken(code string) []byte {
 		log.Printf("\n[services][deezer][auth][FetchAccessToken] Deezer auth returned %d\n", resp.Status)
 		return nil
 	}
+
 	authResponse := AuthResponse{}
 	unmarshalErr := json.Unmarshal(resp.Data, &authResponse)
 	if unmarshalErr != nil {

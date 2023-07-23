@@ -3,6 +3,7 @@ package middleware
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"github.com/gofiber/fiber/v2"
 	"github.com/jmoiron/sqlx"
 	"github.com/samber/lo"
@@ -11,6 +12,10 @@ import (
 	"orchdio/blueprint"
 	"orchdio/db"
 	"orchdio/db/queries"
+	"orchdio/services/applemusic"
+	"orchdio/services/deezer"
+	"orchdio/services/spotify"
+	"orchdio/services/ytmusic"
 	"orchdio/util"
 	"os"
 	"strings"
@@ -233,9 +238,9 @@ func (a *AuthMiddleware) HandleTrolls(ctx *fiber.Ctx) error {
 //	return ctx.Next()
 //}
 
-// VerifyUserActionDeveloper verifies that the developer app is valid and that the user is authorized to perform the action. It attaches the user
+// VerifyUserActionApp verifies that the developer app is valid and that the user is authorized to perform the action. It attaches the user
 // context information to the locals. this is then used in controllers where user is making user action requests, for example fetching user library playlists.
-func (a *AuthMiddleware) VerifyUserActionDeveloper(ctx *fiber.Ctx) error {
+func (a *AuthMiddleware) VerifyUserActionApp(ctx *fiber.Ctx) error {
 	log.Printf("[middleware][auth][AuthDeveloperApp] - authenticating developer app")
 	// extract the app id from the header
 	app := ctx.Locals("app").(*blueprint.DeveloperApp)
@@ -253,12 +258,12 @@ func (a *AuthMiddleware) VerifyUserActionDeveloper(ctx *fiber.Ctx) error {
 	if app == nil {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing app")
 	}
+
 	database := db.NewDB{DB: a.DB}
-	//user, err := database.FindUserByUUID(userId, platform)
 	user, err := database.FetchPlatformAndUserInfoByIdentifier(userId, app.UID.String(), platform)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User not found")
+			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", fmt.Sprintf("App not found. User might not have authorized this app. Please sign in with %s", FetcPlatformNameByIdentifier(platform)))
 		}
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An internal error occurred")
 	}
@@ -266,6 +271,7 @@ func (a *AuthMiddleware) VerifyUserActionDeveloper(ctx *fiber.Ctx) error {
 	if user.RefreshToken == nil && platform != "tidal" {
 		return util.ErrorResponse(ctx, http.StatusUnauthorized, "unauthorized", "User not authorized")
 	}
+
 	if user.RefreshToken != nil {
 		r, err := util.Decrypt(user.RefreshToken, []byte(os.Getenv("ENCRYPTION_SECRET")))
 		if err != nil {
@@ -284,6 +290,24 @@ func (a *AuthMiddleware) VerifyUserActionDeveloper(ctx *fiber.Ctx) error {
 	ctx.Locals("userCtx", &userMiddlewareInfo)
 	return ctx.Next()
 }
+
+func FetcPlatformNameByIdentifier(identifier string) string {
+	var platforms = map[string]string{
+		spotify.IDENTIFIER:    "Spotify",
+		deezer.IDENTIFIER:     "Deezer",
+		applemusic.IDENTIFIER: "Apple Music",
+		ytmusic.IDENTIFIER:    "YouTube Music",
+	}
+	return platforms[identifier]
+}
+
+//func (a *AuthMiddleware) AddOrgAppTo(ctx *fiber.Ctx) error {
+//	// extract the app id from the header
+//	app := ctx.Locals("app").(*blueprint.DeveloperApp)
+//	if app == nil {
+//		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing app")
+//	}
+//}
 
 func (a *AuthMiddleware) AddRequestPlatformToCtx(ctx *fiber.Ctx) error {
 	platform := ctx.Params("platform")

@@ -2,9 +2,9 @@ package queries
 
 const CreateNewApp = `INSERT INTO apps (uuid, name, description, redirect_url, 
                   webhook_url, public_key, developer, 
-                  secret_key, verify_token, organization, created_at,
+                  secret_key, verify_token, organization, deezer_state, created_at,
                   updated_at) 
-	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now()) RETURNING uuid`
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now()) RETURNING uuid`
 
 const UpdateAppIntegrationCredentials = `UPDATE apps SET 
 deezer_credentials = (CASE WHEN $3 = 'deezer' AND length($1::bytea) > 0 
@@ -106,7 +106,7 @@ const CreateUserApp = `INSERT INTO user_apps (
 const UpdateUserAppTokensAndScopes = `UPDATE user_apps SET 
                      refresh_token = $1::bytea,
                      scopes = (CASE WHEN $2 = '' THEN scopes ELSE ARRAY[$2] END)
-                 where app = $3 AND "user" = $4 AND platform = $5 and uuid = $6`
+                 where app = $3 AND "user" = $4 AND platform = $5 and uuid = $6 returning uuid`
 
 const UpdateDeezerState = `UPDATE apps SET deezer_state = $1 WHERE uuid = $2;`
 
@@ -134,7 +134,8 @@ and uapps.app = $2
 // since for a user app, there is only an app for each plaform, so we can narrow down using platform when filtering
 // by user app's app's id
 
-const FetchUserAppAndInfoByPlatform = `SELECT uapps.uuid as app_id, uapps.platform, coalesce(uapps.platform_id, '') as platform_id,
+const FetchUserAppAndInfoByPlatform = `SELECT uapps.uuid as app_id, 
+       uapps.platform, coalesce(uapps.platform_id, '') as platform_id,
 uapps.refresh_token, coalesce(uapps.username, '') as username, u.email, "user" as user_id
 	FROM user_apps uapps JOIN users u on uapps."user" = u.uuid AND uapps.app = $2 
 	WHERE (CASE WHEN $3 = 'id' THEN u.uuid::text = $1 ELSE u.email = $1 END) AND platform = $4`
@@ -148,4 +149,10 @@ uapps.refresh_token, coalesce(uapps.username, '') as username, u.email, "user" a
 //                platform_ids = COALESCE(platform_ids::JSONB, '{}') || $3 WHERE email = $1;`
 
 const UpdatePlatformUserNameIdAndToken = `UPDATE user_apps SET username = $1, 
-platform_id = $2, refresh_token = $3 WHERE "user" = $4 AND platform = $5`
+platform_id = $2, refresh_token = $3, last_authed_at = now() WHERE "user" = $4 AND platform = $5 AND uuid = $6`
+
+const DeletePlatformIntegrationCredentials = `UPDATE apps SET
+deezer_credentials = ( CASE WHEN $2 = 'deezer' THEN NULL ELSE deezer_credentials END ),
+tidal_credentials = ( CASE WHEN $2 = 'tidal' THEN NULL ELSE tidal_credentials END ),
+spotify_credentials = ( CASE WHEN $2 = 'spotify' THEN NULL ELSE spotify_credentials END ),
+applemusic_credentials = ( CASE WHEN $2 = 'applemusic' THEN NULL ELSE applemusic_credentials END ) WHERE uuid = $1 AND developer = $3`

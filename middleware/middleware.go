@@ -24,7 +24,7 @@ func VerifyToken(ctx *fiber.Ctx) error {
 	jwtToken := jt.(*jwt.Token)
 	claims := jwtToken.Claims.(*blueprint.OrchdioUserToken)
 	ctx.Locals("claims", claims)
-	log.Printf("[middleware][VerifyToken] method - Token verified. Claims set")
+	log.Printf("[middleware][VerifyToken] method - MusicToken verified. Claims set")
 	return ctx.Next()
 }
 
@@ -38,7 +38,7 @@ func VerifyAppJWT(ctx *fiber.Ctx) error {
 	jwtToken := jt.(*jwt.Token)
 	claims := jwtToken.Claims.(*blueprint.AppJWT)
 	ctx.Locals("app_jwt", claims)
-	log.Printf("[middleware][VerifyAppJWT] method - Token verified. Claims set")
+	log.Printf("[middleware][VerifyAppJWT] method - MusicToken verified. Claims set")
 	return ctx.Next()
 }
 
@@ -85,7 +85,7 @@ func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "URL info not found.")
 	}
 
-	if conversionBody["target_platform"] == "" {
+	if conversionBody["target_platform"] == "" || conversionBody["target_platform"] == "all" {
 		log.Printf("\n[middleware][ExtractLinkInfoFromBody] warning - Track conversion but no target platform specified. \n")
 		conversionBody["target_platform"] = "all"
 	}

@@ -18,7 +18,7 @@ import (
 )
 
 // CreateNewApp creates a new app for the developer and returns a uuid of the newly created app
-func (d *NewDB) CreateNewApp(name, description, redirectURL, webhookURL, publicKey, developerId, secretKey, verifySecret, orgID string) ([]byte, error) {
+func (d *NewDB) CreateNewApp(name, description, redirectURL, webhookURL, publicKey, developerId, secretKey, verifySecret, orgID, deezerState string) ([]byte, error) {
 	log.Printf("[db][CreateNewApp] developer -  creating new app: %s\n", name)
 
 	log.Printf("[db][CreateNewApp] developer ==> ==> ==> ==> incoming data is %s %s %s %s %s %s %s %s %s\n", name, description, redirectURL, webhookURL, publicKey, developerId, secretKey, verifySecret, orgID)
@@ -26,7 +26,7 @@ func (d *NewDB) CreateNewApp(name, description, redirectURL, webhookURL, publicK
 	uid := uuid.NewString()
 	_, err := d.DB.Exec(queries.CreateNewApp, uid,
 		name, description, redirectURL, webhookURL, publicKey,
-		developerId, secretKey, verifySecret, orgID)
+		developerId, secretKey, verifySecret, orgID, deezerState)
 	if err != nil {
 		log.Printf("[db][CreateNewApp] developer -  error: could not create new developer app: %v\n", err)
 		return nil, err
@@ -387,5 +387,17 @@ func (d *NewDB) UpdateUserAppScopes(userAppID, userID, platform, app string, sco
 		return err
 	}
 	log.Printf("[db][UpdateUserAppScopes] developer - user app scopes updated: %s\n", scopes)
+	return nil
+}
+
+func (d *NewDB) DeletePlatformIntegrationCredentials(appId, platform, developerId string) error {
+	log.Printf("[db][DeletePlatformIntegrationCredentials] developer - deleting platform integration credentials: %s\n", appId)
+	log.Printf("Running with appId: %s, platform: %s, developerId: %s", appId, platform, developerId)
+	_, err := d.DB.Exec(queries.DeletePlatformIntegrationCredentials, appId, platform, developerId)
+	if err != nil {
+		log.Printf("[db][DeletePlatformIntegrationCredentials] developer - error: could not delete platform integration credentials: %v\n", err)
+		return err
+	}
+	log.Printf("[db][DeletePlatformIntegrationCredentials] developer - platform integration credentials deleted: %s\n", appId)
 	return nil
 }

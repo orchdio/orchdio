@@ -61,7 +61,7 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 		return nil, errors.New("too large")
 	}
 
-	parsedURL, parseErr := url.Parse(song)
+	parsedURL, parseErr := url.Parse(strings.TrimSpace(song))
 	if parseErr != nil {
 		log.Printf("\n[services][ExtractLinkInfo][error] Error parsing escaped URL: %v\n", parseErr)
 		return nil, parseErr
@@ -359,23 +359,23 @@ func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId, appI
 			log.Printf("[follow][FetchPlaylistHash] - playlist hash is: %v", ent)
 			entitySnapshot = ent
 			log.Printf("[follow][FetchPlaylistHash] - fetched playlist hash from spotify: %v", entitySnapshot)
-		case "tidal":
-			log.Printf("[follow][FetchPlaylistHash] - checking if playlist has been updated")
-			platform = "tidal"
-			tidalService := tidal.NewService(&creds, s.DB, s.Red)
-			info, _, ok, err := tidalService.SearchPlaylistWithID(entityId)
-			if err != nil {
-				log.Printf("[follow][FetchPlaylistHash] - error fetching playlist from tidal: %v", err)
-				return nil, false, nil, err
-			}
-			if !ok {
-				log.Printf("[follow][FetchPlaylistHash] - playlist has not been updated")
-				return nil, false, nil, nil
-			}
-			platformBytes, _ = json.Marshal(platform)
-			log.Printf("[follow][FetchPlaylistHash] - playlist has been updated")
-			// TODO: return the timestamp instead of the hash, for tidal
-			return []byte(info.LastUpdated), true, platformBytes, nil
+			//case "tidal":
+			//	log.Printf("[follow][FetchPlaylistHash] - checking if playlist has been updated")
+			//	platform = "tidal"
+			//	tidalService := tidal.NewService(&creds, s.DB, s.Red)
+			//	info, _, ok, err := tidalService.SearchPlaylistWithID(entityId)
+			//	if err != nil {
+			//		log.Printf("[follow][FetchPlaylistHash] - error fetching playlist from tidal: %v", err)
+			//		return nil, false, nil, err
+			//	}
+			//	if !ok {
+			//		log.Printf("[follow][FetchPlaylistHash] - playlist has not been updated")
+			//		return nil, false, nil, nil
+			//	}
+			//	platformBytes, _ = json.Marshal(platform)
+			//	log.Printf("[follow][FetchPlaylistHash] - playlist has been updated")
+			//	// TODO: return the timestamp instead of the hash, for tidal
+			//	return []byte(info.LastUpdated), true, platformBytes, nil
 		}
 	}
 	platformBytes, _ = json.Marshal(platform)

@@ -296,6 +296,7 @@ func (d *NewDB) FetchTask(uid string) (*blueprint.TaskRecord, error) {
 	// so we check if the taskId is a valid uuid, if it is, we fetch by taskid, if not, we fetch by shortid
 	_, err := uuid.Parse(uid)
 	if err != nil {
+		// shortid parsing/fetching logic
 		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - not a valid uuid, fetching by shortid")
 		log.Printf("[db][FetchTask] Running query %s with '%s'\n", queries.FetchTaskByShortID, uid)
 		//var res blueprint.PlaylistConversion
