@@ -12,7 +12,6 @@ import (
 	"log"
 	"orchdio/blueprint"
 	"orchdio/db"
-	"orchdio/db/queries"
 	"orchdio/services/applemusic"
 	"orchdio/services/deezer"
 	"orchdio/services/spotify"
@@ -116,7 +115,7 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 
 	// create new developer app
 	database := db.NewDB{DB: d.DB}
-	uid, err := database.CreateNewApp(body.Name, body.Description, redirectURL, body.WebhookURL, pubKey, claims.DeveloperID, secretKey, verifySecret, body.Organization)
+	uid, err := database.CreateNewApp(body.Name, body.Description, redirectURL, body.WebhookURL, pubKey, claims.DeveloperID, secretKey, verifySecret, body.Organization, deezerState)
 	if err != nil {
 		log.Printf("[controllers][CreateApp] developer -  error: could not create new developer app: %v\n", err)
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
@@ -124,13 +123,13 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 
 	// update the deezer state in the database. this is unique
 	// to deezer so it should be fine to update instead of add during app creation
-	if body.IntegrationPlatform == deezer.IDENTIFIER {
-		_, err = d.DB.Exec(queries.UpdateDeezerState, deezerState, string(uid))
-		if err != nil {
-			log.Printf("[controllers][CreateApp] developer -  error: could not update deezer state: %v\n", err)
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
-		}
-	}
+	//if body.IntegrationPlatform == deezer.IDENTIFIER {
+	//	_, err = d.DB.Exec(queries.UpdateDeezerState, deezerState, string(uid))
+	//	if err != nil {
+	//		log.Printf("[controllers][CreateApp] developer -  error: could not update deezer state: %v\n", err)
+	//		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
+	//	}
+	//}
 
 	// update the app credentials
 	err = database.UpdateIntegrationCredentials(encryptedAppData, string(uid), body.IntegrationPlatform, body.RedirectURL, body.WebhookURL)
@@ -198,6 +197,32 @@ func (d *Controller) UpdateApp(ctx *fiber.Ctx) error {
 
 	log.Printf("[controllers][UpdateApp] developer -  app updated: %s\n", ctx.Params("appId"))
 	return util.SuccessResponse(ctx, fiber.StatusOK, "App updated successfully")
+}
+
+func (d *Controller) DeletePlatformIntegrationCredentials(ctx *fiber.Ctx) error {
+	log.Printf("[controllers][DeletePlatformIntegrationCredentials] developer -  deleting platform integration credentials\n")
+	claims := ctx.Locals("app_jwt").(*blueprint.AppJWT) // THIS WILL MOST LIKELY CRASH
+
+	if ctx.Params("appId") == "" {
+		log.Printf("[controllers][DeletePlatformIntegrationCredentials] developer -  error: appId is empty\n")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "App ID is empty. Please pass a valid app ID")
+	}
+
+	if ctx.Params("platform") == "" {
+		log.Printf("[controllers][DeletePlatformIntegrationCredentials] developer -  error: platform is empty\n")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Platform is empty. Please pass a valid platform")
+	}
+
+	// delete the app
+	database := db.NewDB{DB: d.DB}
+	err := database.DeletePlatformIntegrationCredentials(ctx.Params("appId"), ctx.Params("platform"), claims.DeveloperID)
+	if err != nil {
+		log.Printf("[controllers][DeletePlatformIntegrationCredentials] developer -  error: could not delete platform integration credentials in Database: %v\n", err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not delete platform integration credentials")
+	}
+
+	log.Printf("[controllers][DeletePlatformIntegrationCredentials] developer -  platform integration credentials deleted: %s\n", ctx.Params("appId"))
+	return util.SuccessResponse(ctx, fiber.StatusOK, "Platform integration credentials deleted successfully")
 }
 
 func (d *Controller) DeleteApp(ctx *fiber.Ctx) error {

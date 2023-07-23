@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/jmoiron/sqlx"
 	"log"
 	"net/url"
 	"orchdio/blueprint"
 	"orchdio/util"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -57,12 +57,21 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 	if err != nil && err == redis.Nil {
 		log.Printf("\n[services][tidal][SearchWithID] - this track has not been cached before %v\n", err)
 
-		tracks, err := s.FetchTrackWithID(info.EntityID)
+		tracks, rErr := s.FetchTrackWithID(info.EntityID)
 
-		if err != nil {
-			log.Printf("\n[services][tidal][SearchWithID] - error - %v\n", err)
-			return nil, err
+		if rErr != nil {
+			if rErr == blueprint.EBADREQUEST {
+				log.Printf("\n[services][tidal][SearchWithID] - Error fetching track conversion from TIDAL %v\n", rErr)
+			}
+
+			if rErr == blueprint.EBADCREDENTIALS {
+				log.Printf("\n[services][tidal][SearchWithID] - Error fetching track conversion from TIDAL %v\n", rErr)
+			}
+			return nil, rErr
 		}
+
+		log.Printf("\n[services][tidal][SearchWithID] - Track ID conversion (source conversion) - are here")
+		spew.Dump(tracks)
 
 		var artistes []string
 		for _, artist := range tracks.Artists {
@@ -94,8 +103,10 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 		} else {
 			log.Printf("\n[services][tidal][SearchWithID] - track cached successfully\n")
 		}
-		return &searchResult, nil
 
+		log.Printf("Foinal conversion result")
+		spew.Dump(&searchResult)
+		return &searchResult, nil
 	}
 
 	var deserialized blueprint.TrackSearchResult
@@ -109,7 +120,6 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 
 // FetchTrackWithID fetches a track from tidal
 func (s *Service) FetchTrackWithID(id string) (*Track, error) {
-	var TidalAccessToken = os.Getenv("TIDAL_ACCESS_TOKEN")
 	// TODO: implement refresh token fetching the access token (if expired)
 	// TODO: find a way to add access token securely since i need to store somewhere (tidal auth api limitation)
 	// TODO: update the access token (probably store in redis)
@@ -118,28 +128,37 @@ func (s *Service) FetchTrackWithID(id string) (*Track, error) {
 		log.Printf("\n[controllers][platforms][tidal][SearchTrackWithID] - error - could not fetch new TIDAL access token %v\n", err)
 		return nil, err
 	}
-	TidalAccessToken = accessToken
 
+	log.Printf("\n[controllers][platforms][tidal][SearchTrackWithID] - access token - %v\n", accessToken)
+	if accessToken == "" {
+		log.Printf("\n[controllers][platforms][tidal][SearchTrackWithID] - error - could not fetch new TIDAL access token %v\n", err)
+		return nil, blueprint.EBADCREDENTIALS
+	}
 	// first, fetch the access token hard coded in the config
 	instance := axios.NewInstance(&axios.InstanceConfig{
 		BaseURL:     ApiUrl,
 		EnableTrace: true,
 		Headers: map[string][]string{
 			"Accept":        {"application/json"},
-			"Authorization": {"Bearer " + TidalAccessToken},
+			"Authorization": {"Bearer " + accessToken},
 		},
 	})
 	// make a request to the tidal API
 	response, err := instance.Get(fmt.Sprintf("/tracks/%s?countryCode=US", id))
 	if err != nil {
-		log.Printf("\n[controllers][platforms][tidal][SearchTrackWithID] - error - %v\n", err)
 		return nil, err
 	}
+
+	if response.Status >= 400 {
+		log.Printf("\n[controllers][platforms][tidal][SearchTrackWithID] - TIDAL request failed with status: %v\n", response.Status)
+		return nil, blueprint.EBADREQUEST
+	}
+
 	singleTrack := &Track{}
 	err = json.Unmarshal(response.Data, singleTrack)
 	if err != nil {
 		log.Printf("\n[controllers][platforms][tidal][SearchTrackWithID] - error - %v\n", err)
-		return nil, err
+		return nil, blueprint.EBADCREDENTIALS
 	}
 	return singleTrack, nil
 }
@@ -314,8 +333,9 @@ func (s *Service) SearchPlaylistWithTracks(p *blueprint.PlaylistSearchResult) (*
 // SearchPlaylistWithID fetches a specific playlist based on the id. It returns the playlist search result,
 // a bool to indicate if the playlist has been updated since the last time a call was made
 // and an error if there is one
-func (s *Service) SearchPlaylistWithID(id string) (*PlaylistInfo, *blueprint.PlaylistSearchResult, bool, error) {
+func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResult, error) {
 	identifierHash := fmt.Sprintf("tidal:playlist:%s", id)
+	log.Printf("Converting playlist with ID %s on TIDAL\n", id)
 
 	// infoHash represents the key for the snapshot of the playlist info, in this case
 	// just a lasUpdated timestamp in string format.
@@ -324,8 +344,10 @@ func (s *Service) SearchPlaylistWithID(id string) (*PlaylistInfo, *blueprint.Pla
 	info, err := s.FetchPlaylistInfo(id)
 	if err != nil {
 		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not fetch playlist info - %v\n", err)
-		return nil, nil, false, err
+		return nil, err
 	}
+
+	log.Printf("TIDAL playlist info %v\n", info)
 
 	// if we have already cached the playlist info.
 	// The assumption here is that the playlist info and the playlist tracks are always both cached every time
@@ -334,7 +356,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*PlaylistInfo, *blueprint.Pla
 		cachedInfo, err := s.Redis.Get(context.Background(), infoHash).Result()
 		if err != nil && err != redis.Nil {
 			log.Printf("\n[controllers][platforms][tidal][SearchPlaylistWithID] - could not fetch cached playlist info - %v\n", err)
-			return nil, nil, false, err
+			return nil, err
 		}
 
 		// deserialize the playlist info
@@ -347,7 +369,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*PlaylistInfo, *blueprint.Pla
 
 		if err != nil {
 			log.Printf("\n[controllers][platforms][tidal][SearchPlaylistWithID] - could not parse last updated time - %v\n", err)
-			return nil, nil, false, err
+			return nil, err
 		}
 
 		var result *blueprint.PlaylistSearchResult
@@ -356,31 +378,31 @@ func (s *Service) SearchPlaylistWithID(id string) (*PlaylistInfo, *blueprint.Pla
 		cachedResult, err := s.Redis.Get(context.Background(), identifierHash).Result()
 		if err != nil {
 			log.Printf("\n[services][tidal][FetchPlaylistTracksInfo] - ⚠️ error fetching key from redis. - %v\n", err)
-			return nil, nil, false, err
+			return nil, err
 		}
 		// deserialize the tracks we fetched from redis
 		err = json.Unmarshal([]byte(cachedResult), &result)
 		if err != nil {
 			log.Printf("\n[services][tidal][FetchPlaylistTracksInfo] - ⚠️ error deserializimng cache result - %v\n", err)
-			return nil, nil, false, err
+			return nil, err
 		}
 		// if the timestamps are the same, that means that our playlist has not
 		// changed, so we can return the cached result. in the other case, we
 		// are doing nothing so we go on to fetch the tracks from the tidal api.
 		if lastUpdated.IsSame(infoLastUpdated) {
-			return info, result, false, nil
+			return result, nil
 		}
 	}
 
 	accessToken, err := s.FetchNewAuthToken(s.IntegrationCredentials.AppID, s.IntegrationCredentials.AppSecret, s.IntegrationCredentials.AppRefreshToken)
 	if err != nil {
 		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - error - %v\n", err)
-		return nil, nil, false, err
+		return nil, err
 	}
 
 	if err != nil {
 		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not deserialize playlist result from tidal - %v\n", err)
-		return nil, nil, false, err
+		return nil, err
 	}
 
 	playlistResult := &PlaylistTracks{}
@@ -403,13 +425,13 @@ func (s *Service) SearchPlaylistWithID(id string) (*PlaylistInfo, *blueprint.Pla
 		response, err := instance.Get(fmt.Sprintf("/playlists/%s/items?offset=%d&limit=100&countryCode=US", id, page*100))
 		if err != nil {
 			log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - error - %v\n", err)
-			return nil, nil, false, err
+			return nil, err
 		}
 		res := &PlaylistTracks{}
 		err = json.Unmarshal(response.Data, res)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not deserialize playlist result from tidal - %v\n", err)
-			return nil, nil, false, err
+			return nil, err
 		}
 		if len(res.Items) == 0 {
 			break
@@ -465,7 +487,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*PlaylistInfo, *blueprint.Pla
 	} else {
 		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - cached playlist info into redis - %v\n", info.Title)
 	}
-	return info, result, true, nil
+	return result, err
 }
 
 // FetchTrackWithTitleChan fetches a track with the title from tidal but using a channel

@@ -34,12 +34,6 @@ func (u *UserDevApp) CreateOrUpdateUserApp(body *blueprint.CreateNewUserAppData)
 
 	var userAppID []byte
 	uniqueID := uuid.NewString()
-	// encrypt the refresh token
-	//encryptedRefreshToken, err := util.Encrypt(body.RefreshToken, []byte(os.Getenv("ENCRYPTION_SECRET")))
-	//if err != nil {
-	//	log.Printf("[controllers][developer][user_app] - error encrypting refresh token while creating new user app: %v", err)
-	//	return nil, err
-	//}
 
 	// check if the platform is valid
 	if !lo.Contains(platforms, body.Platform) {
@@ -59,10 +53,7 @@ func (u *UserDevApp) CreateOrUpdateUserApp(body *blueprint.CreateNewUserAppData)
 		return nil, exRowErr
 	}
 
-	// hack?: the query will return a row with all the fields as their default values. in this case, the UUID
-	// will be 00000000-0000-0000-0000-000000000000. the error returned is errNoRows. so we check if the UUID
-	// is the default value and if it is, we know that the user app does not exist and we can create it
-	if userApp.UUID.String() == "00000000-0000-0000-0000-000000000000" {
+	if exRowErr == sql.ErrNoRows {
 		log.Printf("[controllers][developer][user_app] - user app does not exist for platform %s", body.Platform)
 		// it means the user app does not exist as we check above if the error is not sql.ErrNoRows
 		row := database.DB.QueryRowx(queries.CreateUserApp, uniqueID, body.RefreshToken,
@@ -80,16 +71,25 @@ func (u *UserDevApp) CreateOrUpdateUserApp(body *blueprint.CreateNewUserAppData)
 		}
 		userApp.UUID = newAppUUID
 	}
+	// hack?: the query will return a row with all the fields as their default values. in this case, the UUID
+	// will be 00000000-0000-0000-0000-000000000000. the error returned is errNoRows. so we check if the UUID
+	// is the default value and if it is, we know that the user app does not exist and we can create it
+	//if userApp.UUID.String() == "00000000-0000-0000-0000-000000000000" {
+	//
+	//}
 
 	if userApp.UUID.String() != "00000000-0000-0000-0000-000000000000" {
 		log.Printf("[controllers][developer][user_app] - updating user %s app and scopes", body.Platform)
-		_, uErr := database.DB.Exec(queries.UpdateUserAppTokensAndScopes,
+		var appId []byte
+		row := database.DB.QueryRowx(queries.UpdateUserAppTokensAndScopes,
 			body.RefreshToken, strings.Join(body.Scopes, ", "), body.App, body.User, body.Platform, userApp.UUID.String())
+		uErr := row.Scan(&appId)
 		if uErr != nil {
 			log.Printf("[controllers][developer][user_app] - error updating user app tokens and scopes: %v", uErr)
 			return nil, uErr
 		}
-		return nil, nil
+		log.Printf("[controllers][developer][user_app] - updated user app %s for platform %s", userApp.UUID.String(), body.Platform)
+		return appId, nil
 	}
 
 	return userAppID, nil
