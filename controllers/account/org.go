@@ -120,7 +120,7 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 				"token":       string(appToken),
 			}
 
-			log.Printf("[controller][account][CreateOrg] - org created with unique id: %s %s", body.Name, uid)
+			log.Printf("[controller][account][CreateOrg] - org '%s' created", body.Name)
 			return util.SuccessResponse(ctx, http.StatusCreated, res)
 		}
 	}

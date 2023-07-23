@@ -20,8 +20,6 @@ import (
 // CreateNewApp creates a new app for the developer and returns a uuid of the newly created app
 func (d *NewDB) CreateNewApp(name, description, redirectURL, webhookURL, publicKey, developerId, secretKey, verifySecret, orgID, deezerState string) ([]byte, error) {
 	log.Printf("[db][CreateNewApp] developer -  creating new app: %s\n", name)
-
-	log.Printf("[db][CreateNewApp] developer ==> ==> ==> ==> incoming data is %s %s %s %s %s %s %s %s %s\n", name, description, redirectURL, webhookURL, publicKey, developerId, secretKey, verifySecret, orgID)
 	// create a new app
 	uid := uuid.NewString()
 	_, err := d.DB.Exec(queries.CreateNewApp, uid,
