@@ -276,10 +276,10 @@ func (d *Controller) FetchApp(ctx *fiber.Ctx) error {
 	for k, v := range credK {
 		log.Printf("[controllers][FetchApp] developer -  decrypting %s credentials\n", k)
 		if len(v) > 0 {
-			outBytes, err := util.Decrypt(v, []byte(os.Getenv("ENCRYPTION_SECRET")))
-			if err != nil {
-				log.Printf("[controllers][FetchApp] developer -  error: could not decrypt %s credentials: %v\n", k, err)
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred. Could not decrypt credentials")
+			outBytes, decErr := util.Decrypt(v, []byte(os.Getenv("ENCRYPTION_SECRET")))
+			if decErr != nil {
+				log.Printf("[controllers][FetchApp] developer -  error: could not decrypt %s credentials: %v\n", k, decErr)
+				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, decErr, "An internal error occurred. Could not decrypt credentials")
 			}
 
 			log.Printf("[controllers][FetchApp] developer -  %s credentials decrypted\n", k)
@@ -303,7 +303,6 @@ func (d *Controller) FetchApp(ctx *fiber.Ctx) error {
 		Authorized:  app.Authorized,
 		Credentials: creds,
 	}
-
 	return util.SuccessResponse(ctx, fiber.StatusOK, info)
 }
 

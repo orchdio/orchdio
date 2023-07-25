@@ -95,8 +95,8 @@ const UpdateOrg = `UPDATE organizations SET description = (CASE WHEN $1 = '' THE
 const FetchUserOrg = `SELECT * FROM organizations WHERE owner = $1 order by updated_at desc limit 1`
 
 const FetchUserApp = `SELECT * FROM user_apps WHERE uuid = $1 AND "user" = $2`
-const FetchUserAppByPlatform = `SELECT uuid, refresh_token, "user", authed_at, 
-       last_authed_at, app, platform, coalesce(username, '') as username, coalesce(platform_id, '') as platform_id, coalesce(scopes, '{}') AS scopes FROM user_apps 
+const FetchUserAppByPlatform = `SELECT uuid, refresh_token, "user", coalesce(authed_at, now()) as authed_at, 
+       coalesce(last_authed_at, now()) as last_authed_at, app, platform, coalesce(username, '') as username, coalesce(platform_id, '') as platform_id, coalesce(scopes, '{}') AS scopes FROM user_apps 
 WHERE platform = $1 AND "user" = $2 and app = $3`
 
 const CreateUserApp = `INSERT INTO user_apps (
