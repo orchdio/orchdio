@@ -347,8 +347,6 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 		return nil, err
 	}
 
-	log.Printf("TIDAL playlist info %v\n", info)
-
 	// if we have already cached the playlist info.
 	// The assumption here is that the playlist info and the playlist tracks are always both cached every time
 	if s.Redis.Exists(context.Background(), identifierHash).Val() == 1 {
