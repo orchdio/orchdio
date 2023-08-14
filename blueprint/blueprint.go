@@ -521,6 +521,7 @@ type EmailTaskData struct {
 	Payload    map[string]interface{} `json:"payload"`
 	TaskID     string                 `json:"task_id"`
 	TemplateID int                    `json:"template_id"`
+	Subject    string                 `json:"subject,omitempty"`
 }
 
 type UserArtist struct {
@@ -691,11 +692,13 @@ type User struct {
 	Email string `json:"email" db:"email"`
 	//Usernames interface{} `json:"usernames" db:"usernames"`
 	//Username     string      `json:"username,omitempty" db:"username"`
-	ID        int       `json:"id,omitempty" db:"id"`
-	UUID      uuid.UUID `json:"uuid" db:"uuid"`
-	CreatedAt string    `json:"created_at" db:"created_at"`
-	UpdatedAt string    `json:"updated_at" db:"updated_at"`
-	Password  string    `json:"password,omitempty" db:"password,omitempty"`
+	ID               int       `json:"id,omitempty" db:"id"`
+	UUID             uuid.UUID `json:"uuid" db:"uuid"`
+	CreatedAt        string    `json:"created_at" db:"created_at"`
+	UpdatedAt        string    `json:"updated_at" db:"updated_at"`
+	Password         string    `json:"password,omitempty" db:"password,omitempty"`
+	ResetToken       string    `json:"reset_token,omitempty" db:"reset_token,omitempty"`
+	ResetTokenExpiry string    `json:"reset_token_expiry,omitempty" db:"reset_token_expiry,omitempty"`
 
 	//RefreshToken []byte      `json:"refresh_token" db:"refresh_token,omitempty"`
 	//PlatformID  string      `json:"platform_id" db:"platform_id"`

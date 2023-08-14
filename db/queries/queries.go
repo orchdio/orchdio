@@ -96,5 +96,11 @@ const CreateWaitlistEntry = `INSERT INTO waitlists(uuid, email, platform, create
 
 const FetchUserFromWaitlist = `SELECT uuid FROM waitlists WHERE email = $1;`
 
+const SaveUserResetToken = `UPDATE users SET reset_token = $2, reset_token_expiry = $3 WHERE uuid = $1;`
+
+const FindUserByResetToken = `SELECT * FROM users WHERE reset_token = $1 AND reset_token_expiry > now();`
+
+//const FindUserByResetToken = `SELECT uuid FROM users WHERE reset_token = $1 AND reset_token_expiry > ;`
+
 //const FetchPlaylistFollowsToProcess = `SELECT task.*, COALESCE(follow.entity_url, '') entity_url FROM follows follow JOIN tasks task ON task.uuid = follow.task WHERE task IS NOT NULL
 //--  	AND task.updated_at > CURRENT_DATE - interval '10 minutes'

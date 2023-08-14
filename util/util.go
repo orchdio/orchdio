@@ -326,6 +326,32 @@ func GenerateShortID() []byte {
 	return []byte(shortID)
 }
 
+// GenerateResetToken generates a reset token to be sent in email.
+// The token is 10 characters long and differs from the above normal
+// GenerateShortID function in that it uses a different worker id
+// to generate the token, to make it more unique/secure.
+func GenerateResetToken(worker ...int) []byte {
+	const format = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-"
+	wrk := 0
+	if len(worker) == 0 {
+		wrk = 1
+	} else {
+		wrk = worker[0]
+	}
+
+	sid, err := shortid.New(uint8(wrk), format, 2342)
+	if err != nil {
+		log.Printf("\n[main][GenerateResetToken] - error generating short id %v\n", err)
+		return nil
+	}
+	shortID, err := sid.Generate()
+	if err != nil {
+		log.Printf("\n[main][GenerateResetToken] - error generating short id %v\n", err)
+		return nil
+	}
+	return []byte(shortID)
+}
+
 func TidalIsCollaborative(level string) bool {
 	return level == "UNRESTRICTED" // || level == "PRIVATE"
 }

@@ -241,6 +241,7 @@ func main() {
 	orchdioQueue := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
 	asynqMux.HandleFunc("send:appauth:email", orchdioQueue.SendEmailHandler)
 	asynqMux.HandleFunc("playlist:conversion", orchdioQueue.PlaylistTaskHandler)
+	asynqMux.HandleFunc("send:reset_password_email", orchdioQueue.SendEmailHandler)
 
 	err = asynqServer.Start(asynqMux)
 	if err != nil {
@@ -361,7 +362,7 @@ func main() {
 		log.Printf("[main] [info] - Queue pause successful. Server shutdown complete")
 	}()
 
-	userController := account.NewUserController(db, redisClient)
+	userController := account.NewUserController(db, redisClient, asyncClient, asynqMux)
 	authMiddleware := middleware.NewAuthMiddleware(db)
 	conversionController := conversion.NewConversionController(db, redisClient, playlistQueue, QueueFactory, asyncClient, asynqServer, asynqMux)
 	devAppController := developer.NewDeveloperController(db)
@@ -439,6 +440,8 @@ func main() {
 	orgRouter := app.Group("/v1/org")
 	orgRouter.Post("/new", userController.CreateOrg)
 	orgRouter.Post("/login", userController.LoginUserToOrg)
+	orgRouter.Post("/reset-password", userController.ResetPassword)
+
 	orgRouter.Use(jwtware.New(jwtware.Config{
 		SigningKey: []byte(os.Getenv("JWT_SECRET")),
 		Claims:     &blueprint.AppJWT{},

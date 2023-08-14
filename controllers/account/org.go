@@ -2,6 +2,7 @@ package account
 
 import (
 	"database/sql"
+	"errors"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -65,7 +66,7 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 	// if the user has been created, then we need the user id to create the org. if not, we need to create the user first
 	userInf, err := database.FindUserByEmail(body.OwnerEmail)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			// create user
 			ubx := uuid.NewString()
 			_, dErr := u.DB.Exec(queries.CreateNewOrgUser, body.OwnerEmail, ubx, string(hashedPass))
@@ -93,7 +94,7 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 	// TODO: allow users to have multiple orgs. for now we allow only 1.
 	org, err := database.FetchOrgs(userId)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			log.Printf("[controller][account][CreateOrg] - no orgs found for user: %s. Going to create user", userId)
 
 			// todo: send email verification to user
@@ -198,7 +199,7 @@ func (u *UserController) UpdateOrg(ctx *fiber.Ctx) error {
 	err = database.UpdateOrg(orgId, claims.DeveloperID, &updateData)
 	if err != nil {
 		log.Printf("[controller][account][UpdateOrg] - error updating org: %v", err)
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return util.ErrorResponse(ctx, http.StatusNotFound, "NOT_FOUND", "Could not update organization. Organization not found. Please make sure this Organization and it belongs to you.")
 		}
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not update organization")
@@ -256,7 +257,7 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 	sErr := scanRes.StructScan(&user)
 	if sErr != nil {
 		log.Printf("[controller][account][LoginUserToOrg] - error: %v", sErr)
-		if sErr == sql.ErrNoRows {
+		if errors.Is(sErr, sql.ErrNoRows) {
 			log.Printf("[controller][account][LoginUserToOrg] - error: could not find user with email %s during login attempt", body.Email)
 			return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid login", "Could not login to organization. Password or email is incorrect.")
 		}
@@ -283,7 +284,7 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 	})
 
 	apps, err := database.FetchApps(user.UUID.String(), org.UID.String())
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		log.Printf("[controller][account][LoginUserToOrg] - error getting apps: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not get apps")
 	}

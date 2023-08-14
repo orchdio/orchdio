@@ -3,6 +3,8 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-redis/redis/v8"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
@@ -86,6 +88,8 @@ func (o *OrchdioQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task
 // EnqueueTask enqueues the task passed in.
 func (o *OrchdioQueue) EnqueueTask(task *asynq.Task, queue, taskId string, processIn time.Duration) error {
 	log.Printf("[queue][EnqueueTask] - enqueuing task: %v", taskId)
+	log.Printf("Task to enqueue is")
+	spew.Dump(task)
 	_, err := o.AsynqClient.Enqueue(task, asynq.Queue(queue), asynq.TaskID(taskId), asynq.Unique(time.Second*60),
 		asynq.ProcessIn(processIn))
 	if err != nil {
@@ -116,20 +120,24 @@ func (o *OrchdioQueue) SendEmail(emailData *blueprint.EmailTaskData) error {
 	config.AddDefaultHeader("api-key", os.Getenv("SENDINBLUE_API_KEY"))
 	client := sendinblue.NewAPIClient(config)
 
+	subject := "App Access"
+	if emailData.Subject != "" {
+		subject = emailData.Subject
+	}
+
 	_, resp, err := client.TransactionalEmailsApi.SendTransacEmail(context.Background(), sendinblue.SendSmtpEmail{
-		Sender: &sendinblue.SendSmtpEmailSender{
-			Name:  "Orchdio Alert",
-			Email: emailData.From,
-		},
-		To: []sendinblue.SendSmtpEmailTo{
+		TemplateId: int64(emailData.TemplateID),
+		MessageVersions: []sendinblue.SendSmtpEmailMessageVersions{
 			{
-				Email: emailData.To,
-				Name:  "",
+				To: []sendinblue.SendSmtpEmailTo1{
+					{
+						Email: emailData.To,
+					},
+				},
+				Params:  emailData.Payload,
+				Subject: subject,
 			},
 		},
-		Params:     emailData.Payload,
-		Subject:    "App access",
-		TemplateId: int64(emailData.TemplateID),
 	})
 
 	if err != nil {
@@ -254,7 +262,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 		log.Printf("[queue][EnqueueTask] - error converting playlist: %v", err)
 		status = "failed"
 		// this is for when for example, apple music returns Not Found for a playlist thats visible but not public. (needs citation)
-		if err == blueprint.ENORESULT {
+		if errors.Is(err, blueprint.ENORESULT) {
 			// create a new payload
 			payload := blueprint.TaskErrorPayload{
 				Platform: info.Platform,

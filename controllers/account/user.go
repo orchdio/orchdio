@@ -1,13 +1,19 @@
 package account
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
 	"github.com/samber/lo"
+	"golang.org/x/crypto/bcrypt"
 	"log"
 	"net/http"
 	"net/mail"
@@ -15,6 +21,7 @@ import (
 	"orchdio/blueprint"
 	"orchdio/db"
 	"orchdio/db/queries"
+	"orchdio/queue"
 	"orchdio/services"
 	"orchdio/services/deezer"
 	orchdioFollow "orchdio/services/follow"
@@ -22,17 +29,22 @@ import (
 	"orchdio/util"
 	"os"
 	"strings"
+	"time"
 )
 
 type UserController struct {
-	DB    *sqlx.DB
-	Redis *redis.Client
+	DB          *sqlx.DB
+	Redis       *redis.Client
+	AsynqClient *asynq.Client
+	AsynqServer *asynq.ServeMux
 }
 
-func NewUserController(db *sqlx.DB, r *redis.Client) *UserController {
+func NewUserController(db *sqlx.DB, r *redis.Client, asynqClient *asynq.Client, asynqServer *asynq.ServeMux) *UserController {
 	return &UserController{
-		DB:    db,
-		Redis: r,
+		DB:          db,
+		Redis:       r,
+		AsynqClient: asynqClient,
+		AsynqServer: asynqServer,
 	}
 }
 
@@ -77,29 +89,6 @@ func (u *UserController) AddToWaitlist(ctx *fiber.Ctx) error {
 	return util.SuccessResponse(ctx, http.StatusOK, emailFromDB)
 }
 
-//func (u *UserController) CreateOrUpdateRedirectURL(ctx *fiber.Ctx) error {
-//	// swagger:route POST /redirect CreateOrUpdateRedirectURL
-//	// Creates or updates a redirect URL for a user
-//	//
-//	claims := ctx.Locals("developer").(*blueprint.User)
-//
-//	body := ctx.Body()
-//	redirectURL := struct {
-//		Url string `json:"redirect_url"`
-//	}{}
-//	err := json.Unmarshal(body, &redirectURL)
-//	if err != nil {
-//		log.Printf("[controller][user][CreateOrUpdateRedirectURL] - error unmarshalling body %v\n", err)
-//		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid request body")
-//	}
-//
-//	if redirectURL.Url == "" {
-//		log.Printf("[controller][user][CreateOrUpdateRedirectURL] - redirect url is empty %v\n", redirectURL)
-//		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid request body")
-//	}
-//	return util.SuccessResponse(ctx, http.StatusOK, nil)
-//}
-
 // FetchProfile fetches the user profile
 func (u *UserController) FetchProfile(ctx *fiber.Ctx) error {
 	claims := ctx.Locals("app_jwt").(*blueprint.AppJWT)
@@ -112,7 +101,7 @@ func (u *UserController) FetchProfile(ctx *fiber.Ctx) error {
 	database := db.NewDB{DB: u.DB}
 	user, err := database.FindUserByUUID(claims.DeveloperID)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			log.Printf("\n[user][controller][FetchUserProfile] error - user not found %v\n", err)
 			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User profile not found. This user may not have connected to Orchdio yet")
 		}
@@ -139,7 +128,7 @@ func (u *UserController) FetchUserProfile(ctx *fiber.Ctx) error {
 	database := db.NewDB{DB: u.DB}
 	user, err := database.FindUserProfileByEmail(email)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			log.Printf("\n[user][controller][FetchUserProfile] error - user not found %v\n", err)
 			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User profile not found. This user may not have connected to Orchdio yet")
 		}
@@ -326,197 +315,192 @@ func (u *UserController) FetchUserInfoByIdentifier(ctx *fiber.Ctx) error {
 	return util.SuccessResponse(ctx, http.StatusOK, userInfo)
 }
 
-// GenerateAPIKey generates API key for users
-//func (c *UserController) GenerateAPIKey(ctx *fiber.Ctx) error {
-//	/**
-//	  SPEC
-//	=====================================================================================================
-//	  When a user wants to generate keys, first they obviously must have an account
-//	  At the moment, there shall be no rate limit on the APIs.
-//
-//	  The API key would be like so: "xxx-xxx-xxx-xxx". A UUID v4 seems to fit this the most
-//	  but if there are other ways to generate an ID similar to that, then its okay. Specific way/tool to
-//	  arrive at the solution is up to be decided when implementing.
-//
-//	  The API key shall keep count of how many requests have been made. This is to ensure that there is
-//	  good tracking of requests per app since there are no specific rate-limiting yet.
-//
-//	  The API key shall be used in the header like: "x-orchdio-key".
-//
-//	  There shall be just one key allowed per user for the moment.
-//	  =====================================================================================================
-//
-//
-//	  IMPLEMENTATION NOTES
-//	  Create a new table called apiKeys
-//	  Create a 1-1 (for now) relationship for apiKeys to users
-//
-//
-//	  First, check if the access token is valid. An api key is valid for indefinite time (for now)
-//	  If its valid, then the user can make calls. If not, they need to auth again.
-//	*/
-//
-//	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
-//
-//	apiToken, _ := uuid.NewUUID()
-//
-//	database := db.NewDB{
-//		DB: c.DB,
-//	}
-//
-//	// first fetch user
-//	user, err := database.FindUserByEmail(claims.Email, claims.Platform)
-//	existingKey, err := database.FetchUserApikey(user.Email)
-//	if err != nil && err != sql.ErrNoRows {
-//		if err != sql.ErrNoRows {
-//
-//			log.Printf("[controller][user][GenerateApiKey] could not fetch api key from db. %v\n", err)
-//			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not fetch key from database")
-//		}
-//	}
-//
-//	// first check if the user already has an api key. if they do, return a
-//	// http conflict status
-//	if existingKey != nil {
-//		log.Printf("[controller][user][Generate] warning - user already has key")
-//		errResponse := "You already have a key"
-//		return util.ErrorResponse(ctx, http.StatusConflict, "record conflict", errResponse)
-//	}
-//
-//	// save into db
-//	query := queries.CreateNewKey
-//	_, dbErr := c.DB.Exec(query,
-//		apiToken.String(),
-//		user.UUID,
-//	)
-//
-//	if dbErr != nil {
-//		log.Printf("\n[controller][account][user][AuthUser] Error executing query: %v\n. Could not create new key", dbErr)
-//		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not create new key")
-//	}
-//
-//	response := map[string]string{
-//		"key": apiToken.String(),
-//	}
-//	log.Printf("[controller][accounnt][user]: Created a new api key for user\n")
-//	return util.SuccessResponse(ctx, http.StatusCreated, response)
-//
-//}
+func (u *UserController) ResetPassword(ctx *fiber.Ctx) error {
 
-// RevokeKey revokes an api key.
-//func (c *UserController) RevokeKey(ctx *fiber.Ctx) error {
-//	// get the api key from the header
-//	apiKey := ctx.Get("x-orchdio-key")
-//	// we want to set the value of revoked to true
-//	database := db.NewDB{DB: c.DB}
-//
-//	err := database.RevokeApiKey(apiKey)
-//	if err != nil {
-//		log.Printf("[controller][user][RevokeKey] error revoking key. %v\n", err)
-//		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
-//	}
-//
-//	return util.SuccessResponse(ctx, http.StatusOK, nil)
-//}
+	// GET: check if the token is valid
+	// if the method is a GET, we want to check if the token is valid and return a 200 if not and 500 otherwise
+	if ctx.Method() == http.MethodGet {
+		log.Printf("[controller][user][ResetPassword] - checking if token is valid")
+		// get the token from the redis store
+		token := ctx.Query("token")
+		if token == "" {
+			log.Printf("[controller][user][ResetPassword] - token not passed. Please pass a valid token")
+			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Token not passed")
+		}
 
-// UnRevokeKey unrevokes an api key.
-//func (c *UserController) UnRevokeKey(ctx *fiber.Ctx) error {
-//	// get the api key from the header
-//	apiKey := ctx.Get("x-orchdio-key")
-//	// we want to set the value of revoked to true
-//	database := db.NewDB{DB: c.DB}
-//
-//	err := database.UnRevokeApiKey(apiKey)
-//	if err != nil {
-//		log.Printf("[controller][user][RevokeKey] error revoking key. %v\n", err)
-//		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
-//	}
-//	log.Printf("[controller][user][UnRevokeKey] UnRevoked key")
-//	return util.SuccessResponse(ctx, http.StatusOK, nil)
-//}
+		// check if the token is valid
+		val := u.Redis.Get(context.Background(), token).Val()
+		if val == "" {
+			log.Printf("[controller][user][ResetPassword] - token is invalid")
+			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Token is invalid")
+		}
+		log.Printf("[controller][user][ResetPassword] - token is valid")
+		return util.SuccessResponse(ctx, http.StatusOK, token)
+	}
 
-// RetrieveKey retrieves an API key associated with the user
-//func (c *UserController) RetrieveKey(ctx *fiber.Ctx) error {
-//	// swagger:route GET /key RetrieveKey
-//	//
-//	// Retrieves an API key associated with the user. The user is known by examining the request header and as such, the user must be authenticated
-//	//
-//	// ---
-//	// Consumes:
-//	//  - application/json
-//	//
-//	// Produces:
-//	//  - application/json
-//	//
-//	// Schemes: https
-//	//
-//	// Security:
-//	// 	api_key:
-//	// 		[x-orchdio-key]:
-//	//
-//	// Responses:
-//	//  200: retrieveApiKeyResponse
-//
-//	// swagger:response retrieveApiKeyResponse
-//	type RetrieveApiKeyResponse struct {
-//		// The message attached to the response.
-//		//
-//		// Required: true
-//		//
-//		// Example: "This is a message about whatever i can tell you about the error"
-//		Message string `json:"message"`
-//		// Description: The error code attached to the response. This will return 200 (or 201), depending on the endpoint. It returns 4xx - 5xx as suitable, otherwise.
-//		//
-//		// Required: true
-//		//
-//		// Example: 201
-//		Status string `json:"status"`
-//		// The key attached to the response.
-//		//
-//		// Example: c8e51d6c-4d6f-42f6-bcb6-9da19fc5b848
-//		//
-//		// Required: true
-//		Payload interface{} `json:"data"`
-//	}
-//
-//	log.Printf("[controller][user][RetrieveKey] - Retrieving API key")
-//	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
-//	database := db.NewDB{
-//		DB: c.DB,
-//	}
-//
-//	key, err := database.FetchUserApikey(claims.Email)
-//	if err != nil {
-//		if err == sql.ErrNoRows {
-//			log.Printf("[controller][user][RetrieveKey] - App does not have a key")
-//			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "You do not have a key")
-//		}
-//
-//		log.Printf("[controller][user][RetrieveKey] - Could not retrieve user key. %v\n", err)
-//		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error")
-//	}
-//	log.Printf("[controller][user][RetrieveKey] - Retrieved apikey for user %+v\n", key)
-//	return util.SuccessResponse(ctx, http.StatusOK, key.Key)
-//}
+	// POST: reset the password
+	log.Printf("[controller][user][ResetPassword] - resetting password")
+	body := struct {
+		Email string `json:"email"`
+	}{}
 
-// DeleteKey deletes a user's api key
-//func (c *UserController) DeleteKey(ctx *fiber.Ctx) error {
-//	log.Printf("[controller][user][DeleteKey] - deleting key")
-//	claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
-//	apiKey := ctx.Get("x-orchdio-key")
-//	database := db.NewDB{DB: c.DB}
-//
-//	deletedKey, err := database.DeleteApiKey(apiKey, claims.UUID.String())
-//	if err != nil {
-//		log.Printf("[controller][user][DeleteKey] - error deleting Key from database %s\n", err.Error())
-//		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error")
-//	}
-//
-//	if len(deletedKey) == 0 {
-//		log.Printf("[controller][user][DeleteKey] - key already deleted")
-//		return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "Key not found. You already deleted this key")
-//	}
-//
-//	log.Printf("[controller][user][DeleteKey] - deleted key for user %v\n", claims)
-//	return util.SuccessResponse(ctx, http.StatusOK, string(deletedKey))
-//}
+	err := ctx.BodyParser(&body)
+	if body.Email == "" {
+		log.Printf("[controller][user][ResetPassword] - email not passed. Please pass a valid email")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Email not passed")
+	}
+
+	// parse email
+	_, err = mail.ParseAddress(body.Email)
+	if err != nil {
+		log.Printf("[controller][user][ResetPassword] - invalid email passed")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "invalid email", "Please pass a valid email")
+	}
+
+	DB := db.NewDB{DB: u.DB}
+	user, err := DB.FindUserByEmail(body.Email)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			log.Printf("[controller][user][ResetPassword] - user not found")
+			return util.ErrorResponse(ctx, http.StatusBadRequest, "invalid data", "Login failed. The email may be invalid. Please make sure it is a valid email.")
+		}
+	}
+	resetToken := util.GenerateResetToken(2)
+
+	err = DB.SaveUserResetToken(user.UUID.String(), string(resetToken), time.Now().Add(15*time.Minute))
+	if err != nil {
+		log.Printf("[controller][user][ResetPassword] - error saving reset token: %v", err)
+		return util.ErrorResponse(ctx, http.StatusUnprocessableEntity, err, "Could not set reset token")
+	}
+	//_, err = u.Redis.Set(context.Background(), redisKey, redisValue, time.Minute*15).Result()
+	//if err != nil {
+	//	log.Printf("[controller][user][ResetPassword] - error setting reset token in redis: %v", err)
+	//	return util.ErrorResponse(ctx, http.StatusUnprocessableEntity, err, "Could not set reset token")
+	//}
+
+	taskID := uuid.New().String()
+	_ = &blueprint.AppTaskData{
+		Name: "reset-password",
+		UUID: taskID,
+	}
+
+	// then send the email....
+	orchdioQueue := queue.NewOrchdioQueue(u.AsynqClient, u.DB, u.Redis, u.AsynqServer)
+	taskData := &blueprint.EmailTaskData{
+		From: os.Getenv("ALERT_EMAIL"),
+		To:   body.Email,
+		Payload: map[string]interface{}{
+			"RESETLINK": fmt.Sprintf("%s/reset-password?token=%s", os.Getenv("FRONTEND_URL"), resetToken),
+		},
+		TaskID:     taskID,
+		TemplateID: 4,
+		Subject:    "Password Reset",
+	}
+
+	log.Printf("task data:")
+	spew.Dump(taskData)
+
+	serializedEmailData, err := json.Marshal(taskData)
+	if err != nil {
+		log.Printf("[controller][user][ResetPassword] - error serializing email data: %v", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not serialize email data")
+	}
+
+	sendMail, err := orchdioQueue.NewTask(fmt.Sprintf("send:reset_password_email:%s", taskID), queue.EmailTask, 2, serializedEmailData)
+	if err != nil {
+		log.Printf("[controller][user][ResetPassword] - error creating send email task: %v", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not create send email task")
+	}
+
+	err = orchdioQueue.EnqueueTask(sendMail, queue.EmailQueue, taskID, time.Second*2)
+	if err != nil {
+		log.Printf("[controller][user][ResetPassword] - error enqueuing send email task: %v", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not enqueue send email task")
+	}
+
+	return util.SuccessResponse(ctx, http.StatusOK, "Reset token sent successfully")
+}
+
+func (u *UserController) ChangePassword(ctx *fiber.Ctx) error {
+	log.Printf("[controller][user][ChangePassword] - changing password")
+	body := struct {
+		Password        string `json:"password"`
+		ConfirmPassword string `json:"confirm_password"`
+		ResetToken      string `json:"reset_token"`
+	}{}
+
+	err := ctx.BodyParser(&body)
+	if body.ResetToken == "" {
+		log.Printf("[controller][user][ChangePassword] - email not passed. Please pass a valid email")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Email not passed")
+	}
+	if body.Password == "" {
+		log.Printf("[controller][user][ChangePassword] - password not passed. Please pass a valid password")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Password not passed")
+	}
+
+	if body.ConfirmPassword == "" {
+		log.Printf("[controller][user][ChangePassword] - confirm password not passed. Please pass a valid confirm password")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Confirm Password not passed")
+	}
+
+	if body.Password != body.ConfirmPassword {
+		log.Printf("[controller][user][ChangePassword] - password and confirm password do not match")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Password and Confirm Password do not match")
+	}
+
+	DB := db.NewDB{DB: u.DB}
+
+	// get key from redis.
+	user, err := DB.FindUserByResetToken(body.ResetToken)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			log.Printf("[controller][user][ChangePassword] - user not found")
+			return util.ErrorResponse(ctx, http.StatusBadRequest, "invalid data", "Token not found or has expired. Please retry the password reset or check credentials passed.")
+		}
+		log.Printf("[controller][user][ChangePassword] - error finding user: %v", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not find user")
+	}
+
+	// hash password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
+	if err != nil {
+		log.Printf("[controller][user][ChangePassword] - error hashing password: %v", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not hash password")
+	}
+
+	// update password
+	err = DB.UpdateUserPassword(string(hashedPassword), user.UUID.String())
+	if err != nil {
+		log.Printf("[controller][user][ChangePassword] - error updating password: %v", err)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not update password")
+	}
+
+	userOrg, dErr := DB.FetchOrgs(user.UUID.String())
+	if dErr != nil {
+		log.Printf("[controller][user][ChangePassword] - error fetching user org: %v", dErr)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, dErr, "Could not fetch user org")
+	}
+
+	// create app jwt token
+	token, err := util.SignOrgLoginJWT(&blueprint.AppJWT{
+		OrgID:       userOrg.UID.String(),
+		DeveloperID: user.UUID.String(),
+	})
+
+	apps, er := DB.FetchApps(userOrg.UID.String(), user.UUID.String())
+	if er != nil {
+		log.Printf("[controller][user][ChangePassword] - error fetching user apps: %v", er)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, er, "Could not fetch user apps")
+	}
+
+	// todo: perhaps move this to a util/separate func. also found in org.go
+	result := map[string]interface{}{
+		"org_id":      userOrg.UID.String(),
+		"name":        userOrg.Name,
+		"description": userOrg.Description,
+		"token":       token,
+		"apps":        apps,
+	}
+	return util.SuccessResponse(ctx, http.StatusOK, result)
+}

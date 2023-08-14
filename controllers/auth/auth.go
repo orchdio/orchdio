@@ -239,7 +239,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		developerApp, err := database.FetchAppByPublicKeyWithoutDevId(body.App)
 		if err != nil {
 			log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch app by public key: %v\n", err)
-			if err == sql.ErrNoRows {
+			if errors.Is(err, sql.ErrNoRows) {
 				return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "invalid app. please make sure that the public key belongs to an existing app.")
 			}
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
@@ -552,7 +552,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			client, refreshToken, err := spotify.CompleteUserAuth(ctx.Context(), r, redirectURL, integrationCredentials)
 			if err != nil {
 				log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to complete spotify user auth: %v\n", err)
-				if err == blueprint.EINVALIDAUTHCODE {
+				if errors.Is(err, blueprint.EINVALIDAUTHCODE) {
 					log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: invalid auth code\n")
 					return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "invalid auth code")
 				}

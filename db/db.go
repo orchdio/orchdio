@@ -13,6 +13,7 @@ import (
 	"orchdio/blueprint"
 	"orchdio/db/queries"
 	"orchdio/util"
+	"time"
 )
 
 // NewDB represents a new DB layer struct for performing DB related operations
@@ -684,5 +685,42 @@ func (d *NewDB) FetchPlatformAndUserInfoByIdentifier(identifier, app, platform s
 		return nil, err
 	}
 
+	return &res, nil
+}
+
+// UpdateUserPassword updates a user's password
+func (d *NewDB) UpdateUserPassword(hash, userId string) error {
+	log.Printf("[db][UpdateUserPassword] Running query %s\n", queries.UpdateUserPassword)
+	_, err := d.DB.Exec(queries.UpdateUserPassword, hash, userId)
+	if err != nil {
+		log.Printf("[db][UpdateUserPassword] error updating user password. %v\n", err)
+		return err
+	}
+	log.Printf("[db][UpdateUserPassword] updated user password %s\n", userId)
+	return nil
+}
+
+func (d *NewDB) SaveUserResetToken(id, token string, expiry time.Time) error {
+	log.Printf("[db][SaveUserResetToken] Running query %s\n", queries.SaveUserResetToken)
+	_, err := d.DB.Exec(queries.SaveUserResetToken, id, token, expiry)
+	if err != nil {
+		log.Printf("[db][SaveUserResetToken] error saving user reset token. %v\n", err)
+		return err
+	}
+	log.Printf("[db][SaveUserResetToken] saved user reset token %s\n", token)
+	return nil
+}
+
+// FindUserByResetToken finds a user by the reset token
+func (d *NewDB) FindUserByResetToken(token string) (*blueprint.User, error) {
+	log.Printf("[db][FindUserByResetToken] Running query %s\n", queries.FindUserByResetToken)
+	row := d.DB.QueryRowx(queries.FindUserByResetToken, token)
+	var res blueprint.User
+	err := row.StructScan(&res)
+	if err != nil {
+		log.Printf("[db][FindUserByResetToken] error finding user by reset token. %v\n", err)
+		return nil, err
+	}
+	log.Printf("[db][FindUserByResetToken] found user by reset token %s\n", token)
 	return &res, nil
 }
