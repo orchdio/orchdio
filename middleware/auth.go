@@ -314,7 +314,7 @@ func FetcPlatformNameByIdentifier(identifier string) string {
 func (a *AuthMiddleware) AddRequestPlatformToCtx(ctx *fiber.Ctx) error {
 	platform := ctx.Params("platform")
 	reqId := ctx.Get("x-orchdio-request-id")
-	pubKey := ctx.Locals("app_pub_key").(string)
+	pubKey := ctx.Get("x-orchdio-public-key")
 	loggerOpts := &blueprint.OrchdioLoggerOptions{
 		RequestID:            reqId,
 		ApplicationPublicKey: zap.String("app_public_key", pubKey).String,
