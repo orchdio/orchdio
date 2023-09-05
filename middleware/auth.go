@@ -335,6 +335,7 @@ func (a *AuthMiddleware) AddRequestPlatformToCtx(ctx *fiber.Ctx) error {
 
 	appPubKey := ctx.Get("x-orchdio-public-key")
 	path := ctx.Path()
+	orchdioLogger.Info("Request path", zap.String("path", path))
 
 	// due to the fact that during auth, deezer doesn't make the request with the pubkey
 	// we make sure to skip for auth paths generally
