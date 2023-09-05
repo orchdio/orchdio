@@ -321,7 +321,7 @@ func (a *AuthMiddleware) AddRequestPlatformToCtx(ctx *fiber.Ctx) error {
 		ApplicationPublicKey: zap.String("app_public_key", pubKey).String,
 		Platform:             zap.String("platform", platform).String,
 	}
-	spew.Dump("Headers are: ", string(ctx.Request().Header.Header()))
+	spew.Dump("Headers are: ", string(ctx.Request().Header.RawHeaders()))
 	orchdioLogger := logger2.NewZapSentryLogger(loggerOpts)
 	orchdioLogger.Info("Request ID", zap.String("request_id", reqId))
 	if platform == "" {
