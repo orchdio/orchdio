@@ -714,11 +714,17 @@ func (d *NewDB) SaveUserResetToken(id, token string, expiry time.Time) error {
 // FindUserByResetToken finds a user by the reset token
 func (d *NewDB) FindUserByResetToken(token string) (*blueprint.User, error) {
 	log.Printf("[db][FindUserByResetToken] Running query %s\n", queries.FindUserByResetToken)
+	log.Printf("Token to search with")
+	spew.Dump(token)
+
 	row := d.DB.QueryRowx(queries.FindUserByResetToken, token)
 	var res blueprint.User
 	err := row.StructScan(&res)
 	if err != nil {
 		log.Printf("[db][FindUserByResetToken] error finding user by reset token. %v\n", err)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, sql.ErrNoRows
+		}
 		return nil, err
 	}
 	log.Printf("[db][FindUserByResetToken] found user by reset token %s\n", token)

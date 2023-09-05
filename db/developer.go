@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"log"
@@ -19,6 +20,30 @@ import (
 
 // CreateNewApp creates a new app for the developer and returns a uuid of the newly created app
 func (d *NewDB) CreateNewApp(name, description, redirectURL, webhookURL, publicKey, developerId, secretKey, verifySecret, orgID, deezerState string) ([]byte, error) {
+	log.Printf("Webhook URL is")
+	spew.Dump(struct {
+		Name         string
+		Description  string
+		RedirectURL  string
+		WebhookURL   string
+		PublicKey    string
+		DeveloperID  string
+		SecretKey    string
+		VerifySecret string
+		OrgID        string
+		DeezerState  string
+	}{
+		Name:         name,
+		Description:  description,
+		RedirectURL:  redirectURL,
+		WebhookURL:   webhookURL,
+		PublicKey:    publicKey,
+		DeveloperID:  developerId,
+		SecretKey:    secretKey,
+		VerifySecret: verifySecret,
+		OrgID:        orgID,
+		DeezerState:  deezerState,
+	})
 	log.Printf("[db][CreateNewApp] developer -  creating new app: %s\n", name)
 	// create a new app
 	uid := uuid.NewString()
@@ -44,7 +69,7 @@ func (d *NewDB) CreateNewApp(name, description, redirectURL, webhookURL, publicK
 func (d *NewDB) UpdateIntegrationCredentials(credentials []byte, appId, platform, redirectURL, webhookURL string) error {
 	log.Printf("[db][UpdateIntegrationCredentials] developer -  updating integration credentials for app: %s\n", appId)
 	// create a new app
-	_, err := d.DB.Exec(queries.UpdateAppIntegrationCredentials, credentials, appId, platform, redirectURL, webhookURL)
+	_, err := d.DB.Exec(queries.UpdateAppIntegrationCredentials, credentials, appId, platform, webhookURL, redirectURL)
 	if err != nil {
 		log.Printf("[db][UpdateIntegrationCredentials] developer -  error: could not update integration credentials for app: %v\n", err)
 		return err
@@ -340,6 +365,7 @@ func (d *NewDB) FetchApps(developerId, orgID string) (*[]blueprint.AppInfo, erro
 			WebhookURL:  app.WebhookURL,
 			PublicKey:   app.PublicKey.String(),
 			Authorized:  app.Authorized,
+			DeezerState: app.DeezerState,
 		}
 		apps = append(apps, appInfo)
 	}
@@ -362,6 +388,50 @@ func (d *NewDB) UpdateAppKeys(publicKey, secretKey, verifySecret, appId, deezerS
 		return err
 	}
 	log.Printf("[db][UpdateAppKeys] developer - app keys updated: %s\n", publicKey)
+	return nil
+}
+
+func (d *NewDB) RevokeSecretKey(appId, newSecret string) error {
+	log.Printf("[db][RevokeSecretKey] developer - revoking secret key: %s\n", appId)
+	_, err := d.DB.Exec(queries.RevokeSecretKey, appId, newSecret)
+	if err != nil {
+		log.Printf("[db][RevokeSecretKey] developer - error: could not revoke secret key: %v\n", err)
+		return err
+	}
+	log.Printf("[db][RevokeSecretKey] developer - secret key revoked: %s\n", appId)
+	return nil
+}
+
+func (d *NewDB) RevokeVerifySecret(appId, newVerifyToken string) error {
+	log.Printf("[db][RevokeVerifySecret] developer - revoking verify secret: %s\n", appId)
+	_, err := d.DB.Exec(queries.RevokeVerifySecret, appId, newVerifyToken)
+	if err != nil {
+		log.Printf("[db][RevokeVerifySecret] developer - error: could not revoke verify secret: %v\n", err)
+		return err
+	}
+	log.Printf("[db][RevokeVerifySecret] developer - verify secret revoked: %s\n", appId)
+	return nil
+}
+
+func (d *NewDB) RevokeDeezerState(appId, newDeezerState string) error {
+	log.Printf("[db][RevokeDeezerState] developer - revoking deezer state: %s\n", appId)
+	_, err := d.DB.Exec(queries.RevokeDeezerState, appId, newDeezerState)
+	if err != nil {
+		log.Printf("[db][RevokeDeezerState] developer - error: could not revoke deezer state: %v\n", err)
+		return err
+	}
+	log.Printf("[db][RevokeDeezerState] developer - deezer state revoked: %s\n", appId)
+	return nil
+}
+
+func (d *NewDB) RevokePublicKey(appId, newPublicKey string) error {
+	log.Printf("[db][RevokePublicKey] developer - revoking public key: %s\n", appId)
+	_, err := d.DB.Exec(queries.RevokePublicKey, appId, newPublicKey)
+	if err != nil {
+		log.Printf("[db][RevokePublicKey] developer - error: could not revoke public key: %v\n", err)
+		return err
+	}
+	log.Printf("[db][RevokePublicKey] developer - public key revoked: %s\n", appId)
 	return nil
 }
 

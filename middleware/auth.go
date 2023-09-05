@@ -320,6 +320,13 @@ func (a *AuthMiddleware) AddRequestPlatformToCtx(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid platform")
 	}
 
+	appPubKey := ctx.Get("x-orchdio-public-key")
+	if appPubKey == "" {
+		log.Printf("[middleware][AddRequestPlatformToCtx] developer -  error: could not fetch app developer with public key. No header passed")
+	} else {
+		ctx.Locals("app_pub_key", appPubKey)
+	}
+
 	ctx.Locals("platform", platform)
 	return ctx.Next()
 }

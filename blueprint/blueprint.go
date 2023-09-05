@@ -469,6 +469,7 @@ type AppKeys struct {
 	PublicKey    string `json:"public_key,omitempty" db:"public_key"`
 	SecretKey    string `json:"secret_key,omitempty" db:"secret_key"`
 	VerifySecret string `json:"verify_secret,omitempty" db:"verify_token"`
+	DeezerState  string `json:"deezer_state,omitempty" db:"deezer_state"`
 }
 
 type AddToWaitlistBody struct {
@@ -485,6 +486,9 @@ type AppInfo struct {
 	PublicKey   string                   `json:"public_key"`
 	Authorized  bool                     `json:"authorized"`
 	Credentials []IntegrationCredentials `json:"credentials"`
+	// due to the weird nature of deezer auth, we add the deezerstate for the app here
+	// to be visible to the developer
+	DeezerState string `json:"deezer_state,omitempty"`
 }
 
 type UserPlaylist struct {
@@ -692,14 +696,14 @@ type User struct {
 	Email string `json:"email" db:"email"`
 	//Usernames interface{} `json:"usernames" db:"usernames"`
 	//Username     string      `json:"username,omitempty" db:"username"`
-	ID               int       `json:"id,omitempty" db:"id"`
-	UUID             uuid.UUID `json:"uuid" db:"uuid"`
-	CreatedAt        string    `json:"created_at" db:"created_at"`
-	UpdatedAt        string    `json:"updated_at" db:"updated_at"`
-	Password         string    `json:"password,omitempty" db:"password,omitempty"`
-	ResetToken       string    `json:"reset_token,omitempty" db:"reset_token,omitempty"`
-	ResetTokenExpiry string    `json:"reset_token_expiry,omitempty" db:"reset_token_expiry,omitempty"`
-
+	ID                  int       `json:"id,omitempty" db:"id"`
+	UUID                uuid.UUID `json:"uuid" db:"uuid"`
+	CreatedAt           string    `json:"created_at" db:"created_at"`
+	UpdatedAt           string    `json:"updated_at" db:"updated_at"`
+	Password            string    `json:"password,omitempty" db:"password,omitempty"`
+	ResetToken          string    `json:"reset_token,omitempty" db:"reset_token,omitempty"`
+	ResetTokenExpiry    string    `json:"reset_token_expiry,omitempty" db:"reset_token_expiry,omitempty"`
+	ResetTokenCreatedAt string    `json:"reset_token_created_at,omitempty" db:"reset_token_created_at,omitempty"`
 	//RefreshToken []byte      `json:"refresh_token" db:"refresh_token,omitempty"`
 	//PlatformID  string      `json:"platform_id" db:"platform_id"`
 	//Authorized  bool        `json:"authorized,omitempty" db:"authorized,omitempty"`
@@ -724,6 +728,18 @@ type AppJWT struct {
 	jwt.RegisteredClaims
 	DeveloperID string `json:"developer_id"`
 	OrgID       string `json:"organization_id"`
+}
+type OrchdioLoggerTags struct {
+	Component            string      `json:"component"`
+	RequestID            string      `json:"request_id"`
+	Timestamp            string      `json:"timestamp"`
+	ApplicationPublicKey string      `json:"application_public_key"`
+	AppID                string      `json:"app_id"`
+	Platform             string      `json:"platform"`
+	Entity               interface{} `json:"entity"`
+	Error                interface{} `json:"error"`
+	Message              string      `json:"message"`
+	AddTrace             bool        `json:"add_trace"`
 }
 
 //// DeveloperAppWithUserApp is similar to ```DeveloperApp``` but includes the user app id and other user app info

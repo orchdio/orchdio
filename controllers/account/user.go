@@ -1,7 +1,6 @@
 package account
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -320,7 +319,7 @@ func (u *UserController) ResetPassword(ctx *fiber.Ctx) error {
 	// GET: check if the token is valid
 	// if the method is a GET, we want to check if the token is valid and return a 200 if not and 500 otherwise
 	if ctx.Method() == http.MethodGet {
-		log.Printf("[controller][user][ResetPassword] - checking if token is valid")
+		log.Printf("[controller][user][ResetPassword][GET] - checking if token is valid")
 		// get the token from the redis store
 		token := ctx.Query("token")
 		if token == "" {
@@ -328,12 +327,19 @@ func (u *UserController) ResetPassword(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Token not passed")
 		}
 
-		// check if the token is valid
-		val := u.Redis.Get(context.Background(), token).Val()
-		if val == "" {
-			log.Printf("[controller][user][ResetPassword] - token is invalid")
-			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Token is invalid")
+		// fetch the user profile from db if the token is valid
+		database := db.NewDB{DB: u.DB}
+		log.Printf("Token passed is %s", token)
+		_, err := database.FindUserByResetToken(strings.Trim(token, " "))
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				log.Printf("[controller][user][ResetPassword] - token is invalid")
+				return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Token is invalid")
+			}
+			log.Printf("[controller][user][ResetPassword] - error fetching user profile: %v", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not fetch user profile")
 		}
+
 		log.Printf("[controller][user][ResetPassword] - token is valid")
 		return util.SuccessResponse(ctx, http.StatusOK, token)
 	}
@@ -390,7 +396,7 @@ func (u *UserController) ResetPassword(ctx *fiber.Ctx) error {
 		From: os.Getenv("ALERT_EMAIL"),
 		To:   body.Email,
 		Payload: map[string]interface{}{
-			"RESETLINK": fmt.Sprintf("%s/reset-password?token=%s", os.Getenv("FRONTEND_URL"), resetToken),
+			"RESETLINK": fmt.Sprintf("%s/change-password?token=%s", os.Getenv("ORCHDIO_DASHBOARD_URL"), resetToken),
 		},
 		TaskID:     taskID,
 		TemplateID: 4,
@@ -431,9 +437,10 @@ func (u *UserController) ChangePassword(ctx *fiber.Ctx) error {
 
 	err := ctx.BodyParser(&body)
 	if body.ResetToken == "" {
-		log.Printf("[controller][user][ChangePassword] - email not passed. Please pass a valid email")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Email not passed")
+		log.Printf("[controller][user][ChangePassword] - Reset token not present. Please pass a valid reset token")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid reset token")
 	}
+
 	if body.Password == "" {
 		log.Printf("[controller][user][ChangePassword] - password not passed. Please pass a valid password")
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Password not passed")
@@ -489,7 +496,7 @@ func (u *UserController) ChangePassword(ctx *fiber.Ctx) error {
 	})
 
 	apps, er := DB.FetchApps(userOrg.UID.String(), user.UUID.String())
-	if er != nil {
+	if er != nil && !errors.Is(er, sql.ErrNoRows) {
 		log.Printf("[controller][user][ChangePassword] - error fetching user apps: %v", er)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, er, "Could not fetch user apps")
 	}
@@ -499,7 +506,7 @@ func (u *UserController) ChangePassword(ctx *fiber.Ctx) error {
 		"org_id":      userOrg.UID.String(),
 		"name":        userOrg.Name,
 		"description": userOrg.Description,
-		"token":       token,
+		"token":       string(token),
 		"apps":        apps,
 	}
 	return util.SuccessResponse(ctx, http.StatusOK, result)

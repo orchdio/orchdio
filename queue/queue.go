@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/go-redis/redis/v8"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
@@ -88,8 +87,6 @@ func (o *OrchdioQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task
 // EnqueueTask enqueues the task passed in.
 func (o *OrchdioQueue) EnqueueTask(task *asynq.Task, queue, taskId string, processIn time.Duration) error {
 	log.Printf("[queue][EnqueueTask] - enqueuing task: %v", taskId)
-	log.Printf("Task to enqueue is")
-	spew.Dump(task)
 	_, err := o.AsynqClient.Enqueue(task, asynq.Queue(queue), asynq.TaskID(taskId), asynq.Unique(time.Second*60),
 		asynq.ProcessIn(processIn))
 	if err != nil {
@@ -183,59 +180,6 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 		log.Printf("[queue][PlaylistHandler] - could not find user: %v", err)
 		return err
 	}
-
-	//var outBytes []byte
-	//switch info.Platform {
-	//case spotify.IDENTIFIER:
-	//	outBytes = app.SpotifyCredentials
-	//case tidal.IDENTIFIER:
-	//	outBytes = app.TidalCredentials
-	//case deezer.IDENTIFIER:
-	//	outBytes = app.DeezerCredentials
-	//}
-
-	// update the task status to ENOCREDENTIALS
-	//p := blueprint.TaskErrorPayload{
-	//	Platform: info.Platform,
-	//	Status:   "failed",
-	//	Error:    "ENOCREDENTIALS",
-	//	Message:  fmt.Sprintf("No %s credentials found for this app.", info.Platform),
-	//}
-	//credErr, err := json.Marshal(&p)
-	//if err != nil {
-	//	log.Printf("[queue][PlaylistHandler] - could not marshal task error payload: %v", err)
-	//	return err
-	//}
-
-	//var creds blueprint.IntegrationCredentials
-	//if len(outBytes) == 0 {
-	//	log.Printf("[queue][PlaylistHandler] - could not find app integration credentials. This developer might have not updated their app with the %s integration credentials.", info.Platform)
-	//	sErr := database.UpdateTaskStatus(uid, "failed")
-	//	if sErr != nil {
-	//		return sErr
-	//	}
-	//	_, resErr := database.UpdateTaskResult(uid, string(credErr))
-	//	if resErr != nil {
-	//		return resErr
-	//	}
-	//	return blueprint.ENOCREDENTIALS
-	//}
-
-	//err = json.Unmarshal(outBytes, &creds)
-	//if err != nil {
-	//	log.Printf("[queue][PlaylistHandler] - could not deserialize the app integration credentials. Maybe this job was created without a meta field in the task data or database. %v", err)
-	//	sErr := database.UpdateTaskStatus(uid, "failed")
-	//	if sErr != nil {
-	//		return sErr
-	//	}
-	//	_, e := database.UpdateTaskResult(uid, string(credErr))
-	//	if e != nil {
-	//		log.Printf("[queue][PlaylistHandler] - could not update task result: %v", e)
-	//		return e
-	//	}
-	//
-	//	return blueprint.EBADCREDENTIALS
-	//}
 
 	// get task from db
 	task, dbErr := database.FetchTask(uid)

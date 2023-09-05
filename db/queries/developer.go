@@ -17,10 +17,10 @@ tidal_credentials = (CASE WHEN $3 = 'tidal' AND length($3::bytea) > 0 THEN $1::b
 
 webhook_url = $4, redirect_url = $5, authorized = true, updated_at = now() WHERE uuid = $2`
 
-const UpdateAppRedirect = `UPDATE apps SET spotify_redirect_url = (CASE WHEN $2 = 'spotify' THEN $2 END),
-tidal_redirect_url = (CASE WHEN $2 = 'tidal' THEN $2 END),
-deezer_redirect_url = (CASE WHEN $2 = 'deezer' THEN $2 END),
-applemusic_redirect_url = (CASE WHEN $2 = 'applemusic' THEN $2 END) WHERE uuid = $1`
+//const UpdateAppRedirect = `UPDATE apps SET spotify_redirect_url = (CASE WHEN $2 = 'spotify' THEN $2 END),
+//tidal_redirect_url = (CASE WHEN $2 = 'tidal' THEN $2 END),
+//deezer_redirect_url = (CASE WHEN $2 = 'deezer' THEN $2 END),
+//applemusic_redirect_url = (CASE WHEN $2 = 'applemusic' THEN $2 END) WHERE uuid = $1`
 
 const FetchAppByAppID = `SELECT Id, uuid, name, description, developer, secret_key, public_key,  coalesce(webhook_url, '') as webhook_url,
        coalesce(redirect_url, '') as redirect_url, coalesce(verify_token, '') as verify_token, created_at, updated_at, authorized, organization,
@@ -85,6 +85,10 @@ const FetchAppsByDeveloper = `SELECT
 FROM apps WHERE developer = $1 and organization = $2`
 
 const UpdateAppKeys = `UPDATE apps SET public_key = $1, secret_key = $2, verify_token = $3, deezer_state = $4 WHERE uuid = $5`
+const RevokeSecretKey = `update apps set secret_key = $2 where uuid = $1`
+const RevokeVerifySecret = `update apps set verify_token = $2 where uuid = $1`
+const RevokeDeezerState = `update apps set deezer_state = $2 where uuid = $1`
+const RevokePublicKey = `update apps set public_key = $2 where uuid = $1`
 
 const CreateNewOrg = `INSERT INTO 
     organizations (uuid, name, description, created_at, updated_at, owner) 

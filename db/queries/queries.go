@@ -33,7 +33,7 @@ const FindUserByUUID = `SELECT id, email, uuid FROM users where uuid = $1`
 // FindUserProfileByEmail is similar to FindUserByEmail with the fact that they both fetch profile info for a user except this one fetches just the user profile we want to return
 // without including the refreshtoken and other fields. the above is currently used in the code and it has its own usecases. They are similar, but it seems there are more fields needed
 // above for the places its used and its a lot of work amending to use that only. Maybe if it gets messier, it'll be refactored into 1.
-const FindUserProfileByEmail = `SELECT email, usernames, uuid, created_at, updated_at FROM users WHERE email = $1`
+const FindUserProfileByEmail = `SELECT email, uuid, created_at, updated_at FROM users WHERE email = $1`
 
 const FetchUserApiKey = `SELECT api.* FROM apikeys api JOIN users u ON u.uuid = api.user WHERE u.email = $1;`
 
@@ -80,7 +80,7 @@ as subscribers FROM follows follow JOIN users "user"
 			AND entity_url IS NOT NULL GROUP BY follow.id;
 `
 
-// FetchFollowByEntityId query is used to fetch a follow and the subscribers to it.
+// FetchFollowByEntityId query is used to fetch a follow and the subscribers to it.2
 const FetchFollowByEntityId = `SELECT DISTINCT on(follow.id) follow.id, follow.created_at, follow.updated_at, follow.developer, follow.entity_id, follow.entity_url, json_agg("user".*) as subscribers FROM follows follow JOIN users "user" ON "user".uuid::text = ANY (subscribers::text[]) WHERE entity_id = $1 GROUP BY follow.id`
 const CreateFollowNotification = `INSERT INTO notifications(created_at, updated_at, "user", UUID, status, "data") VALUES (now(), now(), :subscriber, :notification_id, 'unread', :data)`
 
@@ -96,9 +96,18 @@ const CreateWaitlistEntry = `INSERT INTO waitlists(uuid, email, platform, create
 
 const FetchUserFromWaitlist = `SELECT uuid FROM waitlists WHERE email = $1;`
 
-const SaveUserResetToken = `UPDATE users SET reset_token = $2, reset_token_expiry = $3 WHERE uuid = $1;`
+const SaveUserResetToken = `UPDATE users SET reset_token = $2, reset_token_expiry = $3, reset_token_created_at = now() WHERE uuid = $1;`
 
-const FindUserByResetToken = `SELECT * FROM users WHERE reset_token = $1 AND reset_token_expiry > now();`
+const FindUserByResetToken = `select * from users where reset_token = $1
+        and reset_token_expiry::timestamptz >= now()::timestamptz
+        and reset_token_created_at::timestamptz <= now()::timestamptz + interval '5 minutes'
+and reset_token_expiry is not null;`
+
+// select the tokens that were created within the last 15 minutes. The token has a reset_Created_at field that is set when the token is created.
+// and reset_token_expiry is when the token expires. The token expires after 15 minutes. So we are checking if the token is still valid by checking if the
+// reset_token_expiry - 15 minutes is greater than the current time. If it is, then the token is still valid and we can proceed to reset the password.
+//const FindUserByResetToken2 = `select * from users where date_part('minute', reset_token_expiry::timestamptz - interval '15 minutes')
+// + date_part('minute', now()::timestamptz) >= 15 and reset_token_expiry is not null and reset_token = $1 ;`
 
 //const FindUserByResetToken = `SELECT uuid FROM users WHERE reset_token = $1 AND reset_token_expiry > ;`
 

@@ -242,6 +242,7 @@ func main() {
 	asynqMux.HandleFunc("send:appauth:email", orchdioQueue.SendEmailHandler)
 	asynqMux.HandleFunc("playlist:conversion", orchdioQueue.PlaylistTaskHandler)
 	asynqMux.HandleFunc("send:reset_password_email", orchdioQueue.SendEmailHandler)
+	asynqMux.HandleFunc("send:welcome_email", orchdioQueue.SendEmailHandler)
 
 	err = asynqServer.Start(asynqMux)
 	if err != nil {
@@ -441,6 +442,8 @@ func main() {
 	orgRouter.Post("/new", userController.CreateOrg)
 	orgRouter.Post("/login", userController.LoginUserToOrg)
 	orgRouter.Post("/reset-password", userController.ResetPassword)
+	orgRouter.Get("/reset-password", userController.ResetPassword)
+	orgRouter.Post("/change-password", userController.ChangePassword)
 
 	orgRouter.Use(jwtware.New(jwtware.Config{
 		SigningKey: []byte(os.Getenv("JWT_SECRET")),

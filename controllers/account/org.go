@@ -2,7 +2,9 @@ package account
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -12,7 +14,10 @@ import (
 	"orchdio/blueprint"
 	"orchdio/db"
 	"orchdio/db/queries"
+	"orchdio/queue"
 	"orchdio/util"
+	"os"
+	"time"
 )
 
 // CreateOrg creates a new org
@@ -80,6 +85,22 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 	}
 
 	if userInf != nil {
+		// get the organizations users have.
+		// An email can be connected to a streaming platform account and then used to connect to an app on orchdio,
+		// so we need to check if the user already has an organization. This is because if a user
+		// is created by signing up by creating an organization, they must have an organization already. So if they dont have
+		// an organization we can assume that they were created by signing up with a streaming platform account.
+		// and if they do, we return an error saying that they already have an organization.
+		orgs, err := database.FetchOrgs(userInf.UUID.String())
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			log.Printf("[controller][account][CreateOrg] - error getting orgs: %v", err)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not create organization.")
+		}
+
+		if orgs != nil {
+			log.Printf("[controller][account][CreateOrg] - user already has an organization")
+			return util.ErrorResponse(ctx, http.StatusConflict, err, "Could not create organization. User already has an organization")
+		}
 		// in the case where the user was created from authing with a platform for example, there will be no existing password for the user
 		// so in this case we need to update the user with the password
 		userId = userInf.UUID.String()
@@ -121,6 +142,11 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 				"token":       string(appToken),
 			}
 
+			mailErr := u.SendAdminWelcomeEmail(body.OwnerEmail)
+			if mailErr != nil {
+				log.Printf("[controller][account][LoginUserToOrg] - error sending welcome email: %v", mailErr)
+			}
+
 			log.Printf("[controller][account][CreateOrg] - org '%s' created", body.Name)
 			return util.SuccessResponse(ctx, http.StatusCreated, res)
 		}
@@ -138,6 +164,12 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 		"token":       string(appToken),
 	}
 
+	mailErr := u.SendAdminWelcomeEmail(body.OwnerEmail)
+	if mailErr != nil {
+		log.Printf("[controller][account][LoginUserToOrg] - error sending welcome email: %v", mailErr)
+	}
+
+	log.Printf("Should have sent email to %s", body.OwnerEmail)
 	return util.SuccessResponse(ctx, http.StatusOK, res)
 }
 
@@ -256,7 +288,6 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 	var user blueprint.User
 	sErr := scanRes.StructScan(&user)
 	if sErr != nil {
-		log.Printf("[controller][account][LoginUserToOrg] - error: %v", sErr)
 		if errors.Is(sErr, sql.ErrNoRows) {
 			log.Printf("[controller][account][LoginUserToOrg] - error: could not find user with email %s during login attempt", body.Email)
 			return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid login", "Could not login to organization. Password or email is incorrect.")
@@ -299,4 +330,36 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 
 	// return a single org for now.
 	return util.SuccessResponse(ctx, http.StatusOK, result)
+}
+
+func (u *UserController) SendAdminWelcomeEmail(email string) error {
+	// prepare welcome email
+	taskID := uuid.NewString()
+	orchdioQueue := queue.NewOrchdioQueue(u.AsynqClient, u.DB, u.Redis, u.AsynqServer)
+	taskData := &blueprint.EmailTaskData{
+		From:       os.Getenv("ALERT_EMAIL"),
+		To:         email,
+		Payload:    nil,
+		Subject:    "Welcome to Orchdio",
+		TaskID:     taskID,
+		TemplateID: 3,
+	}
+
+	serializedEmailData, sErr := json.Marshal(taskData)
+	if sErr != nil {
+		log.Printf("[controller][account][CreateOrg] - error serializing email data: %v", sErr)
+		return sErr
+	}
+
+	sendMail, zErr := orchdioQueue.NewTask(fmt.Sprintf("send:welcome_email:%s", taskID), queue.EmailTask, 2, serializedEmailData)
+	if zErr != nil {
+		log.Printf("[controller][account][CreateOrg] - error creating task: %v", zErr)
+		return zErr
+	}
+
+	err := orchdioQueue.EnqueueTask(sendMail, queue.EmailQueue, taskID, time.Second*2)
+	if err != nil {
+		log.Printf("[controller][account][CreateOrg] - error enqueuing task: %v", err)
+	}
+	return err
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -75,6 +76,11 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Platform is empty. Please pass a valid platform")
 	}
 
+	if body.WebhookURL == "" {
+		log.Printf("[controllers][CreateApp] developer -  error: webhook url is empty\n")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Webhook URL is empty. Please pass a valid webhook url")
+	}
+
 	if !util.IsValidUUID(body.Organization) {
 		log.Printf("[controllers][CreateApp] developer -  error: organization is not a valid UUID\n")
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Organization is not a valid UUID. Please pass a valid organization")
@@ -84,12 +90,22 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Platform is not valid. Please pass a valid platform")
 	}
 
-	redirectURL := fmt.Sprintf("%s/v1/auth/%s/callback", os.Getenv("APP_URL"), body.IntegrationPlatform)
-	// if the platform to connect to is deezer, we want to add the deezer state as query params.
-	// this is because deezer does not preserver state url upon redirect (see rest of code)
-	if body.IntegrationPlatform == deezer.IDENTIFIER {
-		redirectURL = fmt.Sprintf("%s&state=%s", redirectURL, deezerState)
-	}
+	webhookURL := body.WebhookURL
+	redirectURL := body.RedirectURL
+
+	log.Printf("Webhook and redirect")
+	spew.Dump(webhookURL, redirectURL)
+	//redirectURL := fmt.Sprintf("%s/v1/auth/%s/callback", os.Getenv("APP_URL"), body.IntegrationPlatform)
+	//// if the platform to connect to is deezer, we want to add the deezer state as query params.
+	//// this is because deezer does not preserver state url upon redirect (see rest of code)
+	//if body.IntegrationPlatform == deezer.IDENTIFIER {
+	//	redirectURL = fmt.Sprintf("%s&state=%s", redirectURL, deezerState)
+	//} else{
+	//	redirectURL
+	//}
+
+	log.Printf("Incoming creaation data is")
+	spew.Dump(body)
 
 	// TODO: check if the app id and app secret are valid for the platform
 
@@ -115,7 +131,7 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 
 	// create new developer app
 	database := db.NewDB{DB: d.DB}
-	uid, err := database.CreateNewApp(body.Name, body.Description, redirectURL, body.WebhookURL, pubKey, claims.DeveloperID, secretKey, verifySecret, body.Organization, deezerState)
+	uid, err := database.CreateNewApp(body.Name, body.Description, body.RedirectURL, body.WebhookURL, pubKey, claims.DeveloperID, secretKey, verifySecret, body.Organization, deezerState)
 	if err != nil {
 		log.Printf("[controllers][CreateApp] developer -  error: could not create new developer app: %v\n", err)
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
@@ -302,7 +318,11 @@ func (d *Controller) FetchApp(ctx *fiber.Ctx) error {
 		PublicKey:   app.PublicKey.String(),
 		Authorized:  app.Authorized,
 		Credentials: creds,
+		DeezerState: app.DeezerState,
 	}
+
+	log.Printf("App info returned is")
+	spew.Dump(info)
 	return util.SuccessResponse(ctx, fiber.StatusOK, info)
 }
 
@@ -387,7 +407,7 @@ func (d *Controller) FetchAllDeveloperApps(ctx *fiber.Ctx) error {
 	apps, err := database.FetchApps(claims.DeveloperID, orgID)
 	if err != nil {
 		log.Printf("[controllers][FetchAllDeveloperApps] developer -  error: could not fetch apps in Database: %v\n", err)
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return util.ErrorResponse(ctx, fiber.StatusNotFound, "not found", "No apps found for this organization.")
 		}
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occured.")
@@ -398,32 +418,68 @@ func (d *Controller) FetchAllDeveloperApps(ctx *fiber.Ctx) error {
 }
 
 func (d *Controller) RevokeAppKeys(ctx *fiber.Ctx) error {
-	log.Printf("[controllers][RevokeAppKeys] developer -  revoking app keys\n")
 	appId := ctx.Params("appId")
 	if appId == "" {
 		log.Printf("[controllers][RevokeAppKeys] developer -  error: appId is empty\n")
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "App ID is empty. Please pass a valid app ID.")
 	}
 
-	// revoke the app keys
+	reqBody := struct {
+		KeyType string `json:"key_type"`
+	}{}
+
+	if err := ctx.BodyParser(&reqBody); err != nil {
+		log.Printf("[controllers][RevokeAppKeys] developer -  error: could not deserialize request body: %v\n", err)
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Could not deserialize request body")
+	}
+
+	if reqBody.KeyType == "" {
+		log.Printf("[controllers][RevokeAppKeys] developer -  error: key type is empty\n")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Key type is empty. Please pass a valid key type")
+	}
+
 	database := db.NewDB{DB: d.DB}
-	publicKey := uuid.NewString()
-	privateKey := uuid.NewString()
-	verifySecret := uuid.NewString()
-	deezerState := string(util.GenerateShortID())
-	err := database.UpdateAppKeys(publicKey,
-		privateKey, verifySecret, deezerState, appId)
-	if err != nil {
-		log.Printf("[controllers][RevokeAppKeys] developer -  error: could not revoke app keys in Database: %v\n", err)
-		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred")
+	updatedKeys := &blueprint.AppKeys{}
+
+	if reqBody.KeyType == "secret" {
+		privateKey := uuid.NewString()
+		err := database.RevokeSecretKey(appId, privateKey)
+		if err != nil {
+			log.Printf("-  error: could not revoke secret key in Database: %v\n", err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not revoke secret key")
+		}
+		updatedKeys.SecretKey = privateKey
 	}
 
-	updatedKeys := &blueprint.AppKeys{
-		PublicKey:    publicKey,
-		SecretKey:    privateKey,
-		VerifySecret: verifySecret,
+	if reqBody.KeyType == "verify" {
+		verifySecret := uuid.NewString()
+		err := database.RevokeVerifySecret(appId, verifySecret)
+		if err != nil {
+			log.Printf("-  error: could not revoke verify secret in Database: %v\n", err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not revoke verify secret")
+		}
+		updatedKeys.VerifySecret = verifySecret
 	}
 
-	log.Printf("[controllers][RevokeAppKeys] developer -  app keys revoked and new credentials generated: %s\n", appId)
+	if reqBody.KeyType == "public" {
+		publicKey := uuid.NewString()
+		err := database.RevokePublicKey(appId, publicKey)
+		if err != nil {
+			log.Printf("-  error: could not revoke public key in Database: %v\n", err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not revoke public key")
+		}
+	}
+
+	if reqBody.KeyType == "deezer_state" {
+		deezerState := string(util.GenerateShortID())
+		err := database.RevokeDeezerState(appId, deezerState)
+		if err != nil {
+			log.Printf("-  error: could not revoke deezer state in Database: %v\n", err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not revoke deezer state")
+		}
+		updatedKeys.DeezerState = deezerState
+	}
+
+	log.Printf("-  app keys revoked and new credentials generated: %s\n", appId)
 	return util.SuccessResponse(ctx, fiber.StatusOK, updatedKeys)
 }
