@@ -338,7 +338,7 @@ func (a *AuthMiddleware) AddRequestPlatformToCtx(ctx *fiber.Ctx) error {
 
 	// due to the fact that during auth, deezer doesn't make the request with the pubkey
 	// we make sure to skip for auth paths generally
-	if appPubKey == "" && path != "/connect" {
+	if appPubKey == "" && path != "/callback" {
 		orchdioLogger.Error("[middleware][AddRequestPlatformToCtx] developer -  error: could not fetch app developer with public key. No public key passed")
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "missing x-orchdio-public-key header")
 	} else {
