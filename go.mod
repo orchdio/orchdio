@@ -1,7 +1,7 @@
 // +heroku goVersion go1.15
 module orchdio
 
-go 1.18
+go 1.19
 
 require (
 	github.com/antoniodipinto/ikisocket v0.0.0-20220426120810-e8049cc9e56b
