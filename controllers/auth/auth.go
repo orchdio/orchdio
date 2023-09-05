@@ -745,7 +745,8 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 		if userAppIDBytes != nil {
-			logger.Info("[controllers][HandleAppAuthRedirect] developer -  User has not created an app before. Created one.", zap.String("appInfo", app.UID.String()), zap.String("platform", decodedState.Platform), zap.String())
+			logger.Info("[controllers][HandleAppAuthRedirect] developer -  User has not created an app before. Created one.", zap.String("appInfo", app.UID.String()),
+				zap.String("platform", decodedState.Platform))
 		}
 
 		_, err = a.DB.Exec(queries.UpdatePlatformUserNameIdAndToken, updatedUserCredentials.Username, updatedUserCredentials.PlatformId,
