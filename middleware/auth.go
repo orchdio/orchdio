@@ -7,11 +7,13 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/jmoiron/sqlx"
 	"github.com/samber/lo"
+	"go.uber.org/zap"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
 	"orchdio/db"
 	"orchdio/db/queries"
+	logger2 "orchdio/logger"
 	"orchdio/services/applemusic"
 	"orchdio/services/deezer"
 	"orchdio/services/spotify"
@@ -311,6 +313,15 @@ func FetcPlatformNameByIdentifier(identifier string) string {
 
 func (a *AuthMiddleware) AddRequestPlatformToCtx(ctx *fiber.Ctx) error {
 	platform := ctx.Params("platform")
+	reqId := ctx.Get("x-orchdio-request-id")
+	pubKey := ctx.Locals("app_pub_key").(string)
+	loggerOpts := &blueprint.OrchdioLoggerOptions{
+		RequestID:            reqId,
+		ApplicationPublicKey: zap.String("app_public_key", pubKey).String,
+		Platform:             zap.String("platform", platform).String,
+	}
+	orchdioLogger := logger2.NewZapSentryLogger(loggerOpts)
+	orchdioLogger.Info("Request ID", zap.String("request_id", reqId))
 	if platform == "" {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing platform")
 	}
@@ -322,7 +333,8 @@ func (a *AuthMiddleware) AddRequestPlatformToCtx(ctx *fiber.Ctx) error {
 
 	appPubKey := ctx.Get("x-orchdio-public-key")
 	if appPubKey == "" {
-		log.Printf("[middleware][AddRequestPlatformToCtx] developer -  error: could not fetch app developer with public key. No header passed")
+		orchdioLogger.Error("[middleware][AddRequestPlatformToCtx] developer -  error: could not fetch app developer with public key. No public key passed")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "missing x-orchdio-public-key header")
 	} else {
 		ctx.Locals("app_pub_key", appPubKey)
 	}

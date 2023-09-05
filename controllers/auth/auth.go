@@ -52,7 +52,7 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 	developerPubKey := ctx.Locals("app_pub_key")
 
 	reqId := ctx.Get("x-orchdio-request-id")
-	loggerOpts := &blueprint.OrchdioLoggerTags{
+	loggerOpts := &blueprint.OrchdioLoggerOptions{
 		RequestID:            reqId,
 		ApplicationPublicKey: zap.String("pubkey:", developerPubKey.(string)).String,
 		Platform:             platform,
@@ -231,7 +231,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 	platform := ctx.Locals("platform").(string)
 
 	reqId := ctx.Get("x-orchdio-request-id")
-	loggerOpts := &blueprint.OrchdioLoggerTags{
+	loggerOpts := &blueprint.OrchdioLoggerOptions{
 		RequestID:            reqId,
 		ApplicationPublicKey: zap.String("pubkey:", developerPubKey.(string)).String,
 		Platform:             platform,

@@ -729,7 +729,8 @@ type AppJWT struct {
 	DeveloperID string `json:"developer_id"`
 	OrgID       string `json:"organization_id"`
 }
-type OrchdioLoggerTags struct {
+
+type OrchdioLoggerOptions struct {
 	Component            string      `json:"component"`
 	RequestID            string      `json:"request_id"`
 	Timestamp            string      `json:"timestamp"`

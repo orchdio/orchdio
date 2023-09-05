@@ -25,10 +25,10 @@ func NewLogger() *zap.Logger {
 }
 
 // NewZapSentryLogger returns a new zap logger with sentry integration
-func NewZapSentryLogger(orchdioLoggerOpts *blueprint.OrchdioLoggerTags) *zap.Logger {
+func NewZapSentryLogger(orchdioLoggerOpts *blueprint.OrchdioLoggerOptions) *zap.Logger {
 
 	if orchdioLoggerOpts == nil {
-		orchdioLoggerOpts = &blueprint.OrchdioLoggerTags{
+		orchdioLoggerOpts = &blueprint.OrchdioLoggerOptions{
 			ApplicationPublicKey: "NOT_SET",
 			RequestID:            "NOT_SET",
 		}
