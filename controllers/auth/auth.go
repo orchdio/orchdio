@@ -245,6 +245,10 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		logger.Info("[controllers][HandleAppAuthRedirect] developer -  handling apple music auth flow")
 		uniqueID := uuid.NewString()
 		encryptionSecret := os.Getenv("ENCRYPTION_SECRET")
+		// todo: add a new "verified_email" column in the db
+		// and use the result here (if present) to determine
+		// apple music auth verification. if the email is not verified,
+		// we'll send an email to the user to verify their email
 		body := &blueprint.AppleMusicAuthBody{}
 		err := ctx.BodyParser(body)
 		if err != nil {
