@@ -2,6 +2,7 @@ package platforms
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
@@ -48,11 +49,11 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 
 	// make sure we're actually handling for track alone, not playlist.
 	if strings.Contains(linkInfo.Entity, "track") {
-		log.Printf("\n[controllers][platforms][deezer][ConvertEntity] [info] - It is a track URL")
+		log.Printf("\n[controllers][platforms][%s][ConvertEntity] [info] - It is a track URL", linkInfo.Platform)
 
 		conversion, conversionError := universal.ConvertTrack(linkInfo, p.Redis, p.DB)
 		if conversionError != nil {
-			if conversionError == blueprint.ENOTIMPLEMENTED {
+			if errors.Is(conversionError, blueprint.ENOTIMPLEMENTED) {
 				log.Printf("\n[controllers][platforms][deezer][ConvertEntity] error - %v\n", "Not implemented")
 				return util.ErrorResponse(ctx, http.StatusNotImplemented, "not supported", "Not implemented")
 			}

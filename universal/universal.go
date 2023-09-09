@@ -240,6 +240,9 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 
 		s := applemusic.NewService(&credentials, pg, red)
 		toService = append(toService, map[string]interface{}{applemusic.IDENTIFIER: s})
+	case ytmusic.IDENTIFIER:
+		s := ytmusic.NewService(red)
+		toService = append(toService, map[string]interface{}{ytmusic.IDENTIFIER: s})
 	}
 
 	if targetPlatform == "all" {
@@ -249,13 +252,16 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 			tidal.IDENTIFIER:      app.TidalCredentials,
 			deezer.IDENTIFIER:     app.DeezerCredentials,
 			applemusic.IDENTIFIER: app.AppleMusicCredentials,
+			ytmusic.IDENTIFIER:    nil,
 		}
 
 		for t, appCred := range appCredentials {
 			// copy the key and value to avoid concurrency issues. dont trust the original map.
 			plat := t
+			// ytmusic doesnt require credentials yet so we skip it
+
 			encryptedCred := appCred
-			if len(encryptedCred) == 0 {
+			if len(encryptedCred) == 0 && plat != ytmusic.IDENTIFIER {
 				continue
 			}
 			decryptedCredentials, dErr := util.DecryptIntegrationCredentials(encryptedCred)
@@ -264,6 +270,10 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 				return nil, dErr
 			}
 			switch plat {
+			case ytmusic.IDENTIFIER:
+				s := ytmusic.NewService(red)
+				toService = append(toService, map[string]interface{}{ytmusic.IDENTIFIER: s})
+
 			case spotify.IDENTIFIER:
 				s := spotify.NewService(decryptedCredentials, pg, red)
 				toService = append(toService, map[string]interface{}{spotify.IDENTIFIER: s})
@@ -303,6 +313,9 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 
 		// fetch the conversion methods for the target platforms.
 		for idx, tS := range toService {
+			if res == nil {
+				continue
+			}
 			cp := tS
 			for k, v := range cp {
 				plat := k
@@ -316,10 +329,6 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 				if res == nil && idx == 0 {
 					log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - search result is nil\n")
 					return nil, blueprint.EUNKNOWN
-				}
-
-				if res == nil {
-					continue
 				}
 
 				if methodSearchTrackWithTitle.IsValid() {
@@ -396,6 +405,10 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (
 	}
 	var fromService, toService interface{}
 
+	// this block gets the credentials for the platform we're converting from.
+	// important so that we can get the credentials for those available for the app
+	// and then use to create the instance of the platform for the supported platforms available.
+	// This is for the `fromService` interface
 	switch info.Platform {
 	case spotify.IDENTIFIER:
 		if app.SpotifyCredentials == nil {
@@ -463,6 +476,7 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (
 		fromService = applemusic.NewService(&credentials, pg, red)
 	}
 
+	// todo: refactor this to use the same decrypt credentials
 	switch targetPlatform {
 	case spotify.IDENTIFIER:
 		if app.SpotifyCredentials == nil {
