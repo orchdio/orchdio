@@ -9,10 +9,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
+	"go.uber.org/zap"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
 	"orchdio/db"
+	logger2 "orchdio/logger"
 	"orchdio/queue"
 	"orchdio/universal"
 	"orchdio/util"
@@ -38,38 +40,43 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 	linkInfo := ctx.Locals("linkInfo").(*blueprint.LinkInfo)
 	app := ctx.Locals("app").(*blueprint.DeveloperApp)
 
+	loggerOpts := &blueprint.OrchdioLoggerOptions{
+		RequestID:            ctx.Get("x-orchdio-request-id"),
+		ApplicationPublicKey: zap.String("app_pub_key", ctx.Get("x-orchdio-app-pub-key")).String,
+		Platform:             zap.String("platform", ctx.Get("x-orchdio-platform")).String,
+	}
+	orchdioLogger := logger2.NewZapSentryLogger(loggerOpts)
+
 	// we fetch the credentials for the platform we're converting to
 	// and then we pass it to the queue to be used by the worker
 	// to make the conversion
 	targetPlatform := linkInfo.TargetPlatform
 	if targetPlatform == "" {
-		log.Printf("\n[controllers][platforms][ConvertEntity] error - %v\n", "Target platform not specified")
+		orchdioLogger.Error("[controllers][platforms][ConvertEntity] error - Target platform not specified")
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "target platform not specified", "Target platform not specified")
 	}
 
 	// make sure we're actually handling for track alone, not playlist.
 	if strings.Contains(linkInfo.Entity, "track") {
-		log.Printf("\n[controllers][platforms][%s][ConvertEntity] [info] - It is a track URL", linkInfo.Platform)
-
 		conversion, conversionError := universal.ConvertTrack(linkInfo, p.Redis, p.DB)
 		if conversionError != nil {
 			if errors.Is(conversionError, blueprint.ENOTIMPLEMENTED) {
-				log.Printf("\n[controllers][platforms][deezer][ConvertEntity] error - %v\n", "Not implemented")
+				orchdioLogger.Error("[controllers][platforms][ConvertEntity] error - Not implemented")
 				return util.ErrorResponse(ctx, http.StatusNotImplemented, "not supported", "Not implemented")
 			}
 
-			log.Printf("\n[controllers][platforms][deezer][ConvertEntity] error - %v\n", conversionError.Error())
+			orchdioLogger.Error("[controllers][platforms][ConvertEntity] error - Could not convert track", zap.Error(conversionError))
 
 			if strings.Contains(conversionError.Error(), "credentials not provided") {
-				log.Printf("\n[controllers][platforms][deezer][ConvertEntity] error - %v\n", "Credentials missing")
+				orchdioLogger.Error("[controllers][platforms][ConvertEntity] error - Credentials missing", zap.Error(conversionError))
 				return util.ErrorResponse(ctx, http.StatusUnauthorized, "credentials missing", fmt.Sprintf("%s. Please update your app with the missing platform's credentials.", conversionError.Error()))
 			}
 
-			log.Printf("\n[controllers][platforms][base][ConvertEntity] - Could not convert track")
+			orchdioLogger.Error("[controllers][platforms][ConvertEntity] error - Could not convert track", zap.Error(conversionError))
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, conversionError, "An internal error occurred")
 		}
 
-		log.Printf("\n[controllers][platforms][ConvertEntity] - converted %v with URL %v\n", linkInfo.Entity, linkInfo.TargetLink)
+		orchdioLogger.Info("[controllers][platforms][ConvertEntity] [info] - converted %v with URL %v", zap.Any("entity_info", linkInfo))
 
 		// HACK: insert a new task in the DB directly and return the ID as part of the
 		// conversion response. We are saving directly because for playlists, we run them in asynq job queue
@@ -82,7 +89,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 		shortURL := util.GenerateShortID()
 		serialized, err := json.Marshal(conversion)
 		if conversion == nil {
-			log.Printf("\n[controllers][platforms][ConvertEntity] - conversion is nil %v\n", err)
+			orchdioLogger.Error("[controllers][platforms][ConvertEntity] error - Could not convert track", zap.Error(err))
 			return util.ErrorResponse(ctx, http.StatusNotFound, err, "An internal error occurred")
 		}
 
@@ -90,13 +97,13 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 		conversion.ShortURL = string(shortURL)
 
 		if err != nil {
-			log.Printf("[db][CreateTrackTaskRecord] error serializing result. %v\n", err)
+			orchdioLogger.Error("[controllers][platforms][ConvertEntity] error - Could not convert track", zap.Error(err))
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred. Could not deserialize result")
 		}
 
 		_, err = database.CreateTrackTaskRecord(uniqueId.String(), string(shortURL), linkInfo.EntityID, app.UID.String(), serialized)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][ConvertEntity] - Could not create task record")
+			orchdioLogger.Error("[controllers][platforms][ConvertEntity] error - Could not create task record", zap.Error(err))
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred and could not create task record.")
 		}
 
@@ -110,7 +117,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 
 	// make sure we're actually handling for playlist alone, not track.
 	if strings.Contains(linkInfo.Entity, "playlist") {
-		log.Printf("\n[controllers][platforms][deezer][ConvertEntity] warning - It is a playlist URL")
+		orchdioLogger.Info("[controllers][platforms][ConvertEntity] [info] - It is a playlist URL")
 
 		uniqueId := uuid.New().String()
 		shortURL := util.GenerateShortID()
@@ -122,7 +129,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 		}
 
 		if !strings.Contains(linkInfo.Entity, "playlist") {
-			log.Printf("[controller][conversion][EchoConversion] - not a playlist")
+			orchdioLogger.Error("[controllers][platforms][ConvertEntity] error - Not a playlist")
 			return ctx.Status(http.StatusBadRequest).JSON("not a playlist")
 		}
 
@@ -133,28 +140,28 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 		// serialize linkInfo
 		ser, err := json.Marshal(&taskData)
 		if err != nil {
-			log.Printf("[controller][conversion][EchoConversion] - error marshalling link info: %v", err)
+			orchdioLogger.Error("[controllers][platforms][ConvertEntity] error - could not deserialize link info", zap.Error(err))
 			return ctx.Status(http.StatusInternalServerError).JSON("error marshalling link info")
 		}
 		// create new task
 		conversionTask, err := orchdioQueue.NewTask(fmt.Sprintf("playlist:conversion:%s", taskData.TaskID), queue.PlaylistConversionTask, 1, ser)
 		enqErr := orchdioQueue.EnqueueTask(conversionTask, queue.PlaylistConversionQueue, taskData.TaskID, time.Second*1)
 		if enqErr != nil {
-			log.Printf("[controller][conversion][EchoConversion] - error enqueuing task: %v", enqErr)
+			orchdioLogger.Error("[controllers][platforms][ConvertEntity] error - could not enqueue task", zap.Error(err), zap.String("task_id", taskData.TaskID))
 			return ctx.Status(http.StatusInternalServerError).JSON("error enqueuing task")
 		}
 
 		database := db.NewDB{DB: p.DB}
 		_, err = redis.ParseURL(os.Getenv("REDISCLOUD_URL"))
 		if err != nil {
-			log.Printf("[controller][conversion][EchoConversion] - error parsing redis url: %v", err)
+			orchdioLogger.Error("[controllers][platforms][ConvertEntity] error - could not parse redis url", zap.Error(err))
 			return ctx.Status(http.StatusInternalServerError).JSON("error parsing redis url")
 		}
 
 		// we were saving the task developer as user before but now we save the app
 		_taskId, dbErr := database.CreateOrUpdateTask(uniqueId, string(shortURL), app.UID.String(), linkInfo.EntityID)
 		if dbErr != nil {
-			log.Printf("[controller][conversion][EchoConversion] - error creating task: %v", dbErr)
+			orchdioLogger.Error("[controllers][platforms][ConvertEntity] error - could not create task", zap.Error(err))
 			return ctx.Status(http.StatusInternalServerError).JSON("error creating task")
 		}
 
@@ -165,63 +172,11 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 			Status:  "pending",
 		}
 
-		// NB: THE SIDE EFFECT OF THIS IS THAT WHEN WE RESTART THE SERVER FOR EXAMPLE, WE LOSE
-		// THE HANDLER ATTACHED. THIS IS BECAUSE WE'RE TRIGGERING THE HANDLER HERE IN THE
-		// CONVERSION HANDLER. WE SHOULD BE ABLE TO FIX THIS BY HAVING A HANDLER THAT
-		// ALWAYS RUNS AND FETCHES TASKS FROM A STORE AND ATTACH THEM TO A HANDLER.
-		// FIXME: more investigations
-		//defer func() error {
-		//	// handle panic
-		//	if r := recover(); r != nil {
-		//		log.Printf("[controller][conversion][EchoConversion] - gracefully ignoring this")
-		//		log.Printf("[controller][conversion][EchoConversion] - task already queued%v", r)
-		//		inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
-		//		// get the task
-		//		_, err := inspector.GetTaskInfo(queue.PlaylistConversionQueue, uniqueId)
-		//		if err != nil {
-		//			log.Printf("[controller][conversion][EchoConversion] - error getting task info: %v", err)
-		//			return err
-		//		}
-		//		log.Printf("[controller][conversion][EchoConversion] - task info:")
-		//		queueInfo, err := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
-		//		if err != nil {
-		//			log.Printf("[controller][conversion][EchoConversion] - error getting queue info: %v", err)
-		//			return err
-		//		}
-		//
-		//		// update the task to success. because this seems to be a race condition in production where
-		//		// it duplicates task scheduling even though the task is already queued
-		//		// update task to success
-		//		err = database.UpdateTaskStatus(uniqueId, "pending")
-		//		if err != nil {
-		//			log.Printf("[controller][conversion][EchoConversion] - error unmarshalling task data: %v", err)
-		//		}
-		//
-		//		if queueInfo.Paused {
-		//			log.Printf("[controller][conversion][EchoConversion] - queue is paused. resuming it")
-		//			err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
-		//			if err != nil {
-		//				log.Printf("[controller][conversion][EchoConversion] - error resuming queue: ")
-		//				spew.Dump(err)
-		//			}
-		//			log.Printf("[controller][conversion][EchoConversion] - queue resumed")
-		//		}
-		//
-		//		log.Printf("[controller][conversion][EchoConversion] - task updated to success")
-		//
-		//		if r.(string) == "asynq: multiple registrations for playlist:conversion" {
-		//			log.Printf("[controller][conversion][EchoConversion] - task already queued")
-		//		}
-		//	}
-		//	log.Printf("[controller][conversion][EchoConversion] - recovered from panic.. task already queued")
-		//
-		//	return util.SuccessResponse(ctx, http.StatusOK, res)
-		//}()
-		//orchdioQueue.RunTask(fmt.Sprintf("playlist:conversion:%s", uniqueId), orchdioQueue.PlaylistTaskHandler)
-		log.Printf("[controller][conversion][EchoConversion] - task handler attached")
+		orchdioLogger.Info("[controllers][platforms][ConvertEntity] [info] - Task handler attached", zap.String("task id", taskData.TaskID))
 		return util.SuccessResponse(ctx, http.StatusCreated, res)
 	}
 
 	log.Printf("\n[controllers][platforms][ConvertEntity] error - %v\n", "It is not a playlist or track URL")
+	orchdioLogger.Error("[controllers][platforms][ConvertEntity] error - Not a playlist")
 	return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid URL")
 }

@@ -25,13 +25,13 @@ func NewLogger() *zap.Logger {
 }
 
 // NewZapSentryLogger returns a new zap logger with sentry integration
-func NewZapSentryLogger(orchdioLoggerOpts *blueprint.OrchdioLoggerOptions) *zap.Logger {
-
-	if orchdioLoggerOpts == nil {
-		orchdioLoggerOpts = &blueprint.OrchdioLoggerOptions{
-			ApplicationPublicKey: "NOT_SET",
-			RequestID:            "NOT_SET",
-		}
+func NewZapSentryLogger(loggerOpts ...*blueprint.OrchdioLoggerOptions) *zap.Logger {
+	orchdioLoggerOpts := &blueprint.OrchdioLoggerOptions{}
+	if len(loggerOpts) == 0 {
+		orchdioLoggerOpts.ApplicationPublicKey = "NOT_SET"
+		orchdioLoggerOpts.RequestID = "NOT_SET"
+	} else {
+		orchdioLoggerOpts = loggerOpts[0]
 	}
 
 	if orchdioLoggerOpts.ApplicationPublicKey == "" {
@@ -51,7 +51,7 @@ func NewZapSentryLogger(orchdioLoggerOpts *blueprint.OrchdioLoggerOptions) *zap.
 		Level:             zapcore.WarnLevel,
 		BreadcrumbLevel:   zapcore.WarnLevel,
 		EnableBreadcrumbs: true,
-		DisableStacktrace: !sentryTrace,
+		DisableStacktrace: os.Getenv("ORCHDIO_ENV") == "production",
 		Tags: map[string]string{
 			"component":  "system",
 			"when":       time.Now().String(),

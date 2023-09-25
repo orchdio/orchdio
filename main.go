@@ -37,6 +37,7 @@ import (
 	"orchdio/controllers/developer"
 	"orchdio/controllers/platforms"
 	"orchdio/controllers/webhook"
+	logger2 "orchdio/logger"
 	"orchdio/middleware"
 	"orchdio/queue"
 	follow2 "orchdio/services/follow"
@@ -366,7 +367,9 @@ func main() {
 	userController := account.NewUserController(db, redisClient, asyncClient, asynqMux)
 	authMiddleware := middleware.NewAuthMiddleware(db)
 	conversionController := conversion.NewConversionController(db, redisClient, playlistQueue, QueueFactory, asyncClient, asynqServer, asynqMux)
-	devAppController := developer.NewDeveloperController(db)
+	// create logger
+	orchdioLogger := logger2.NewZapSentryLogger()
+	devAppController := developer.NewDeveloperController(db, orchdioLogger)
 
 	platformsControllers := platforms.NewPlatform(redisClient, db, asyncClient, asynqMux)
 	whController := webhook.NewWebhookController(db, redisClient)

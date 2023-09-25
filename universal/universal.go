@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/jmoiron/sqlx"
+	"go.uber.org/zap"
 	"log"
 	"orchdio/blueprint"
 	"orchdio/db"
+	logger2 "orchdio/logger"
 	"orchdio/services/applemusic"
 	"orchdio/services/deezer"
 	"orchdio/services/spotify"
@@ -37,6 +39,13 @@ func sumUpResultLength(tracks *[]blueprint.TrackSearchResult) int {
 
 // ConvertTrack fetches all the tracks converted from all the supported platforms
 func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*blueprint.Conversion, error) {
+	loggerOpts := &blueprint.OrchdioLoggerOptions{
+		Entity:  zap.String("entity", info.Entity),
+		Message: zap.String("message", "converting entity").String,
+		AppID:   zap.String("app_id", info.App).String,
+	}
+	orchdioLogger := logger2.NewZapSentryLogger(loggerOpts)
+
 	var conversion blueprint.Conversion
 	conversion.Entity = "track"
 
@@ -44,15 +53,11 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 	database := db.NewDB{DB: pg}
 	app, err := database.FetchAppByAppId(info.App)
 	if err != nil {
-		log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not fetch app: %v\n", err)
+		orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - could not fetch app", zap.Error(err))
 		return nil, err
 	}
 
 	targetPlatform := info.TargetPlatform
-	if targetPlatform == "" {
-		log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - no target platform provided\n")
-		targetPlatform = "all"
-	}
 
 	var fromService interface{}
 	var toService []map[string]interface{}
@@ -65,46 +70,44 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 	switch info.Platform {
 	case spotify.IDENTIFIER:
 		if app.SpotifyCredentials == nil {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - no spotify credentials provided\n")
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - no spotify credentials provided", zap.String("app_id", info.App))
 			return nil, errors.New("spotify credentials not provided")
 		}
 
 		var credentials blueprint.IntegrationCredentials
 		credBytes, decErr := util.Decrypt(app.SpotifyCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
 		if decErr != nil {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not decrypt spotify credentials: %v\n", decErr)
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - could not decrypt spotify credentials", zap.Error(decErr))
 			return nil, decErr
 		}
 
 		err = json.Unmarshal(credBytes, &credentials)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not unmarshal spotify credentials: %v\n", err)
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - could not unmarshal spotify credentials", zap.Error(err))
 			return nil, err
 		}
 
 		fromService = spotify.NewService(&credentials, pg, red)
 	case tidal.IDENTIFIER:
 		if len(app.TidalCredentials) == 0 {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - no tidal credentials provided\n")
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - tidal credentials not provided", zap.String("app_id", info.App))
 			return nil, errors.New("tidal credentials not provided")
 		}
 
 		var credentials blueprint.IntegrationCredentials
 		credBytes, decErr := util.Decrypt(app.TidalCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
 		if decErr != nil {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not decrypt tidal credentials: %v\n", decErr)
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - could not decrypt tidal credentials", zap.Error(decErr))
 			return nil, decErr
 		}
 		err = json.Unmarshal(credBytes, &credentials)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not unmarshal tidal credentials: %v\n", err)
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - could not unmarshal tidal credentials", zap.Error(err))
 			return nil, err
 		}
 
-		log.Printf("Creating new TIDAL service instance with the credentials:: =>")
-		spew.Dump(&credentials)
 		if credentials.AppRefreshToken == "" {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - tidal refresh token not present in TIDAL credentials. Please update the app and try again.\n")
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - tidal refresh token not present in TIDAL credentials. Please update the app and try again.", zap.String("app_id", info.App))
 			return nil, blueprint.EBADCREDENTIALS
 		}
 
@@ -112,41 +115,42 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 		//fromPlatformIntegrationCreds = credentials
 	case deezer.IDENTIFIER:
 		if len(app.DeezerCredentials) == 0 {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - no deezer credentials provided\n")
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - deezer credentials not provided", zap.String("app_id", info.App))
 			return nil, errors.New("deezer credentials not provided")
 		}
 
 		credBytes, decErr := util.Decrypt(app.DeezerCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
 		if decErr != nil {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not decrypt deezer credentials: %v\n", decErr)
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - could not decrypt deezer credentials", zap.Error(decErr))
 			return nil, decErr
 		}
+
 		var credentials blueprint.IntegrationCredentials
 		err = json.Unmarshal(credBytes, &credentials)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not unmarshal deezer credentials: %v\n", err)
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - could not unmarshal deezer credentials", zap.Error(err))
 			return nil, err
 		}
 		fromService = deezer.NewService(&credentials, pg, red)
 	case applemusic.IDENTIFIER:
 		if len(app.AppleMusicCredentials) == 0 {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - no apple music credentials provided\n")
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - apple music credentials not provided", zap.String("app_id", info.App))
 			return nil, errors.New("apple music credentials not provided")
 		}
 		var credentials blueprint.IntegrationCredentials
 		credBytes, decErr := util.Decrypt(app.AppleMusicCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
 		if decErr != nil {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not decrypt apple music credentials: %v\n", decErr)
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - could not decrypt apple music credentials", zap.Error(decErr), zap.String("app_id", info.App))
 			return nil, decErr
 		}
 		err = json.Unmarshal(credBytes, &credentials)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not unmarshal apple music credentials: %v\n", err)
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - could not unmarshal apple music credentials", zap.Error(err), zap.String("app_id", info.App))
 			return nil, err
 		}
 
 		if credentials.AppRefreshToken == "" {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - apple music credentials not provided\n")
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - apple music credentials not provided", zap.String("app_id", info.App))
 			return nil, blueprint.EBADCREDENTIALS
 		}
 
@@ -154,21 +158,20 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 	case ytmusic.IDENTIFIER:
 		// we dont need credentials for ytmusic yet but we still need to initialize the service
 		fromService = ytmusic.NewService(red)
-		//fromPlatformIntegrationCreds = credentials
 	}
 
 	// platform we're converting to. similar to above in functionality
 	switch targetPlatform {
 	case spotify.IDENTIFIER:
 		if app.SpotifyCredentials == nil {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - no spotify credentials provided\n")
+			orchdioLogger.Warn("[controllers][platforms][universal][ConvertTrack] warning - no spotify credentials provided", zap.String("app_id", info.App))
 			return nil, blueprint.ECREDENTIALSMISSING
 		}
 
 		var credentials blueprint.IntegrationCredentials
 		err = json.Unmarshal(app.SpotifyCredentials, &credentials)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not unmarshal spotify credentials: %v\n", err)
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - could not unmarshal spotify credentials", zap.Error(err), zap.String("app_id", info.App))
 			return nil, err
 		}
 
@@ -176,23 +179,29 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 		toService = append(toService, map[string]interface{}{spotify.IDENTIFIER: s})
 	case tidal.IDENTIFIER:
 		if len(app.TidalCredentials) == 0 {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - no tidal credentials provided\n")
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] warning - no tidal credentials provided", zap.String("app_id", info.App),
+				zap.String("entity_target_type", "to_service"))
 			return nil, errors.New("tidal credentials not provided")
 		}
+
 		var credentials blueprint.IntegrationCredentials
 		credBytes, dErr := util.Decrypt(app.TidalCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
 		if dErr != nil {
 			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not decrypt tidal credentials: %v\n", dErr)
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - could not decrypt tidal credentials", zap.Error(dErr),
+				zap.String("app_id", info.App))
 			return nil, dErr
 		}
 		err = json.Unmarshal(credBytes, &credentials)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not unmarshal tidal credentials: %v\n", err)
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - could not unmarshal tidal credentials", zap.Error(err),
+				zap.String("entity_target_type", "to_service"))
 			return nil, err
 		}
 
 		if credentials.AppRefreshToken == "" {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - tidal credentials not provided\n")
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - tidal credentials not provided", zap.String("app_id", info.App),
+				zap.String("entity_target_type", "to_service"))
 			return nil, blueprint.EBADCREDENTIALS
 		}
 
@@ -201,40 +210,45 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 	case deezer.IDENTIFIER:
 		var credentials blueprint.IntegrationCredentials
 		if len(app.DeezerCredentials) == 0 {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - no deezer credentials provided\n")
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - no deezer credentials provided", zap.String("app_id", info.App))
 			return nil, errors.New("deezer credentials not provided")
 		}
 		credBytes, decErr := util.Decrypt(app.DeezerCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
 		if decErr != nil {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not decrypt deezer credentials: %v\n", decErr)
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - could not decrypt deezer credentials", zap.Error(decErr),
+				zap.String("entity_target_type", "to_service"))
 			return nil, decErr
 		}
 		err = json.Unmarshal(credBytes, &credentials)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not unmarshal deezer credentials: %v\n", err)
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - could not unmarshal deezer credentials", zap.Error(err),
+				zap.String("entity_target_type", "to_service"))
 			return nil, err
 		}
 		s := deezer.NewService(&credentials, pg, red)
 		toService = append(toService, map[string]interface{}{deezer.IDENTIFIER: s})
 	case applemusic.IDENTIFIER:
 		if len(app.AppleMusicCredentials) == 0 {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - no apple music credentials provided\n")
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - no apple music credentials provided", zap.String("entity_target_type", "to_service"),
+				zap.String("app_id", info.App))
 			return nil, errors.New("apple music credentials not provided")
 		}
 		var credentials blueprint.IntegrationCredentials
 
 		credBytes, decErr := util.Decrypt(app.AppleMusicCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
 		if decErr != nil {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not decrypt apple music credentials: %v\n", decErr)
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - could not decrypt apple music credentials", zap.Error(decErr),
+				zap.String("entity_target_type", "to_service"))
 			return nil, decErr
 		}
 		err = json.Unmarshal(credBytes, &credentials)
 		if err != nil {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not unmarshal apple music credentials: %v\n", err)
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - could not unmarshal apple music credentials", zap.Error(err),
+				zap.String("entity_target_type", "to_service"))
 			return nil, err
 		}
 		if credentials.AppRefreshToken == "" {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - apple music credentials not provided\n")
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - apple music credentials not provided", zap.String("entity_target_type", "to_service"))
 			return nil, blueprint.EBADCREDENTIALS
 		}
 
@@ -246,7 +260,8 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 	}
 
 	if targetPlatform == "all" {
-		log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - target platform is all\n")
+		orchdioLogger.Warn("[controllers][platforms][universal][ConvertTrack] warning - target platform is all", zap.String("app_id", info.App),
+			zap.Any("entity_info", info))
 		var appCredentials = map[string][]byte{
 			spotify.IDENTIFIER:    app.SpotifyCredentials,
 			tidal.IDENTIFIER:      app.TidalCredentials,
@@ -262,7 +277,6 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 
 			encryptedCred := appCred
 			if len(encryptedCred) == 0 || encryptedCred == nil {
-				log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - no credentials provided for %s\n", plat)
 				if plat == ytmusic.IDENTIFIER {
 					toService = append(toService, map[string]interface{}{ytmusic.IDENTIFIER: ytmusic.NewService(red)})
 				}
@@ -270,7 +284,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 			}
 			decryptedCredentials, dErr := util.DecryptIntegrationCredentials(encryptedCred)
 			if dErr != nil {
-				log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not decrypt credentials: %v\n", dErr)
+				orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - could not decrypt credentials for platform", zap.Error(dErr), zap.String("platform", plat))
 				return nil, dErr
 			}
 			switch plat {
@@ -296,7 +310,8 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 
 	var methodSearchTrackWithID, ok = util.FetchMethodFromInterface(fromService, "SearchTrackWithID")
 	if !ok {
-		log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not fetch method from interface\n")
+		orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack][reflect-meta] error - could not fetch method from interface",
+			zap.String("method", "SearchTrackWithID"))
 		return nil, blueprint.EUNKNOWN
 	}
 
@@ -310,7 +325,8 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 		ans := methodSearchTrackWithID.Call([]reflect.Value{ins[0]})
 		res, ok1 := ans[0].Interface().(*blueprint.TrackSearchResult)
 		if !ok1 {
-			log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not convert interface to TrackSearchResult.. Error dynamically calling fromMethod.\n")
+			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack][reflect-meta] error - could not convert interface to TrackSearchResult.. Error dynamically calling fromMethod.",
+				zap.String("method", "SearchTrackWithID"))
 			return nil, blueprint.EUNKNOWN
 		}
 		fromResult = res
@@ -331,7 +347,8 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 
 				// todo: implement nil check
 				if res == nil && idx == 0 {
-					log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - search result is nil\n")
+					orchdioLogger.Warn("[controllers][platforms][universal][ConvertTrack] warning - search result is nil",
+						zap.String("platform", plat))
 					return nil, blueprint.EUNKNOWN
 				}
 
@@ -343,6 +360,8 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 					res2, ok3 := ans2[0].Interface().(*blueprint.TrackSearchResult)
 					if !ok3 {
 						log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not convert interface to TrackSearchResult.. Error dynamically calling toMethod.\n")
+						orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack][reflect-meta] error - could not convert interface to TrackSearchResult.. Error dynamically calling toMethod.",
+							zap.String("method", "SearchTrackWithTitle"))
 						return nil, blueprint.EUNKNOWN
 					}
 					toResult = append(toResult, map[string]*blueprint.TrackSearchResult{plat: res2})
@@ -388,6 +407,8 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 	}
 
 	log.Printf("[controllers][platforms][deezer][ConvertEntity] info - conversion done")
+	orchdioLogger.Info("[controllers][platforms][deezer][ConvertEntity] info - conversion done", zap.String("entity", info.Entity),
+		zap.String("entity_id", info.EntityID), zap.String("app_id", info.App))
 	return &conversion, nil
 }
 

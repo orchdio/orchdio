@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/gofiber/fiber/v2"
 	"github.com/jmoiron/sqlx"
 	"github.com/samber/lo"
@@ -80,17 +79,24 @@ func (a *AuthMiddleware) LogIncomingRequest(ctx *fiber.Ctx) error {
 
 // AddReadOnlyDeveloperToContext gets the developer using the public key which is read only and attach the developer to context.
 func (a *AuthMiddleware) AddReadOnlyDeveloperToContext(ctx *fiber.Ctx) error {
-	log.Printf("[db][middleware][AddReadOnlyDevAccessToContext] developer -  fetching app developer with public key\n")
 	pubKey := ctx.Get("x-orchdio-public-key")
+	platform := ctx.Params("platform")
+	loggerOpts := &blueprint.OrchdioLoggerOptions{
+		RequestID:            ctx.Get("x-orchdio-request-id"),
+		ApplicationPublicKey: zap.String("app_public_key", pubKey).String,
+		Platform:             zap.String("platform", platform).String,
+	}
+	orchdioLogger := logger2.NewZapSentryLogger(loggerOpts)
+	orchdioLogger.Info("[db][middleware][AddReadOnlyDevAccessToContext] developer -  fetching app developer with public key\n", zap.String("app_public_key", pubKey))
 	if pubKey == "" {
-		log.Printf("[db][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app developer with public key. No header passed")
+		orchdioLogger.Error("[db][middleware][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app developer with public key. No header passed")
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "missing x-orchdio-public-key header")
 	}
 
 	// check if the key is valid
 	isValid := util.IsValidUUID(pubKey)
 	if !isValid {
-		log.Printf("[db][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app developer with public key. Header passed is %s\n", pubKey)
+		orchdioLogger.Error("[db][middleware][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app developer with public key. Header passed is invalid", zap.String("app_public_key", pubKey))
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "invalid x-orchdio-public-key header")
 	}
 
@@ -98,19 +104,22 @@ func (a *AuthMiddleware) AddReadOnlyDeveloperToContext(ctx *fiber.Ctx) error {
 	database := db.NewDB{DB: a.DB}
 	developer, err := database.FetchDeveloperAppWithPublicKey(pubKey)
 	if err != nil {
-		log.Printf("[db][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app developer with public key")
+		orchdioLogger.Error("[db][middleware][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app developer with public key", zap.String("app_public_key", pubKey))
 		if errors.Is(err, sql.ErrNoRows) {
 			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "invalid x-orchdio-public-key header. App does not exist")
 		}
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred")
 	}
-	log.Printf("[db][AddReadOnlyDevAccessToContext] developer - making read only request")
+	orchdioLogger.Info("[db][AddReadOnlyDevAccessToContext] developer - making read only request")
 	ctx.Locals("developer", developer)
 
 	// fetch the app with the public key
 	app, err := database.FetchAppByPublicKey(pubKey, developer.UUID.String())
 	if err != nil {
-		log.Printf("[db][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app with public key")
+		if errors.Is(err, sql.ErrNoRows) {
+			orchdioLogger.Error("[db][middleware][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app developer with public key. App may not exist", zap.String("app_public_key", pubKey))
+			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "invalid x-orchdio-public-key header. App does not exist")
+		}
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred")
 	}
 	// set the app to the context
@@ -120,27 +129,37 @@ func (a *AuthMiddleware) AddReadOnlyDeveloperToContext(ctx *fiber.Ctx) error {
 
 // AddReadWriteDeveloperToContext gets the developer using the secret key which is read and write and attach the developer to context.
 func (a *AuthMiddleware) AddReadWriteDeveloperToContext(ctx *fiber.Ctx) error {
-	log.Printf("[db][middleware][FetchAppDeveloperWithSecretKey] developer -  fetching app developer with secret key\n")
+	reqID := ctx.Get("x-orchdio-request-id")
+	platform := ctx.Params("platform")
+	pubKey := ctx.Get("x-orchdio-public-key")
+
+	loggerOpts := &blueprint.OrchdioLoggerOptions{
+		RequestID:            reqID,
+		ApplicationPublicKey: zap.String("app_public_key", pubKey).String,
+		Platform:             zap.String("platform", platform).String,
+	}
+	orchdioLogger := logger2.NewZapSentryLogger(loggerOpts)
+	orchdioLogger.Info("[db][middleware][FetchAppDeveloperWithSecretKey] developer -  fetching app developer with secret key\n", zap.String("app_public_key", pubKey))
 	key := ctx.Get("x-orchdio-key")
 	if key == "" {
-		log.Printf("[db][FetchAppDeveloperWithSecretKey] developer -  error: could not fetch app developer with secret")
+		orchdioLogger.Error("[db][middleware][FetchAppDeveloperWithSecretKey] developer -  error: could not fetch app developer with secret key. No secret key header passed")
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "missing x-orchdio-key header")
 	}
 
 	// check if the key is valid
 	isValid := util.IsValidUUID(key)
 	if !isValid {
-		log.Printf("[db][FetchAppDeveloperWithSecretKey] developer -  error: could not fetch app developer with secret")
+		orchdioLogger.Error("[db][middleware][FetchAppDeveloperWithSecretKey] developer -  error: could not fetch app developer with secret key. Header passed is invalid", zap.String("x-secret-key", key))
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "invalid x-orchdio-key header")
 	}
 
 	var developer blueprint.User
 	err := a.DB.QueryRowx(queries.FetchAuthorizedAppDeveloperBySecretKey, key).StructScan(&developer)
 	if err != nil {
-		log.Printf("[db][FetchAppDeveloperWithSecretKey] developer -  error: could not fetch app developer with the secret: %s. Error is %v\n", key, err)
 		if errors.Is(err, sql.ErrNoRows) {
 			return util.ErrorResponse(ctx, fiber.StatusNotFound, "not found", "app not found")
 		}
+		orchdioLogger.Error("[db][FetchAppDeveloperWithSecretKey] developer - error could not fetch app developer with secret key.", zap.String("x-secret-key", key), zap.Error(err))
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "invalid x-orchdio-key header")
 	}
 	ctx.Locals("developer", &developer)
@@ -148,10 +167,10 @@ func (a *AuthMiddleware) AddReadWriteDeveloperToContext(ctx *fiber.Ctx) error {
 	database := db.NewDB{DB: a.DB}
 	app, err := database.FetchAppBySecretKey([]byte(key))
 	if err != nil {
-		log.Printf("[db][AddReadWriteDevAccessToContext] developer -  error: could not fetch app with private key")
 		if errors.Is(err, sql.ErrNoRows) {
 			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "invalid x-orchdio-key header. App does not exist")
 		}
+		orchdioLogger.Error("[db][AddReadWriteDevAccessToContext] developer -  error: could not fetch app with private key", zap.String("x-secret-key", key), zap.Error(err))
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred")
 	}
 	// set the app to the context
@@ -160,6 +179,13 @@ func (a *AuthMiddleware) AddReadWriteDeveloperToContext(ctx *fiber.Ctx) error {
 }
 
 func (a *AuthMiddleware) HandleTrolls(ctx *fiber.Ctx) error {
+	loggerOpts := &blueprint.OrchdioLoggerOptions{
+		RequestID:            ctx.Get("x-orchdio-request-id"),
+		ApplicationPublicKey: zap.String("app_public_key", ctx.Get("x-orchdio-public-key")).String,
+		Platform:             zap.String("platform", ctx.Params("platform")).String,
+	}
+	orchdioLogger := logger2.NewZapSentryLogger(loggerOpts)
+
 	var blacklists = []string{"/.env", "/_profiler/phpinfo",
 		"/.admin",
 		"/.git",
@@ -167,8 +193,8 @@ func (a *AuthMiddleware) HandleTrolls(ctx *fiber.Ctx) error {
 		"/.htcaccess", "/robot.txt", "/admin.php"}
 	for _, blacklist := range blacklists {
 		if strings.Contains(ctx.Path(), blacklist) {
-			log.Printf("[middleware][HandleTrolls] warning - Trolling attempt from IP: %s at path: %s at time: %s\n", ctx.IP(), ctx.Path(), time.Now().String())
-			return util.ErrorResponse(ctx, http.StatusExpectationFailed, "zilch", "lol 🖕🏾")
+			orchdioLogger.Warn("[middleware][HandleTrolls] warning - Trolling attempt", zap.String("ip", ctx.IP()), zap.String("path", ctx.Path()), zap.String("time", time.Now().String()))
+			return util.ErrorResponse(ctx, http.StatusExpectationFailed, "zilch", "lol")
 		}
 	}
 	return ctx.Next()
@@ -265,7 +291,7 @@ func (a *AuthMiddleware) VerifyUserActionApp(ctx *fiber.Ctx) error {
 	database := db.NewDB{DB: a.DB}
 	user, err := database.FetchPlatformAndUserInfoByIdentifier(userId, app.UID.String(), platform)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", fmt.Sprintf("App not found. User might not have authorized this app. Please sign in with %s", FetcPlatformNameByIdentifier(platform)))
 		}
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An internal error occurred")
@@ -304,14 +330,6 @@ func FetcPlatformNameByIdentifier(identifier string) string {
 	return platforms[identifier]
 }
 
-//func (a *AuthMiddleware) AddOrgAppTo(ctx *fiber.Ctx) error {
-//	// extract the app id from the header
-//	app := ctx.Locals("app").(*blueprint.DeveloperApp)
-//	if app == nil {
-//		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing app")
-//	}
-//}
-
 func (a *AuthMiddleware) AddRequestPlatformToCtx(ctx *fiber.Ctx) error {
 	platform := ctx.Params("platform")
 	reqId := ctx.Get("x-orchdio-request-id")
@@ -321,7 +339,6 @@ func (a *AuthMiddleware) AddRequestPlatformToCtx(ctx *fiber.Ctx) error {
 		ApplicationPublicKey: zap.String("app_public_key", pubKey).String,
 		Platform:             zap.String("platform", platform).String,
 	}
-	spew.Dump("Headers are: ", string(ctx.Request().Header.RawHeaders()))
 	orchdioLogger := logger2.NewZapSentryLogger(loggerOpts)
 	orchdioLogger.Info("Request ID", zap.String("request_id", reqId))
 	if platform == "" {

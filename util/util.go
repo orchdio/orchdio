@@ -412,40 +412,56 @@ func ExtractTitle(text string) blueprint.ExtractedTitleInfo {
 	// (and similar, in the future), we want to remove the content of the paranthesis
 	// and also probably get the featured artiste name
 	// Define the regular expression pattern to match the track title and artistes
-	pattern := regexp.MustCompile(`^(?i)\s*\[\s*(.+?)\s*\]\s*([(\[]?\s*(?:with|feat\.?)[\s&]*([a-z0-9 .,;&]+)\s*[)\]]?)?\s*$`)
+	//pattern := regexp.MustCompile(`^(?i)\s*\[\s*(.+?)\s*\]\s*([(\[]?\s*(?:with|feat\.?)[\s&]*([a-z0-9 .,;&]+)\s*[)\]]?)?\s*$`)
+	pattern := regexp.MustCompile(`^\s*\[?(\w+(?:\s\w+)*)\]?(?:\s*(?:with|feat\.?)\s*([A-Za-z, .&]+))?`)
+
 	// Apply the regular expression to the track title string
 	matches := pattern.FindStringSubmatch(text)
-
-	// Check if the title was matched
-	if len(matches) < 2 {
-		fmt.Printf("Error: Could not extract title from track title string: %v\n", text)
-		// Return a fallback to the original title and an empty array of artists
-		res := blueprint.ExtractedTitleInfo{
-			Title:   strings.Trim(text, "[] "),
-			Artists: []string{},
-		}
-		return res
-	}
-
-	// Extract the title and artistes from the matches
 	title := strings.TrimSpace(matches[1])
-	artistes := make([]string, 0)
-	if matches[3] != "" {
-		// If there are artistes, split them by commas, semicolons, and/or ampersands
-		artistes = strings.FieldsFunc(matches[3], func(r rune) bool {
-			return r == ',' || r == ';' || r == '&'
-		})
-		for i, a := range artistes {
-			artistes[i] = strings.TrimSpace(a)
+	artists := make([]string, 0)
+	if len(matches) > 2 && matches[2] != "" {
+		artists = strings.Split(matches[2], ",")
+		for i, artist := range artists {
+			artists[i] = strings.TrimSpace(artist)
 		}
 	}
 
-	// Create the final map with title and artistes keys
-	res := blueprint.ExtractedTitleInfo{
+	result := blueprint.ExtractedTitleInfo{
 		Title:   title,
-		Artists: artistes,
+		Artists: artists,
 	}
-	return res
+	return result
+	// Check if the title was matched
+	//if len(matches) < 1 {
+	//	// todo: use orchdio logger here and use warn severity
+	//	fmt.Printf("Error: Could not extract title from track title string: %v\n", text)
+	//	// Return a fallback to the original title and an empty array of artists
+	//	res := blueprint.ExtractedTitleInfo{
+	//		Title:   strings.Trim(text, "[] "),
+	//		Artists: []string{},
+	//	}
+	//	return res
+	//}
+	//
+	//// Extract the title and artistes from the matches
+	//title := strings.TrimSpace(matches[1])
+	//artistes := make([]string, 0)
+	//if matches[3] != "" {
+	//	// If there are artistes, split them by commas, semicolons, and/or ampersands
+	//	artistes = strings.FieldsFunc(matches[3], func(r rune) bool {
+	//		return r == ',' || r == ';' || r == '&'
+	//	})
+	//	for i, a := range artistes {
+	//		artistes[i] = strings.TrimSpace(a)
+	//	}
+	//}
+	//
+	//// Create the final map with title and artistes keys
+	//res := blueprint.ExtractedTitleInfo{
+	//	Title:   title,
+	//	Artists: artistes,
+	//}
+	//return res
 }
 
 func parseFeaturedArtistes(feat string) []string {

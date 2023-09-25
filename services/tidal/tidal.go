@@ -129,7 +129,7 @@ func (s *Service) FetchTrackWithID(id string) (*Track, error) {
 		return nil, err
 	}
 
-	log.Printf("\n[controllers][platforms][tidal][SearchTrackWithID] - access token - %v\n", accessToken)
+	//log.Printf("\n[controllers][platforms][tidal][SearchTrackWithID] - access token - %v\n", accessToken)
 	if accessToken == "" {
 		log.Printf("\n[controllers][platforms][tidal][SearchTrackWithID] - error - could not fetch new TIDAL access token %v\n", err)
 		return nil, blueprint.EBADCREDENTIALS

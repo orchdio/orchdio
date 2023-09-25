@@ -128,7 +128,7 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackSearchResult, error) {
 	strippedTitleInfo := util.ExtractTitle(title)
 	// if the title is in the format of "title (feat. artiste)" then we search for the title without the feat. artiste
-	log.Printf("Apple music: Searching with stripped artiste: %s. Original artiste: %s", strippedTitleInfo.Title, artiste)
+	//log.Printf("Apple music: Searching with stripped artiste: %s. Original artiste: %s", strippedTitleInfo.Title, artiste)
 	if s.RedisClient.Exists(context.Background(), artiste).Val() == 1 {
 		log.Printf("[services][applemusic][SearchTrackWithTitle] Track found in cache: %v\n", artiste)
 		track, err := s.RedisClient.Get(context.Background(), util.NormalizeString(artiste)).Result()
@@ -147,16 +147,64 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 
 	log.Printf("[services][applemusic][SearchTrackWithTitle] Track not found in cache, fetching track %s from Apple Music with artist %s\n", strippedTitleInfo.Title, util.NormalizeString(artiste))
 
-	if s.IntegrationAPIKey != "" {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] Apple music API key is empty on decoded credentials\n")
-	} else {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] Apple music API key is not empty on decoded credentials\n")
+	// todo: throw an error when the api key is empty. ensure that this might be the case. if not, remove the commented out code.
+	//if s.IntegrationAPIKey == "" {
+	//	log.Printf("[services][applemusic][SearchTrackWithTitle] Apple music API key is empty on decoded credentials\n")
+	//} else {
+	//	log.Printf("[services][applemusic][SearchTrackWithTitle] Apple music API key is not empty on decoded credentials\n")
+	//}
+
+	// to check if the problem is with the apple music library not allowing us pass "with" to improve the search results,
+	// first lets try to get the hint and see if that gives more sensible results or precursor to results
+	hintURL := fmt.Sprintf("https://api.music.apple.com/v1/catalog/us/search/hints?term=%s&limit=10&types=songs", url.QueryEscape(
+		strings.ReplaceAll(strings.ToLower(strippedTitleInfo.Title), " ", "+")))
+	axiosConfig := &axios.InstanceConfig{
+		Headers: map[string][]string{
+			"Authorization": {"Bearer " + s.IntegrationAPIKey},
+		},
+	}
+	axiosClient := axios.NewInstance(axiosConfig)
+	hintResponse, err := axiosClient.Get(hintURL, nil)
+	if err != nil {
+		log.Printf("[services][applemusic][SearchTrackWithTitle] Error fetching hint from Apple Music: %v\n", err)
+		return nil, err
+	}
+
+	if hintResponse.Status != http.StatusOK {
+		log.Printf("[services][applemusic][SearchTrackWithTitle] Error fetching hint from Apple Music: %v\n", err)
+		return nil, err
 	}
 
 	tp := applemusic.Transport{Token: s.IntegrationAPIKey}
+	searchTerm := fmt.Sprintf("%s %s", artiste, strippedTitleInfo.Title)
+	hintResponseStruct := struct {
+		Results struct {
+			Terms []string `json:"terms"`
+		}
+	}{}
+	err = json.Unmarshal(hintResponse.Data, &hintResponseStruct)
+	if err != nil {
+		log.Printf("[services][applemusic][SearchTrackWithTitle] Error unmarshalling hint response: %v\n", err)
+		return nil, err
+	}
+
+	if len(hintResponseStruct.Results.Terms) > 0 {
+		// find the first term that contains the artiste
+		for _, term := range hintResponseStruct.Results.Terms {
+			allArtists := strings.ReplaceAll(strings.ToLower(term), " ", ",")
+			joinedArtists := strings.Split(allArtists, ",")
+			if lo.Contains(joinedArtists, strings.ToLower(artiste)) {
+				searchTerm = term
+				break
+			}
+		}
+	}
 	client := applemusic.NewClient(tp.Client())
+
 	results, response, err := client.Catalog.Search(context.Background(), "us", &applemusic.SearchOptions{
-		Term: fmt.Sprintf("%s+%s", artiste, strippedTitleInfo.Title),
+		Term:  searchTerm,
+		Types: "songs",
+		Limit: 10,
 	})
 
 	if err != nil {
@@ -178,6 +226,46 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 		log.Printf("[services][applemusic][SearchTrackWithTitle] Error fetching track from Apple Music: %v\n", err)
 		return nil, blueprint.ENORESULT
 	}
+
+	//var suggestedResult []interface{}
+	//// loop over the results and find the track that matches the artiste
+	//for _, t := range results.Results.Songs.Data {
+	//	songCopy := t
+	//	fields := struct {
+	//		ArtistName string
+	//		TrackTitle string
+	//	}{
+	//		ArtistName: t.Attributes.ArtistName,
+	//		TrackTitle: t.Attributes.Name,
+	//	}
+	//
+	//	spew.Dump(fields)
+	//
+	//	cpArtists := []string{songCopy.Attributes.ArtistName}
+	//	// levenstein distance between this artiste and the artiste in the track
+	//	lvDistance := levenshtein.DistanceForStrings([]rune(strings.ToLower(artiste)), []rune(strings.ToLower(strings.Join(cpArtists, ","))), levenshtein.DefaultOptions)
+	//	log.Printf("[services][applemusic][SearchTrackWithTitle] Levenshtein distance between %s and %s is %d\n", artiste, strings.Join(cpArtists, ","), lvDistance)
+	//	// first, find the other artist that may be in the result. this is to isolate this artiste to reduce noise from
+	//	// the levenstein distance calculation between the artiste and the artiste in the track
+	//	//otherArtits := lo.PickByValues(, artiste)
+	//	otherArtists := lo.Filter(cpArtists, func(i string, i2 int) bool {
+	//		return i != artiste
+	//	})
+	//
+	//	log.Printf("Other artists are:: %v", otherArtists)
+	//	// first find delimiters in the artiste string
+	//	delimiters := regexp.MustCompile(`\s+`).Split(strings.Join(cpArtists, ""), -1)
+	//	log.Printf("Delimiters are:: %v", delimiters)
+	//
+	//	titleDistance := levenshtein.DistanceForStrings([]rune(strings.ToLower(strippedTitleInfo.Title)), []rune(strings.ToLower(songCopy.Attributes.Name)), levenshtein.DefaultOptions)
+	//	log.Printf("[services][applemusic][SearchTrackWithTitle] Title Levenshtein distance between %s and %s is %d\n", strippedTitleInfo.Title, songCopy.Attributes.Name, titleDistance)
+	//
+	//	if lvDistance <= 2 {
+	//		suggestedResult = append(suggestedResult, songCopy)
+	//	} else {
+	//		continue
+	//	}
+	//}
 
 	t := results.Results.Songs.Data[0]
 	previewURL := ""
@@ -212,13 +300,12 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 	}
 
 	if lo.Contains(track.Artists, artiste) {
-		err = s.RedisClient.MSet(context.Background(), map[string]interface{}{
-			util.NormalizeString(artiste): string(serializedTrack),
-		}).Err()
+		err = s.RedisClient.Set(context.Background(), fmt.Sprintf("applemusic:%s:%s", util.NormalizeString(artiste), strippedTitleInfo.Title), string(serializedTrack), time.Hour*24).Err()
 		if err != nil {
-			log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error caching track - %v\n", err)
+			log.Printf("[services][applemusic][SearchTrackWithTitle] Error caching track: %v\n", err)
+			return nil, err
 		} else {
-			log.Printf("\n[controllers][platforms][applemusic][SearchTrackWithTitle] Track %s has been cached\n", track.Title)
+			log.Printf("[services][applemusic][SearchTrackWithTitle] Track %s has been cached\n", track.Title)
 		}
 	}
 

@@ -494,7 +494,6 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			}
 		}
 
-		var authedUserEmail string
 		var userPlatformToken []byte
 		// we fetch the developer app using the app id and grab the redirect url from there. this is different from the integration redirect url
 		// which is the one the developers will put in their platform apps. this redirect url is an orchdio redirect url where the result of the auth
@@ -633,7 +632,6 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign spotify auth jwt", zap.Error(sErr))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
-			authedUserEmail = userProfile.Email
 			// update the redirect url to the developer app redirect url. this is the final redirect url at the end of the auth flow
 			redirectURL = fmt.Sprintf("%s?token=%s", app.RedirectURL, string(authT))
 
@@ -722,7 +720,6 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign deezer auth jwt", zap.Error(sErr))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
-			authedUserEmail = deezerUser.Email
 			redirectURL = fmt.Sprintf("%s?token=%s", app.RedirectURL, string(authToken))
 
 		// redirect to the redirect url from the state token.
@@ -759,56 +756,6 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to update platform usernames", zap.Error(err))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
-
-		// create a new user email task
-		taskID := uuid.New().String()
-
-		// an app task data struct. a task is a job that is scheduled to be executed at a later time.
-		// this is used to email the user that just authed with the app.
-		taskApp := &blueprint.AppTaskData{
-			Name: app.Name,
-			UUID: app.UID.String(),
-		}
-
-		// we need to let the user know what just happened, so we'll send them an email.
-		// And what just happened? We let them know that the App they just authed uses our service in order to
-		// request data, in order to make it easier for them to integrate multiple platforms into their app.
-		// We let them know that we do store some of their data but it is the apis that the app needs to function.
-		// Their permission is easily revocable by going to their account settings and removing the app and going to
-		// https://orchdio.com/my-data and deleting their data.
-		var _ = &blueprint.EmailTaskData{
-			App:  taskApp,
-			From: os.Getenv("ALERT_EMAIL"),
-			To:   authedUserEmail,
-			Payload: map[string]interface{}{
-				"APP_NAME": app.Name,
-				"PLATFORM": strings.Title(decodedState.Platform),
-				"SCOPES":   services.BuildScopesExplanation(decodedState.Scopes, decodedState.Platform),
-			},
-			TaskID:     taskID,
-			TemplateID: 2,
-		}
-		// schedule a job to send notification email
-		_ = queue.NewOrchdioQueue(a.AsyncClient, a.DB, a.Redis, a.AsynqRouter)
-		// serialize the task data
-		//serializedEmailTaskData, err := json.Marshal(emailTaskData)
-		//if err != nil {
-		//	log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to serialize email task data: %v\n", err)
-		//	return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-		//}
-
-		//emailTask, err := emailQueue.NewTask(fmt.Sprintf("send:appauth:email:%s", taskID), queue.EmailTask, 3, serializedEmailTaskData)
-		//if err != nil {
-		//	log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to create email task: %v\n", err)
-		//	return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-		//}
-
-		// enqueue the task
-		//err = emailQueue.EnqueueTask(emailTask, queue.EmailQueue, taskID, time.Second*5)
-		//if err != nil {
-		//	log.Printf("[controllers][HandleAppAuthRedirect] developer -  error: unable to enqueue email task: %v\n", err)
-		//	return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-		//}
 
 		// we dont really need to create a new task in the db since it is not a task that contains the data needed by a developer
 		// set the task handler
