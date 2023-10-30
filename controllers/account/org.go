@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
-	"log"
 	"net/http"
 	"net/mail"
 	"orchdio/blueprint"
 	"orchdio/db"
 	"orchdio/db/queries"
+	logger2 "orchdio/logger"
 	"orchdio/queue"
 	"orchdio/util"
 	"os"
@@ -22,49 +23,56 @@ import (
 
 // CreateOrg creates a new org
 func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
-	log.Printf("[controller][account][CreateOrg] - creating org")
+	loggerOpts := &blueprint.OrchdioLoggerOptions{
+		RequestID:            ctx.Get("x-orchdio-request-id"),
+		ApplicationPublicKey: zap.String("app_pub_key", ctx.Get("x-orchdio-app-pub-key")).String,
+	}
+
+	orchdioLogger := logger2.NewZapSentryLogger(loggerOpts)
 	// todo: implement email verification for org owner creation when they pass their email
 	//claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
+	u.Logger = orchdioLogger
 
 	var body blueprint.CreateOrganizationData
 	err := ctx.BodyParser(&body)
 	if err != nil {
-		log.Printf("[controller][account][CreateOrg] - error parsing body: %v", err)
+		u.Logger.Error("[controller][account][CreateOrg] - error parsing body", zap.Error(err))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, err, "Could not create organization. Invalid body passed")
 	}
 
 	if body.Name == "" {
-		log.Printf("[controller][account][CreateOrg] - name is empty")
+		u.Logger.Warn("[controller][account][CreateOrg] - name is empty")
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "name is empty", "Could not create organization. Name is empty")
 	}
 
 	if body.OwnerEmail == "" {
-		log.Printf("[controller][account][CreateOrg] - owner email is empty")
+		u.Logger.Warn("[controller][account][CreateOrg] - owner email is empty")
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "owner email is empty", "Could not create organization. Owner email is empty")
 	}
 
 	if body.OwnerPassword == "" {
-		log.Printf("[controller][account][CreateOrg] - owner password is empty")
+		u.Logger.Warn("[controller][account][CreateOrg] - owner password is empty")
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "owner password is empty", "Could not create organization. Owner password is empty")
 	}
 
 	validEmail, err := mail.ParseAddress(body.OwnerEmail)
 	if err != nil {
-		log.Printf("[controller][account][CreateOrg] - invalid email: %v", err)
+		u.Logger.Warn("[controller][account][CreateOrg] - invalid email", zap.Error(err))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, err, "Could not create organization. Invalid email")
 	}
 	if validEmail.Address != body.OwnerEmail {
-		log.Printf("[controller][account][CreateOrg] - invalid email: %v", err)
+		u.Logger.Warn("[controller][account][CreateOrg] - invalid email", zap.Error(err))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, err, "Could not create organization. Invalid email")
 	}
 
-	database := db.NewDB{DB: u.DB}
+	//database := db.NewDB{DB: u.DB}
+	database := db.New(u.DB, u.Logger)
 	uniqueId := uuid.NewString()
 	var userId string
 
 	hashedPass, bErr := bcrypt.GenerateFromPassword([]byte(body.OwnerPassword), bcrypt.DefaultCost)
 	if bErr != nil {
-		log.Printf("[controller][account][CreateOrg] - error hashing password: %v", bErr)
+		u.Logger.Error("[controller][account][CreateOrg] - error hashing password", zap.Error(bErr))
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, bErr, "Could not create organization")
 	}
 
@@ -76,10 +84,10 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 			ubx := uuid.NewString()
 			_, dErr := u.DB.Exec(queries.CreateNewOrgUser, body.OwnerEmail, ubx, string(hashedPass))
 			if dErr != nil {
-				log.Printf("[controller][account][CreateOrg] - error creating user: %v", dErr)
+				u.Logger.Error("[controller][account][CreateOrg] - error creating user", zap.Error(dErr))
 				return util.ErrorResponse(ctx, http.StatusInternalServerError, dErr, "Could not create organization")
 			}
-			log.Printf("[controller][account][CreateOrg] - user created new user with email %s and id: %s", body.OwnerEmail, ubx)
+			u.Logger.Info("[controller][account][CreateOrg] - user created new user", zap.String("email", body.OwnerEmail), zap.String("id", ubx))
 			userId = ubx
 		}
 	}
@@ -91,14 +99,14 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 		// is created by signing up by creating an organization, they must have an organization already. So if they dont have
 		// an organization we can assume that they were created by signing up with a streaming platform account.
 		// and if they do, we return an error saying that they already have an organization.
-		orgs, err := database.FetchOrgs(userInf.UUID.String())
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			log.Printf("[controller][account][CreateOrg] - error getting orgs: %v", err)
+		orgs, fErr := database.FetchOrgs(userInf.UUID.String())
+		if fErr != nil && !errors.Is(fErr, sql.ErrNoRows) {
+			u.Logger.Error("[controller][account][CreateOrg] - error getting orgs", zap.Error(fErr))
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not create organization.")
 		}
 
 		if orgs != nil {
-			log.Printf("[controller][account][CreateOrg] - user already has an organization")
+			u.Logger.Warn("[controller][account][CreateOrg] - user already has an organization", zap.String("user_id", userInf.UUID.String()))
 			return util.ErrorResponse(ctx, http.StatusConflict, err, "Could not create organization. User already has an organization")
 		}
 		// in the case where the user was created from authing with a platform for example, there will be no existing password for the user
@@ -106,7 +114,7 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 		userId = userInf.UUID.String()
 		_, dErr := u.DB.Exec(queries.UpdateUserPassword, string(hashedPass), userId)
 		if dErr != nil {
-			log.Printf("[controller][account][CreateOrg] - error updating user password: %v", dErr)
+			u.Logger.Error("[controller][account][CreateOrg] - error updating user password", zap.Error(dErr))
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, dErr, "Could not create organization")
 		}
 	}
@@ -116,12 +124,12 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 	org, err := database.FetchOrgs(userId)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			log.Printf("[controller][account][CreateOrg] - no orgs found for user: %s. Going to create user", userId)
+			u.Logger.Info("[controller][account][CreateOrg] - no orgs found for user. Going to create user", zap.String("user_id", userId))
 
 			// todo: send email verification to user
 			uid, cErr := database.CreateOrg(uniqueId, body.Name, body.Description, userId)
 			if cErr != nil {
-				log.Printf("[controller][account][CreateOrg] - error creating org: %v", err)
+				u.Logger.Error("[controller][account][CreateOrg] - error creating org", zap.Error(cErr))
 				return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not create organization")
 			}
 
@@ -131,7 +139,7 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 			})
 
 			if sErr != nil {
-				log.Printf("[controller][account][CreateOrg] - error signing app token: %v", sErr)
+				u.Logger.Error("[controller][account][CreateOrg] - error signing app token", zap.Error(sErr))
 				return util.ErrorResponse(ctx, http.StatusInternalServerError, sErr, "Could not create organization")
 			}
 
@@ -142,12 +150,12 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 				"token":       string(appToken),
 			}
 
-			mailErr := u.SendAdminWelcomeEmail(body.OwnerEmail)
+			taskId, mailErr := u.SendAdminWelcomeEmail(body.OwnerEmail)
 			if mailErr != nil {
-				log.Printf("[controller][account][LoginUserToOrg] - error sending welcome email: %v", mailErr)
+				u.Logger.Warn("[controller][account][CreateOrg] - error sending welcome email", zap.Error(mailErr),
+					zap.String("email_task_id", taskId))
 			}
-
-			log.Printf("[controller][account][CreateOrg] - org '%s' created", body.Name)
+			u.Logger.Info("[controller][account][CreateOrg] - org created", zap.String("org_id", string(uid)), zap.String("org_name", body.Name))
 			return util.SuccessResponse(ctx, http.StatusCreated, res)
 		}
 	}
@@ -164,29 +172,30 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 		"token":       string(appToken),
 	}
 
-	mailErr := u.SendAdminWelcomeEmail(body.OwnerEmail)
+	taskId, mailErr := u.SendAdminWelcomeEmail(body.OwnerEmail)
 	if mailErr != nil {
-		log.Printf("[controller][account][LoginUserToOrg] - error sending welcome email: %v", mailErr)
+		u.Logger.Warn("[controller][account][CreateOrg] - error sending welcome email", zap.Error(mailErr),
+			zap.String("email_task_id", taskId))
 	}
 
-	log.Printf("Should have sent email to %s", body.OwnerEmail)
+	u.Logger.Info("[controller][account][CreateOrg] - user email sent. Organization created", zap.String("org_id", org.UID.String()))
 	return util.SuccessResponse(ctx, http.StatusOK, res)
 }
 
 // DeleteOrg deletes  an org belonging to the user.
 func (u *UserController) DeleteOrg(ctx *fiber.Ctx) error {
-	log.Printf("[controller][account][DeleteOrg] - deleting org")
 	claims := ctx.Locals("app_jwt").(*blueprint.AppJWT)
-
 	orgId := ctx.Params("orgId")
 
 	if orgId == "" {
-		log.Printf("[controller][account][DeleteOrg] - error: Org ID is empty")
+		u.Logger.Warn("[controller][account][DeleteOrg] - error: Org ID is empty",
+			zap.String("org_id", orgId))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Org ID is empty. Please pass a valid Org ID")
 	}
 
 	if !util.IsValidUUID(orgId) {
-		log.Printf("[controller][account][DeleteOrg] - error: Org ID is invalid")
+		u.Logger.Warn("[controller][account][DeleteOrg] - error: Org ID is invalid",
+			zap.String("org_id", orgId))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Org ID is invalid. Please pass a valid Org ID")
 	}
 
@@ -196,44 +205,48 @@ func (u *UserController) DeleteOrg(ctx *fiber.Ctx) error {
 	database := db.NewDB{DB: u.DB}
 	err := database.DeleteOrg(orgId, claims.DeveloperID)
 	if err != nil {
-		log.Printf("[controller][account][DeleteOrg] - error deleting org: %v", err)
+		u.Logger.Error("[controller][account][DeleteOrg] - error deleting org", zap.Error(err),
+			zap.String("org_id", orgId))
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not delete organization")
 	}
 
-	log.Printf("[controller][account][DeleteOrg] - org deleted with unique id: %s", orgId)
+	u.Logger.Info("[controller][account][DeleteOrg] - org deleted", zap.String("org_id", orgId))
 	return util.SuccessResponse(ctx, http.StatusOK, "success")
 }
 
 // UpdateOrg updates an org belonging to the user.
 func (u *UserController) UpdateOrg(ctx *fiber.Ctx) error {
-	log.Printf("[controller][account][UpdateOrg] - updating org")
 	claims := ctx.Locals("app_jwt").(*blueprint.AppJWT)
 
 	orgId := ctx.Params("orgId")
 	var updateData blueprint.UpdateOrganizationData
 	err := ctx.BodyParser(&updateData)
 	if err != nil {
-		log.Printf("[controller][account][UpdateOrg] - error parsing body: %v", err)
+		u.Logger.Error("[controller][account][UpdateOrg] - error parsing body", zap.Error(err),
+			zap.String("org_id", orgId))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, err, "Could not update organization. Invalid body passed")
 	}
 
 	if orgId == "" {
-		log.Printf("[controller][account][UpdateOrg] - error: Org ID is empty")
+		u.Logger.Warn("[controller][account][UpdateOrg] - error: Org ID is empty",
+			zap.String("org_id", orgId))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Org ID is empty. Please pass a valid Org ID")
 	}
 
 	if !util.IsValidUUID(orgId) {
-		log.Printf("[controller][account][UpdateOrg] - error: Org ID is invalid")
+		u.Logger.Warn("[controller][account][UpdateOrg] - error: Org ID is invalid",
+			zap.String("org_id", orgId))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Org ID is invalid. Please pass a valid Org ID")
 	}
 
 	database := db.NewDB{DB: u.DB}
 	err = database.UpdateOrg(orgId, claims.DeveloperID, &updateData)
 	if err != nil {
-		log.Printf("[controller][account][UpdateOrg] - error updating org: %v", err)
 		if errors.Is(err, sql.ErrNoRows) {
 			return util.ErrorResponse(ctx, http.StatusNotFound, "NOT_FOUND", "Could not update organization. Organization not found. Please make sure this Organization and it belongs to you.")
 		}
+		u.Logger.Error("[controller][account][UpdateOrg] - error updating org", zap.Error(err),
+			zap.String("org_id", orgId))
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not update organization")
 	}
 
@@ -242,13 +255,12 @@ func (u *UserController) UpdateOrg(ctx *fiber.Ctx) error {
 
 // FetchUserOrgs returns all orgs belonging to the user.
 func (u *UserController) FetchUserOrgs(ctx *fiber.Ctx) error {
-	log.Printf("[controller][account][GetOrgs] - getting orgs")
 	claims := ctx.Locals("app_jwt").(*blueprint.AppJWT)
 
 	database := db.NewDB{DB: u.DB}
 	orgs, err := database.FetchOrgs(claims.DeveloperID)
 	if err != nil {
-		log.Printf("[controller][account][GetOrgs] - error getting orgs: %v", err)
+		u.Logger.Error("[controller][account][FetchUserOrgs] - error getting orgs", zap.Error(err), zap.String("user_id", claims.DeveloperID))
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not get organizations")
 	}
 
@@ -256,30 +268,29 @@ func (u *UserController) FetchUserOrgs(ctx *fiber.Ctx) error {
 }
 
 func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
-	log.Printf("[controller][account][LoginUserToOrg] - logging user into org")
 	var body blueprint.LoginToOrgData
 	err := ctx.BodyParser(&body)
 	if err != nil {
-		log.Printf("[controller][account][LoginUserToOrg] - error parsing body: %v", err)
+		u.Logger.Error("[controller][account][LoginUserToOrg] - error parsing body", zap.Error(err))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, err, "Could not login to organization. Invalid body passed")
 	}
 
 	if body.Email == "" {
-		log.Printf("[controller][account][LoginUserToOrg] - error: email is empty")
+		u.Logger.Warn("[controller][account][LoginUserToOrg] - error: email is empty")
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Email is empty. Please pass a valid email")
 	}
 	isValidEmail, err := mail.ParseAddress(body.Email)
 	if err != nil {
-		log.Printf("[controller][account][LoginUserToOrg] - error: email is invalid")
+		u.Logger.Warn("[controller][account][LoginUserToOrg] - error: email is invalid", zap.String("email", body.Email))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Email is invalid. Please pass a valid email")
 	}
 	if isValidEmail.Address != body.Email {
-		log.Printf("[controller][account][LoginUserToOrg] - error: email is invalid")
+		u.Logger.Warn("[controller][account][LoginUserToOrg] - error: email is valid but not verified email is not the same as passed email. Something might be suspicious", zap.String("email", body.Email))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Email is invalid. Please pass a valid email")
 	}
 
 	if body.Password == "" {
-		log.Printf("[controller][account][LoginUserToOrg] - error: password is empty")
+		u.Logger.Warn("[controller][account][LoginUserToOrg] - error: password is empty")
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Password is empty. Please pass a valid password")
 	}
 	// todo: implement db method to login user login for user, returning the org id, name and description
@@ -289,22 +300,22 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 	sErr := scanRes.StructScan(&user)
 	if sErr != nil {
 		if errors.Is(sErr, sql.ErrNoRows) {
-			log.Printf("[controller][account][LoginUserToOrg] - error: could not find user with email %s during login attempt", body.Email)
+			u.Logger.Warn("[controller][account][LoginUserToOrg] - error: User with the email does not exist.", zap.String("email", body.Email))
 			return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid login", "Could not login to organization. Password or email is incorrect.")
 		}
-		log.Printf("[controller][account][LoginUserToOrg] - error: %v", sErr)
+		u.Logger.Warn("[controller][account][LoginUserToOrg] - error: could not find user with email during login attempt", zap.String("email", body.Email))
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, sErr, "Could not login to organization")
 	}
 
 	ct := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(body.Password))
 	if ct != nil {
-		log.Printf("[controller][account][LoginUserToOrg] - error: %v", err)
+		u.Logger.Warn("[controller][account][LoginUserToOrg] - error: password is incorrect", zap.String("email", body.Email))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid login", "Could not login to organization. Password or email is incorrect.")
 	}
 
 	org, err := database.FetchOrgs(user.UUID.String())
 	if err != nil {
-		log.Printf("[controller][account][LoginUserToOrg] - error getting orgs: %v", err)
+		u.Logger.Error("[controller][account][LoginUserToOrg] - error getting orgs", zap.Error(err), zap.String("user_id", user.UUID.String()))
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not get organizations")
 	}
 
@@ -316,7 +327,7 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 
 	apps, err := database.FetchApps(user.UUID.String(), org.UID.String())
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		log.Printf("[controller][account][LoginUserToOrg] - error getting apps: %v", err)
+		u.Logger.Error("[controller][account][LoginUserToOrg] - error getting apps", zap.Error(err), zap.String("user_id", user.UUID.String()))
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not get apps")
 	}
 
@@ -332,7 +343,7 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 	return util.SuccessResponse(ctx, http.StatusOK, result)
 }
 
-func (u *UserController) SendAdminWelcomeEmail(email string) error {
+func (u *UserController) SendAdminWelcomeEmail(email string) (string, error) {
 	// prepare welcome email
 	taskID := uuid.NewString()
 	orchdioQueue := queue.NewOrchdioQueue(u.AsynqClient, u.DB, u.Redis, u.AsynqServer)
@@ -347,19 +358,20 @@ func (u *UserController) SendAdminWelcomeEmail(email string) error {
 
 	serializedEmailData, sErr := json.Marshal(taskData)
 	if sErr != nil {
-		log.Printf("[controller][account][CreateOrg] - error serializing email data: %v", sErr)
-		return sErr
+		u.Logger.Error("[controller][account][CreateOrg] - error serializing email data", zap.Error(sErr))
+		return taskID, sErr
 	}
 
 	sendMail, zErr := orchdioQueue.NewTask(fmt.Sprintf("send:welcome_email:%s", taskID), queue.EmailTask, 2, serializedEmailData)
 	if zErr != nil {
-		log.Printf("[controller][account][CreateOrg] - error creating task: %v", zErr)
-		return zErr
+		u.Logger.Error("[controller][account][CreateOrg] - error creating welcome email task", zap.Error(zErr))
+		return taskID, zErr
 	}
 
 	err := orchdioQueue.EnqueueTask(sendMail, queue.EmailQueue, taskID, time.Second*2)
 	if err != nil {
-		log.Printf("[controller][account][CreateOrg] - error enqueuing task: %v", err)
+		u.Logger.Warn("======================================================\nError enqueuing task\n======================================================", zap.Error(err))
+		return taskID, err
 	}
-	return err
+	return taskID, nil
 }

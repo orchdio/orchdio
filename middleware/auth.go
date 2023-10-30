@@ -55,7 +55,7 @@ func (a *AuthMiddleware) ValidateKey(ctx *fiber.Ctx) error {
 	user, err := database.FetchUserWithApiKey(apiKey)
 	if err != nil {
 
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			log.Printf("[middleware][ValidateKey] key not found. %s\n", apiKey)
 			return util.ErrorResponse(ctx, http.StatusUnauthorized, "unauthorized", "Invalid apikey")
 		}
@@ -353,12 +353,18 @@ func (a *AuthMiddleware) AddRequestPlatformToCtx(ctx *fiber.Ctx) error {
 	appPubKey := ctx.Get("x-orchdio-public-key")
 	path := ctx.Path()
 	orchdioLogger.Info("Request path", zap.String("path", path))
+	// non-pukey paths
 
 	// due to the fact that during auth, deezer doesn't make the request with the pubkey
 	// we make sure to skip for auth paths generally
-	if appPubKey == "" && !strings.Contains(path, "/callback") {
-		orchdioLogger.Error("[middleware][AddRequestPlatformToCtx] developer -  error: could not fetch app developer with public key. No public key passed")
-		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "missing x-orchdio-public-key header")
+	//if appPubKey == "" && !strings.Contains(path, "/callback") {
+	//	orchdioLogger.Error("[middleware][AddRequestPlatformToCtx] developer -  error: could not fetch app developer with public key. No public key passed")
+	//	return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "missing x-orchdio-public-key header")
+	//} else {
+	//	ctx.Locals("app_pub_key", appPubKey)
+	//}
+	if appPubKey == "" {
+		orchdioLogger.Warn("[middleware][AddRequestPlatformToCtx] developer -  warning: no public key passed")
 	} else {
 		ctx.Locals("app_pub_key", appPubKey)
 	}

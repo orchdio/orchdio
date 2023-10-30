@@ -25,6 +25,10 @@ type NewDB struct {
 	Logger *zap.Logger
 }
 
+func New(db *sqlx.DB, logger *zap.Logger) *NewDB {
+	return &NewDB{DB: db, Logger: logger}
+}
+
 // FindUserByEmail finds a user by their email
 func (d *NewDB) FindUserByEmail(email string) (*blueprint.User, error) {
 	result := d.DB.QueryRowx(queries.FindUserByEmail, email)
@@ -147,7 +151,6 @@ func (d *NewDB) UnRevokeApiKey(key string) error {
 
 // DeleteApiKey deletes a user's api key
 func (d *NewDB) DeleteApiKey(key, user string) ([]byte, error) {
-	log.Printf("[db][DeleteKey] Ran Query: %s\n", queries.DeleteApiKey)
 	orchdioLogger := d.Logger
 	if orchdioLogger == nil {
 		orchdioLogger = logger2.NewZapSentryLogger()
@@ -796,7 +799,9 @@ func (d *NewDB) FetchPlatformAndUserInfoByIdentifier(identifier, app, platform s
 	var res blueprint.UserAppAndPlatformInfo
 	err = row.StructScan(&res)
 	if err != nil {
-		orchdioLogger.Error("[db][FetchPlatformAndUserInfoByIdentifier] error scanning user", zap.Error(err))
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, sql.ErrNoRows
+		}
 		return nil, err
 	}
 
@@ -815,7 +820,6 @@ func (d *NewDB) UpdateUserPassword(hash, userId string) error {
 		orchdioLogger.Error("[db][UpdateUserPassword] error updating user password", zap.Error(err))
 		return err
 	}
-	log.Printf("[db][UpdateUserPassword] updated user password %s\n", userId)
 	orchdioLogger.Info("[db][UpdateUserPassword] updated user password", zap.String("userId", userId))
 	return nil
 }

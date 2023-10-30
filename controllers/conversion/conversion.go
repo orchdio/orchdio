@@ -3,16 +3,18 @@ package conversion
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
 	"github.com/vmihailenco/taskq/v3"
-	"log"
+	"go.uber.org/zap"
 	"net/http"
 	"orchdio/blueprint"
 	"orchdio/db"
+	logger2 "orchdio/logger"
 	"orchdio/util"
 )
 
@@ -25,10 +27,11 @@ type Controller struct {
 	Asynq       *asynq.Client
 	AsynqServer *asynq.Server
 	AsynqMux    *asynq.ServeMux
+	Logger      *zap.Logger
 }
 
 // NewConversionController creates a new conversion controller.
-func NewConversionController(db *sqlx.DB, red *redis.Client, queue taskq.Queue, factory taskq.Factory, asynqClient *asynq.Client, asynqserver *asynq.Server, mux *asynq.ServeMux) *Controller {
+func NewConversionController(db *sqlx.DB, red *redis.Client, queue taskq.Queue, factory taskq.Factory, asynqClient *asynq.Client, asynqserver *asynq.Server, mux *asynq.ServeMux, logger *zap.Logger) *Controller {
 
 	res := &Controller{
 		DB:          db,
@@ -38,6 +41,7 @@ func NewConversionController(db *sqlx.DB, red *redis.Client, queue taskq.Queue, 
 		Asynq:       asynqClient,
 		AsynqServer: asynqserver,
 		AsynqMux:    mux,
+		Logger:      logger,
 	}
 
 	// create a new instance of the queue factory
@@ -46,23 +50,31 @@ func NewConversionController(db *sqlx.DB, red *redis.Client, queue taskq.Queue, 
 
 // GetPlaylistTask returns a playlist
 func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
-	log.Printf("[controller][conversion][GetPlaylistTaskStatus] - getting playlist task status")
 	taskId := ctx.Params("taskId")
-	log.Printf("[controller][conversion][GetPlaylistTaskStatus] - taskId: %s", taskId)
-	database := db.NewDB{DB: c.DB}
+	app := ctx.Locals("app").(*blueprint.DeveloperApp)
+	loggerOpts := &blueprint.OrchdioLoggerOptions{
+		RequestID:            ctx.Get("x-orchdio-request-id"),
+		ApplicationPublicKey: zap.String("app_pub_key", app.PublicKey.String()).String,
+	}
+	c.Logger = logger2.NewZapSentryLogger(loggerOpts)
+
+	c.Logger.Info("[controller][conversion][GetPlaylistTaskStatus] - getting playlist task status", zap.String("task_id", taskId))
+
+	//database := db.NewDB{DB: c.DB}
+	database := db.New(c.DB, c.Logger)
 	taskRecord, err := database.FetchTask(taskId)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			log.Printf("[controller][conversion][GetPlaylistTaskStatus] - task not found")
+		if errors.Is(err, sql.ErrNoRows) {
+			c.Logger.Warn("[controller][conversion][GetPlaylistTaskStatus] - task not found", zap.String("task_id", taskId))
 			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "task not found")
 		}
-		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - error fetching task: %v", err)
+		c.Logger.Error("[controller][conversion][GetPlaylistTaskStatus] - error fetching task", zap.Error(err))
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "error fetching task")
 	}
 
 	taskUUID, err := uuid.Parse(taskId)
 	if err != nil {
-		log.Printf("[controller][conversion][GetPlaylistTaskStatus][warning] - not a playlist task, most likely a short url")
+		c.Logger.Warn("[controller][conversion][GetPlaylistTaskStatus] - not a playlist task, most likely a short url", zap.String("task_id", taskId))
 
 		// we are casting the result into an interface. Before, we wanted to type each response
 		// but with the current implementation, we don't care about that here because each result we
@@ -73,7 +85,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		// HACK: to check if the task is a playlist task result as to be able to format the right type
 		err = json.Unmarshal([]byte(taskRecord.Result), &res)
 		if err != nil {
-			log.Printf("[controller][conversion][GetPlaylistTaskStatus] - not a playlist task")
+			c.Logger.Error("[controller][conversion][GetPlaylistTaskStatus] - error deserializing task result", zap.Error(err))
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not deserialize task result")
 		}
 
@@ -87,12 +99,12 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 	}
 
 	if taskRecord.Status == "failed" {
-		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - task ")
+		c.Logger.Warn("[controller][conversion][GetPlaylistTaskStatus] - task failed", zap.String("task_id", taskId))
 		// deserialize the taskrecord result into blueprint.TaskErrorPayload
 		var res blueprint.TaskErrorPayload
 		err = json.Unmarshal([]byte(taskRecord.Result), &res)
 		if err != nil {
-			log.Printf("[controller][conversion][GetPlaylistTaskStatus] - error deserializing task result: %v", err)
+			c.Logger.Error("[controller][conversion][GetPlaylistTaskStatus] - error deserializing task result", zap.Error(err))
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "task failed. could not process or unknown error")
 		}
 
@@ -110,7 +122,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		var res blueprint.PlaylistConversion
 		err = json.Unmarshal([]byte(taskRecord.Result), &res)
 		if err != nil {
-			log.Printf("[controller][conversion][GetPlaylistTaskStatus] error- could not deserialize task data: %v", err)
+			c.Logger.Error("[controller][conversion][GetPlaylistTaskStatus] - error deserializing task result", zap.Error(err))
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "could not deserialize playlist task result")
 		}
 
@@ -141,19 +153,18 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		}
 		return util.SuccessResponse(ctx, http.StatusOK, taskResponse)
 	}
-	log.Printf("[controller][conversion][GetPlaylistTaskStatus] - task status: %s", taskRecord.Status)
+	c.Logger.Info("[controller][conversion][GetPlaylistTaskStatus] - task status", zap.String("task_id", taskId), zap.String("status", taskRecord.Status))
 	return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unknown error occurred while updating task record status")
 }
 
 // DeletePlaylistTask deletes a playlist task
 func (c *Controller) DeletePlaylistTask(ctx *fiber.Ctx) error {
-	log.Printf("[controller][conversion][DeletePlaylistTask] - deleting playlist task")
 	taskId := ctx.Params("taskId")
-	log.Printf("[controller][conversion][DeletePlaylistTask] - taskId: %s", taskId)
+	c.Logger.Info("[controller][conversion][DeletePlaylistTask] - deleting playlist task", zap.String("task_id", taskId))
 	database := db.NewDB{DB: c.DB}
 	err := database.DeleteTask(taskId)
 	if err != nil {
-		log.Printf("[controller][conversion][DeletePlaylistTask] - error deleting task: %v", err)
+		c.Logger.Error("[controller][conversion][DeletePlaylistTask] - error deleting task", zap.Error(err))
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "error deleting task")
 	}
 	return util.SuccessResponse(ctx, http.StatusOK, nil)

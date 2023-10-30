@@ -9,6 +9,7 @@ import (
 	"github.com/minchao/go-apple-music"
 	"github.com/samber/lo"
 	"github.com/vicanso/go-axios"
+	"go.uber.org/zap"
 	"log"
 	"net/http"
 	"net/url"
@@ -26,9 +27,10 @@ type Service struct {
 	IntegrationAPIKey string
 	RedisClient       *redis.Client
 	PgClient          *sqlx.DB
+	Logger            *zap.Logger
 }
 
-func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client) *Service {
+func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client, logger *zap.Logger) *Service {
 	return &Service{
 		// this is the equivalent of the team id
 		IntegrationTeamID: credentials.AppID,
@@ -38,6 +40,7 @@ func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB
 		IntegrationAPIKey: credentials.AppRefreshToken,
 		RedisClient:       redisClient,
 		PgClient:          pgClient,
+		Logger:            logger,
 	}
 }
 
@@ -46,33 +49,24 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 	cacheKey := "applemusic:track:" + info.EntityID
 	_, err := s.RedisClient.Get(context.Background(), cacheKey).Result()
 	if err != nil && err != redis.Nil {
-		log.Printf("[services][applemusic][SearchTrackWithLink] Error fetching track from cache: %v\n", err)
+		s.Logger.Error("[services][applemusic][SearchTrackWithLink] Error fetching track from cache", zap.Error(err))
 		return nil, err
-	}
-
-	log.Printf("[services][applemusic][SearchTrackWithLink] Track not found in cache, fetching from Apple Music: %v\n", info.EntityID)
-
-	// just for dev, log if the credentials are empty
-	if s.IntegrationAPIKey != "" {
-		log.Printf("[services][applemusic][SearchTrackWithLink] Apple music API key is empty on decoded credentials\n")
-	} else {
-		log.Printf("[services][applemusic][SearchTrackWithLink] Apple music API key is not empty on decoded credentials\n")
 	}
 
 	tp := applemusic.Transport{Token: s.IntegrationAPIKey}
 	client := applemusic.NewClient(tp.Client())
 	tracks, response, err := client.Catalog.GetSong(context.Background(), "us", info.EntityID, nil)
 	if err != nil {
-		log.Printf("[services][applemusic][SearchTrackWithLink] Error fetching track from Apple Music: %v\n", err)
+		s.Logger.Error("[services][applemusic][SearchTrackWithLink] Error fetching track from Apple Music. Unknown error.", zap.Error(err))
 		return nil, err
 	}
 	if response.StatusCode != 200 {
-		log.Printf("[services][applemusic][SearchTrackWithLink] Error fetching track from Apple Music: %v\n", err)
+		s.Logger.Error("[services][applemusic][SearchTrackWithLink] Error fetching track from Apple Music. Error response not 200", zap.Error(err), zap.String("status_code", fmt.Sprintf("%d", response.StatusCode)))
 		return nil, err
 	}
 
 	if len(tracks.Data) == 0 {
-		log.Printf("[services][applemusic][SearchTrackWithLink] Error fetching track from Apple Music: %v\n", err)
+		s.Logger.Warn("[services][applemusic][SearchTrackWithLink] Error fetching track from Apple Music. Track length is 0", zap.Error(err))
 		return nil, blueprint.ENORESULT
 	}
 
@@ -112,12 +106,12 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 
 	serializeTrack, err := json.Marshal(track)
 	if err != nil {
-		log.Printf("[services][applemusic][SearchTrackWithLink] Error serializing track: %v\n", err)
+		s.Logger.Error("[services][applemusic][SearchTrackWithLink] Error serializing track", zap.Error(err))
 		return nil, err
 	}
 	err = s.RedisClient.Set(context.Background(), cacheKey, serializeTrack, time.Hour*24).Err()
 	if err != nil {
-		log.Printf("[services][applemusic][SearchTrackWithLink] Error caching track: %v\n", err)
+		s.Logger.Error("[services][applemusic][SearchTrackWithLink] Error caching track", zap.Error(err))
 		return nil, err
 	}
 	return track, nil
@@ -130,22 +124,22 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 	// if the title is in the format of "title (feat. artiste)" then we search for the title without the feat. artiste
 	//log.Printf("Apple music: Searching with stripped artiste: %s. Original artiste: %s", strippedTitleInfo.Title, artiste)
 	if s.RedisClient.Exists(context.Background(), artiste).Val() == 1 {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] Track found in cache: %v\n", artiste)
+		s.Logger.Info("[services][applemusic][SearchTrackWithTitle] Track found in cache", zap.String("artiste", artiste))
 		track, err := s.RedisClient.Get(context.Background(), util.NormalizeString(artiste)).Result()
 		if err != nil {
-			log.Printf("[services][applemusic][SearchTrackWithTitle] Error fetching track from cache: %v\n", err)
+			s.Logger.Error("[services][applemusic][SearchTrackWithTitle] Error fetching track from cache", zap.Error(err))
 			return nil, err
 		}
 		var result *blueprint.TrackSearchResult
 		err = json.Unmarshal([]byte(track), &result)
 		if err != nil {
-			log.Printf("[services][applemusic][SearchTrackWithTitle] Error unmarshalling track from cache: %v\n", err)
+			s.Logger.Error("[services][applemusic][SearchTrackWithTitle] Error unmarshalling track from cache", zap.Error(err))
 			return nil, err
 		}
 		return result, nil
 	}
 
-	log.Printf("[services][applemusic][SearchTrackWithTitle] Track not found in cache, fetching track %s from Apple Music with artist %s\n", strippedTitleInfo.Title, util.NormalizeString(artiste))
+	s.Logger.Info("[services][applemusic][SearchTrackWithTitle] Track not found in cache, fetching track from Apple Music", zap.String("artiste", artiste), zap.String("title", strippedTitleInfo.Title))
 
 	// todo: throw an error when the api key is empty. ensure that this might be the case. if not, remove the commented out code.
 	//if s.IntegrationAPIKey == "" {
@@ -166,12 +160,12 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 	axiosClient := axios.NewInstance(axiosConfig)
 	hintResponse, err := axiosClient.Get(hintURL, nil)
 	if err != nil {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] Error fetching hint from Apple Music: %v\n", err)
+		s.Logger.Error("[services][applemusic][SearchTrackWithTitle] Error fetching hint from Apple Music", zap.Error(err))
 		return nil, err
 	}
 
 	if hintResponse.Status != http.StatusOK {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] Error fetching hint from Apple Music: %v\n", err)
+		s.Logger.Error("[services][applemusic][SearchTrackWithTitle] Error fetching hint from Apple Music", zap.Error(err))
 		return nil, err
 	}
 
@@ -184,7 +178,7 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 	}{}
 	err = json.Unmarshal(hintResponse.Data, &hintResponseStruct)
 	if err != nil {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] Error unmarshalling hint response: %v\n", err)
+		s.Logger.Error("[services][applemusic][SearchTrackWithTitle] Error unmarshalling hint response", zap.Error(err))
 		return nil, err
 	}
 
@@ -208,64 +202,25 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 	})
 
 	if err != nil {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] Error fetching track from Apple Music: %v\n", err)
+		s.Logger.Error("[services][applemusic][SearchTrackWithTitle] Could not fetch search response. Unknown Error.", zap.Error(err))
 		return nil, err
 	}
 
 	if response.StatusCode != 200 {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] Error fetching track from Apple Music: %v\n", err)
+		s.Logger.Error("[services][applemusic][SearchTrackWithTitle] Error fetching track from Apple Music. Could not fetch search response. Bad status code", zap.Error(err),
+			zap.Int("status_code", response.StatusCode))
 		return nil, err
 	}
 
 	if results.Results.Songs == nil {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] No result found for track %s by %s. \n", strippedTitleInfo.Title, artiste)
+		s.Logger.Warn("[services][applemusic][SearchTrackWithTitle] No result found for track", zap.String("title", strippedTitleInfo.Title), zap.String("artiste", artiste))
 		return nil, blueprint.ENORESULT
 	}
 
 	if len(results.Results.Songs.Data) == 0 {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] Error fetching track from Apple Music: %v\n", err)
+		s.Logger.Warn("[services][applemusic][SearchTrackWithTitle] No result found for track", zap.String("title", strippedTitleInfo.Title), zap.String("artiste", artiste))
 		return nil, blueprint.ENORESULT
 	}
-
-	//var suggestedResult []interface{}
-	//// loop over the results and find the track that matches the artiste
-	//for _, t := range results.Results.Songs.Data {
-	//	songCopy := t
-	//	fields := struct {
-	//		ArtistName string
-	//		TrackTitle string
-	//	}{
-	//		ArtistName: t.Attributes.ArtistName,
-	//		TrackTitle: t.Attributes.Name,
-	//	}
-	//
-	//	spew.Dump(fields)
-	//
-	//	cpArtists := []string{songCopy.Attributes.ArtistName}
-	//	// levenstein distance between this artiste and the artiste in the track
-	//	lvDistance := levenshtein.DistanceForStrings([]rune(strings.ToLower(artiste)), []rune(strings.ToLower(strings.Join(cpArtists, ","))), levenshtein.DefaultOptions)
-	//	log.Printf("[services][applemusic][SearchTrackWithTitle] Levenshtein distance between %s and %s is %d\n", artiste, strings.Join(cpArtists, ","), lvDistance)
-	//	// first, find the other artist that may be in the result. this is to isolate this artiste to reduce noise from
-	//	// the levenstein distance calculation between the artiste and the artiste in the track
-	//	//otherArtits := lo.PickByValues(, artiste)
-	//	otherArtists := lo.Filter(cpArtists, func(i string, i2 int) bool {
-	//		return i != artiste
-	//	})
-	//
-	//	log.Printf("Other artists are:: %v", otherArtists)
-	//	// first find delimiters in the artiste string
-	//	delimiters := regexp.MustCompile(`\s+`).Split(strings.Join(cpArtists, ""), -1)
-	//	log.Printf("Delimiters are:: %v", delimiters)
-	//
-	//	titleDistance := levenshtein.DistanceForStrings([]rune(strings.ToLower(strippedTitleInfo.Title)), []rune(strings.ToLower(songCopy.Attributes.Name)), levenshtein.DefaultOptions)
-	//	log.Printf("[services][applemusic][SearchTrackWithTitle] Title Levenshtein distance between %s and %s is %d\n", strippedTitleInfo.Title, songCopy.Attributes.Name, titleDistance)
-	//
-	//	if lvDistance <= 2 {
-	//		suggestedResult = append(suggestedResult, songCopy)
-	//	} else {
-	//		continue
-	//	}
-	//}
 
 	t := results.Results.Songs.Data[0]
 	previewURL := ""
@@ -295,17 +250,17 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 	}
 	serializedTrack, err := json.Marshal(track)
 	if err != nil {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] Error serializing track: %v\n", err)
+		s.Logger.Error("[services][applemusic][SearchTrackWithTitle] Error serializing track. Could not parse final result.", zap.Error(err))
 		return nil, err
 	}
 
 	if lo.Contains(track.Artists, artiste) {
 		err = s.RedisClient.Set(context.Background(), fmt.Sprintf("applemusic:%s:%s", util.NormalizeString(artiste), strippedTitleInfo.Title), string(serializedTrack), time.Hour*24).Err()
 		if err != nil {
-			log.Printf("[services][applemusic][SearchTrackWithTitle] Error caching track: %v\n", err)
+			s.Logger.Error("[services][applemusic][SearchTrackWithTitle] Error caching track", zap.Error(err))
 			return nil, err
 		} else {
-			log.Printf("[services][applemusic][SearchTrackWithTitle] Track %s has been cached\n", track.Title)
+			s.Logger.Info("[services][applemusic][SearchTrackWithTitle] Track has been cached", zap.String("title", track.Title))
 		}
 	}
 
@@ -340,12 +295,12 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 			var deserializedTrack *blueprint.TrackSearchResult
 			track, err := red.Get(context.Background(), identifier).Result()
 			if err != nil {
-				log.Printf("[services][applemusic][FetchTracks] Error fetching track from cache: %v\n", err)
+				s.Logger.Warn("[services][applemusic][FetchTracks] Error fetching track from cache", zap.Error(err))
 				return nil, nil, err
 			}
 			err = json.Unmarshal([]byte(track), &deserializedTrack)
 			if err != nil {
-				log.Printf("[services][applemusic][FetchTracks] Error unmarshalling track from cache: %v\n", err)
+				s.Logger.Error("[services][applemusic][FetchTracks] Error unmarshalling track from cache", zap.Error(err))
 				return nil, nil, err
 			}
 			results = append(results, *deserializedTrack)
@@ -375,24 +330,24 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 	duration := 0
 
 	var tracks []blueprint.TrackSearchResult
-
-	log.Printf("[services][applemusic][SearchPlaylistWithID] Fetching playlist tracks: %v\n", id)
+	s.Logger.Info("[services][applemusic][SearchPlaylistWithID] Fetching playlist tracks", zap.String("id", id))
 	playlistId := strings.ReplaceAll(id, "/", "")
-	log.Printf("[services][applemusic][SearchPlaylistWithID] Playlist id: %v\n", playlistId)
 	results, response, err := client.Catalog.GetPlaylist(context.Background(), "us", playlistId, nil)
 
 	if err != nil {
-		log.Printf("[services][applemusic][SearchPlaylistWithID][error] - could not fetch playlist tracks:")
+		s.Logger.Error("[services][applemusic][SearchPlaylistWithID] Error fetching playlist tracks", zap.Error(err))
 		return nil, err
 	}
 
 	if response.StatusCode != 200 {
 		log.Printf("[services][applemusic][SearchPlaylistWithID][GetPlaylist] Status - %v could not fetch playlist tracks: %v\n", response.StatusCode, err)
+		s.Logger.Error("[services][applemusic][SearchPlaylistWithID] Error fetching playlist tracks. Response code not 200", zap.Error(err),
+			zap.Int("status_code", response.StatusCode))
 		return nil, blueprint.EUNKNOWN
 	}
 
 	if len(results.Data) == 0 {
-		log.Printf("[services][applemusic][SearchPlaylistWithID] result data is empty. Could not fetch playlist tracks: %v\n", err)
+		s.Logger.Error("[services][applemusic][SearchPlaylistWithID] Error fetching playlist tracks. Result data is empty", zap.Error(err))
 		return nil, err
 	}
 
@@ -402,7 +357,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 		tr, err := t.Parse()
 		track := tr.(*applemusic.Song)
 		if err != nil {
-			log.Printf("[services][applemusic][SearchPlaylistWithID] Error parsing track: %v\n", err)
+			s.Logger.Error("[services][applemusic][SearchPlaylistWithID] Error parsing track", zap.Error(err))
 			return nil, err
 		}
 
@@ -416,15 +371,15 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 		tribute := trackAttr.Previews
 
 		if tribute != nil {
-			r, err := json.Marshal(tribute)
-			if err != nil {
-				log.Printf("[services][applemusic][SearchPlaylistWithID] Error serializing preview url: %v\n", err)
-				return nil, err
+			r, mErr := json.Marshal(tribute)
+			if mErr != nil {
+				s.Logger.Error("[services][applemusic][SearchPlaylistWithID] Error serializing preview url", zap.Error(mErr))
+				return nil, mErr
 			}
-			err = json.Unmarshal(r, &previewStruct)
-			if err != nil {
-				log.Printf("[services][applemusic][SearchPlaylistWithID] Error deserializing preview url: %v\n", err)
-				return nil, err
+			jErr := json.Unmarshal(r, &previewStruct)
+			if jErr != nil {
+				s.Logger.Error("[services][applemusic][SearchPlaylistWithID] Error deserializing preview url", zap.Error(jErr))
+				return nil, jErr
 			}
 			previewURL = previewStruct[0].Url
 		}
@@ -469,19 +424,16 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 		},
 	})
 
-	log.Printf("[services][applemusic][SearchPlaylistWithID] Request configs ")
-
 	_allTracksRes, tErr := ax.Get(fmt.Sprintf("/v1/catalog/us/playlists/%s/tracks", playlistId), p)
-
 	if tErr != nil {
-		log.Printf("[services][applemusic][SearchPlaylistWithID] Error fetching playlist tracks from apple music %v\n", tErr.Error())
+		s.Logger.Error("[services][applemusic][SearchPlaylistWithID] Error fetching playlist tracks from apple music", zap.Error(tErr))
 		return nil, tErr
 	}
 
 	// if the response is a 404 and the length of the tracks we got earlier is 0, that means we really cant get the playlist tracks
 	if _allTracksRes.Status == 404 {
 		if len(tracks) == 0 {
-			log.Printf("[services][applemusic][SearchPlaylistWithID] Could not fetch playlist tracks: %v\n", err)
+			s.Logger.Error("[services][applemusic][SearchPlaylistWithID] Could not fetch playlist tracks. Response is 404 and length of result is 0.", zap.Error(err))
 			return nil, blueprint.EUNKNOWN
 		}
 		result := blueprint.PlaylistSearchResult{
@@ -497,8 +449,8 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 	}
 
 	if _allTracksRes.Status != 200 {
-		log.Printf("[services][applemusic][SearchPlaylistWithID] Error fetching playlist tracks: %v\n", string(_allTracksRes.Data))
-		log.Printf("original req url %v", _allTracksRes.Request.URL)
+		s.Logger.Error("[services][applemusic][SearchPlaylistWithID] Error fetching playlist tracks. Response code not 200", zap.Error(err),
+			zap.Int("status_code", _allTracksRes.Status))
 		return nil, err
 	}
 
@@ -506,7 +458,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 	err = json.Unmarshal(_allTracksRes.Data, &allTracksRes)
 
 	if err != nil {
-		log.Printf("[services][applemusic][SearchPlaylistWithID] Error fetching playlist tracks: %v\n", err)
+		s.Logger.Error("[services][applemusic][SearchPlaylistWithID] Error fetching playlist tracks", zap.Error(err))
 		return nil, err
 	}
 
@@ -543,7 +495,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 	// save the last updated at to redis under the key "applemusic:playlist:<id>"
 	err = s.RedisClient.Set(context.Background(), fmt.Sprintf("applemusic:playlist:%s", id), playlistData.Attributes.LastModifiedDate, 0).Err()
 	if err != nil {
-		log.Printf("[services][applemusic][SearchPlaylistWithID] Error setting last updated at: %v\n", err)
+		s.Logger.Warn("[services][applemusic][SearchPlaylistWithID] Error setting cache last updated at", zap.Error(err))
 		return nil, err
 	}
 
@@ -557,7 +509,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 		Cover:   playlistCover,
 	}
 
-	log.Printf("[services][applemusic][SearchPlaylistWithID] Done fetching playlist tracks: %v\n", playlist)
+	s.Logger.Info("[services][applemusic][SearchPlaylistWithID] Done fetching playlist tracks", zap.String("title", playlist.Title))
 	return playlist, nil
 }
 
@@ -573,27 +525,26 @@ func (s *Service) SearchPlaylistWithTracks(p *blueprint.PlaylistSearchResult) (*
 	}
 	tracks, omittedTracks, err := s.FetchTracks(trackSearch, s.RedisClient)
 	if err != nil {
-		log.Printf("[services][applemusic][FetchPlaylistTrackResultsSearchPlaylistTracks] Error fetching tracks: %v\n", err)
+		s.Logger.Error("[services][applemusic][FetchPlaylistTrackResultsSearchPlaylistTracks] Error fetching tracks", zap.Error(err))
 		return nil, nil
 	}
 	return tracks, omittedTracks
 }
 
 func (s *Service) CreateNewPlaylist(title, description, musicToken string, tracks []string) ([]byte, error) {
-	log.Printf("[services][applemusic][CreateNewPlaylist] Creating new playlist: %v\n", title)
-	log.Printf("App Applemusic token is: %v\n", musicToken)
+	s.Logger.Info("[services][applemusic][CreateNewPlaylist] Creating new playlist", zap.String("title", title))
 	tp := applemusic.Transport{Token: os.Getenv("APPLE_MUSIC_API_KEY"), MusicUserToken: musicToken}
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("[services][applemusic][CreateNewPlaylist] TP client creation here %v\n", r)
+			s.Logger.Error("[services][applemusic][CreateNewPlaylist] Error creating playlist. Recovered from panic", zap.Any("error", r))
 		}
 	}()
 
 	client := applemusic.NewClient(tp.Client())
 	defer func() {
 		if err := recover(); err != nil {
-			log.Printf("[services][applemusic][CreateNewPlaylist] Error creating playlist: %v\n", err)
+			s.Logger.Error("[services][applemusic][CreateNewPlaylist] Error creating playlist. Recovered from panic: CreateLibraryPlaylist", zap.Any("error", err))
 			return
 		}
 	}()
@@ -606,21 +557,21 @@ func (s *Service) CreateNewPlaylist(title, description, musicToken string, track
 	}, nil)
 
 	if err != nil {
-		log.Printf("[services][applemusic][CreateNewPlaylist][error] - could not create new playlist: %v\n", err)
+		s.Logger.Error("[services][applemusic][CreateNewPlaylist][error] Could not add playlist to user library.", zap.Error(err))
 	}
 
 	if response.Response.StatusCode == 403 {
-		log.Printf("[services][applemusic][CreateNewPlaylist][error] - unauthorized: %v\n", err)
+		s.Logger.Error("[services][applemusic][CreateNewPlaylist][error] - unauthorized", zap.Error(err))
 		return nil, blueprint.EFORBIDDEN
 	}
 
 	if response.Response.StatusCode == 401 {
-		log.Printf("[services][applemusic][CreateNewPlaylist][error] - unauthorized: %v\n", err)
+		s.Logger.Error("[services][applemusic][CreateNewPlaylist][error] - unauthorized", zap.Error(err))
 		return nil, blueprint.EUNAUTHORIZED
 	}
 
 	if response.Response.StatusCode == 400 {
-		log.Printf("[services][applemusic][CreateNewPlaylist][error] - bad request: %v\n", err)
+		s.Logger.Error("[services][applemusic][CreateNewPlaylist][error] - bad request", zap.Error(err))
 		return nil, blueprint.EBADREQUEST
 	}
 
@@ -638,22 +589,24 @@ func (s *Service) CreateNewPlaylist(title, description, musicToken string, track
 	}
 	response, err = client.Me.AddLibraryTracksToPlaylist(context.Background(), playlist.Data[0].Id, playlistData)
 	if err != nil {
-		log.Printf("[services][applemusic][CreateNewPlaylist] Error adding tracks to playlist: %v\n", err)
+		s.Logger.Error("[services][applemusic][CreateNewPlaylist][error] - could not add tracks to playlist", zap.Error(err))
 		return nil, err
 	}
 
 	if response.StatusCode >= 400 {
-		log.Printf("[services][applemusic][CreateNewPlaylist] Error adding tracks to playlist: %v\n", err)
+		s.Logger.Error("[services][applemusic][CreateNewPlaylist][error] - could not add tracks to playlist", zap.Error(err))
 		return nil, err
 	}
 
 	log.Printf("[services][applemusic][CreateNewPlaylist] Successfully created playlist: %v\n", playlist.Data[0].Href)
+	s.Logger.Info("[services][applemusic][CreateNewPlaylist] Successfully created playlist.", zap.String("title", title),
+		zap.String("link", playlist.Data[0].Href))
 	return []byte(fmt.Sprintf("https://music.apple.com/us/playlist/%s", playlist.Data[0].Id)), nil
 }
 
 // FetchUserPlaylists fetches the user's playlists
 func (s *Service) FetchUserPlaylists(token string) ([]UserPlaylistResponse, error) {
-	log.Printf("[services][applemusic][FetchUserPlaylists] Fetching user playlists\n")
+	s.Logger.Info("[services][applemusic][FetchUserPlaylists] Fetching user playlists")
 	tp := applemusic.Transport{Token: s.IntegrationAPIKey, MusicUserToken: token}
 	client := applemusic.NewClient(tp.Client())
 	// get the user's playlists
@@ -661,24 +614,24 @@ func (s *Service) FetchUserPlaylists(token string) ([]UserPlaylistResponse, erro
 		Limit: 100,
 	})
 	if err != nil {
-		log.Printf("[services][applemusic][FetchUserPlaylists] Error getting user playlists: %v\n", err)
+		s.Logger.Error("[services][applemusic][FetchUserPlaylists] Error getting user playlists", zap.Error(err))
 		return nil, err
 	}
 	for {
 		if p.Next == "" {
 			break
 		}
-		pr, _, err := client.Me.GetAllLibraryPlaylists(context.Background(), &applemusic.PageOptions{
+		pr, _, mErr := client.Me.GetAllLibraryPlaylists(context.Background(), &applemusic.PageOptions{
 			Offset: len(p.Data),
 		})
 		if err != nil {
-			log.Printf("[services][applemusic][FetchUserPlaylists] Error getting user playlists: %v\n", err)
-			return nil, err
+			s.Logger.Error("[services][applemusic][FetchUserPlaylists] Error getting user playlists", zap.Error(mErr))
+			return nil, mErr
 		}
 
-		log.Printf("[services][applemusic][FetchUserPlaylists] Playlist: %v\n", len(pr.Data))
 		if len(pr.Data) == 0 {
 			log.Printf("[services][applemusic][FetchUserPlaylists] Fetched all user playlist data\n")
+			s.Logger.Info("[services][applemusic][FetchUserPlaylists] Fetched all user playlist data")
 			break
 		}
 		p.Next = pr.Next
@@ -688,7 +641,7 @@ func (s *Service) FetchUserPlaylists(token string) ([]UserPlaylistResponse, erro
 	var playlists []UserPlaylistResponse
 	// get each of the playlist information for all the playlists in the user's library
 	for _, playlist := range p.Data {
-		log.Printf("[services][applemusic][FetchUserPlaylists] Getting catalog info for: %v\n", playlist.Attributes.Name)
+		s.Logger.Info("[services][applemusic][FetchUserPlaylists] Getting catalog info for", zap.String("title", playlist.Attributes.Name))
 		//playlistIds = append(playlistIds, playlist.Id)
 		inst := axios.NewInstance(&axios.InstanceConfig{
 			BaseURL: "https://api.music.apple.com/v1",
@@ -698,43 +651,43 @@ func (s *Service) FetchUserPlaylists(token string) ([]UserPlaylistResponse, erro
 			},
 		})
 		link := fmt.Sprintf("/me/library/playlists/%s/catalog", playlist.Id)
-		resp, err := inst.Get(link, nil)
-		if err != nil {
-			log.Printf("[services][applemusic][FetchUserPlaylists] Error getting user playlist catalog info: %v\n", err)
-			return nil, err
+		resp, sErr := inst.Get(link, nil)
+		if sErr != nil {
+			s.Logger.Error("[services][applemusic][FetchUserPlaylists] Error getting user playlist catalog info", zap.Error(sErr))
+			return nil, sErr
 		}
 
 		var info PlaylistCatalogInfoResponse
 		err = json.Unmarshal(resp.Data, &info)
 		if err != nil {
-			log.Printf("[services][applemusic][FetchUserPlaylists] Error getting deserializing playlist catalog info: %v\n", err)
+			s.Logger.Error("[services][applemusic][FetchUserPlaylists] Error getting deserializing playlist catalog info", zap.Error(err))
 			return nil, err
 		}
 		data := info.Data[0]
 
 		// get the playlist info itself
-		playlistResponse, err := inst.Get(fmt.Sprintf("/me/library/playlists/%s", playlist.Id), nil)
-		if err != nil {
-			log.Printf("[services][applemusic][FetchUserPlaylists] Error getting user playlist info: %v\n", err)
-			return nil, err
+		playlistResponse, gErr := inst.Get(fmt.Sprintf("/me/library/playlists/%s", playlist.Id), nil)
+		if gErr != nil {
+			log.Printf("[services][applemusic][FetchUserPlaylists] Error getting user playlist info: %v\n", gErr)
+			return nil, gErr
 		}
 		playlistInfo := &PlaylistInfoResponse{}
 		err = json.Unmarshal(playlistResponse.Data, playlistInfo)
 		if err != nil {
-			log.Printf("[services][applemusic][FetchUserPlaylists] Error getting deserializing playlist info: %v\n", err)
+			s.Logger.Error("[services][applemusic][FetchUserPlaylists] Error getting deserializing playlist info", zap.Error(err))
 			return nil, err
 		}
 
 		// get playlist tracks
-		playlistTracksResponse, err := inst.Get(fmt.Sprintf("/me/library/playlists/%s/tracks", playlist.Id), nil)
-		if err != nil {
-			log.Printf("[services][applemusic][FetchUserPlaylists] Error getting user playlist tracks: %v\n", err)
-			return nil, err
+		playlistTracksResponse, gErr2 := inst.Get(fmt.Sprintf("/me/library/playlists/%s/tracks", playlist.Id), nil)
+		if gErr2 != nil {
+			s.Logger.Error("[services][applemusic][FetchUserPlaylists] Error getting user playlist tracks", zap.Error(gErr2))
+			return nil, gErr2
 		}
 		playlistTracks := &PlaylistTracksResponse{}
 		err = json.Unmarshal(playlistTracksResponse.Data, playlistTracks)
 		if err != nil {
-			log.Printf("[services][applemusic][FetchUserPlaylists] Error getting deserializing playlist tracks: %v\n", err)
+			s.Logger.Error("[services][applemusic][FetchUserPlaylists] Error getting deserializing playlist tracks", zap.Error(err))
 			return nil, err
 		}
 
@@ -770,38 +723,37 @@ func (s *Service) FetchUserArtists(token string) (*blueprint.UserLibraryArtists,
 	// TODO: change to pagination instead of looping if/when the need arises
 	resp, err := inst.Get("/me/library/artists?limit=100", nil)
 	if err != nil {
-		log.Printf("[services][applemusic][FetchUserArtists] Error getting user artists: %v\n", err)
+		s.Logger.Error("[services][applemusic][FetchUserArtists] Error getting user's library artists.", zap.Error(err))
 		return nil, err
 	}
 
 	var artists UserArtistsResponse
 	err = json.Unmarshal(resp.Data, &artists)
 	if err != nil {
-		log.Printf("[services][applemusic][FetchUserArtists] Error deserializing user artists: %v\n", err)
+		s.Logger.Error("[services][applemusic][FetchUserArtists] Error deserializing user artists.", zap.Error(err))
 		return nil, err
 	}
 
 	// fetch the remaining artists
 	if artists.Meta.Total > len(artists.Data) {
-		log.Printf("[services][applemusic][FetchUserArtists] Fetching remaining artists\n")
 		for {
 			if artists.Next == "" {
 				break
 			}
-			moreResp, err := inst.Get(fmt.Sprintf("/me/library/artists?limit=100&offset=%d", len(artists.Data)), nil)
-			if err != nil {
-				log.Printf("[services][applemusic][FetchUserArtists] Error getting user artists: %v\n", err)
-				return nil, err
+			moreResp, gErr := inst.Get(fmt.Sprintf("/me/library/artists?limit=100&offset=%d", len(artists.Data)), nil)
+			if gErr != nil {
+				s.Logger.Error("[services][applemusic][FetchUserArtists] Error getting user artists.", zap.Error(gErr))
+				return nil, gErr
 			}
 			var remainingArtists UserArtistsResponse
 			err = json.Unmarshal(moreResp.Data, &remainingArtists)
 			if err != nil {
-				log.Printf("[services][applemusic][FetchUserArtists] Error deserializing user artists: %v\n", err)
+				s.Logger.Error("[services][applemusic][FetchUserArtists] Error deserializing user artists.", zap.Error(err))
 				return nil, err
 			}
 			artists.Data = append(artists.Data, remainingArtists.Data...)
 			if len(remainingArtists.Data) == 0 {
-				log.Printf("[services][applemusic][FetchUserArtists] No more artists to fetch\n")
+				s.Logger.Warn("[services][applemusic][FetchUserArtists] No more artists to fetch")
 				break
 			}
 			artists.Next = remainingArtists.Next
@@ -812,10 +764,10 @@ func (s *Service) FetchUserArtists(token string) (*blueprint.UserLibraryArtists,
 	var userArtists []blueprint.UserArtist
 	for _, a := range artists.Data {
 		// get the artist info itself
-		artistResponse, err := inst.Get(fmt.Sprintf("/me/library/artists/%s/catalog", a.Id), nil)
-		if err != nil {
-			log.Printf("[services][applemusic][FetchUserArtists] Error getting user artist info: %v\n", err)
-			return nil, err
+		artistResponse, gErr := inst.Get(fmt.Sprintf("/me/library/artists/%s/catalog", a.Id), nil)
+		if gErr != nil {
+			s.Logger.Error("[services][applemusic][FetchUserArtists] Error getting user artist info.", zap.Error(gErr))
+			return nil, gErr
 		}
 		artistInfo := &UserArtistInfoResponse{}
 		mErr := json.Unmarshal(artistResponse.Data, artistInfo)
@@ -839,7 +791,7 @@ func (s *Service) FetchUserArtists(token string) (*blueprint.UserLibraryArtists,
 }
 
 // FetchLibraryAlbums fetches the user's library albums
-func FetchLibraryAlbums(apikey, token string) ([]blueprint.LibraryAlbum, error) {
+func (s *Service) FetchLibraryAlbums(apikey, token string) ([]blueprint.LibraryAlbum, error) {
 	inst := axios.NewInstance(&axios.InstanceConfig{
 		BaseURL: "https://api.music.apple.com/v1",
 		Headers: http.Header{
@@ -851,7 +803,7 @@ func FetchLibraryAlbums(apikey, token string) ([]blueprint.LibraryAlbum, error) 
 	// fetch first 100 albums
 	resp, err := inst.Get("/me/library/albums?limit=100", nil)
 	if err != nil {
-		log.Printf("[services][applemusic][FetchLibraryAlbums] Error getting user albums: %v\n", err)
+		s.Logger.Error("[services][applemusic][FetchLibraryAlbums] Error getting user albums.", zap.Error(err))
 		return nil, err
 	}
 
@@ -864,25 +816,24 @@ func FetchLibraryAlbums(apikey, token string) ([]blueprint.LibraryAlbum, error) 
 
 	// fetch the remaining albums
 	if albums.Meta.Total > len(albums.Data) {
-		log.Printf("[services][applemusic][FetchLibraryAlbums] Fetching remaining albums\n")
 		for {
 			if len(albums.Data) == albums.Meta.Total {
 				break
 			}
-			moreResp, err := inst.Get(fmt.Sprintf("/me/library/albums?limit=100&offset=%d", len(albums.Data)), nil)
-			if err != nil {
-				log.Printf("[services][applemusic][FetchLibraryAlbums] Error getting user albums: %v\n", err)
-				return nil, err
+			moreResp, gErr := inst.Get(fmt.Sprintf("/me/library/albums?limit=100&offset=%d", len(albums.Data)), nil)
+			if gErr != nil {
+				s.Logger.Error("[services][applemusic][FetchLibraryAlbums] Error getting user albums.", zap.Error(gErr))
+				return nil, gErr
 			}
 			var remainingAlbums UserAlbumsResponse
 			err = json.Unmarshal(moreResp.Data, &remainingAlbums)
 			if err != nil {
-				log.Printf("[services][applemusic][FetchLibraryAlbums] Error deserializing user albums: %v\n", err)
+				s.Logger.Error("[services][applemusic][FetchLibraryAlbums] Error deserializing user albums.", zap.Error(err))
 				return nil, err
 			}
 			albums.Data = append(albums.Data, remainingAlbums.Data...)
 			if len(remainingAlbums.Data) == 0 {
-				log.Printf("[services][applemusic][FetchLibraryAlbums] No more albums to fetch\n")
+				s.Logger.Warn("[services][applemusic][FetchLibraryAlbums] No more albums to fetch")
 				break
 			}
 			albums.Data = append(albums.Data, remainingAlbums.Data...)
@@ -892,16 +843,16 @@ func FetchLibraryAlbums(apikey, token string) ([]blueprint.LibraryAlbum, error) 
 	var userAlbums []blueprint.LibraryAlbum
 	for _, a := range albums.Data {
 		// get playlist catalog info
-		catResponse, err := inst.Get(fmt.Sprintf("/me/library/albums/%s/catalog", a.Id), nil)
+		catResponse, gErr := inst.Get(fmt.Sprintf("/me/library/albums/%s/catalog", a.Id), nil)
 		if err != nil {
-			log.Printf("[services][applemusic][FetchLibraryAlbums] Error getting user album info: %v\n", err)
-			return nil, err
+			s.Logger.Error("[services][applemusic][FetchLibraryAlbums] Error getting user album info.", zap.Error(gErr))
+			return nil, gErr
 		}
 
 		var catInfo UserAlbumsCatalogResponse
 		err = json.Unmarshal(catResponse.Data, &catInfo)
 		if err != nil {
-			log.Printf("[services][applemusic][FetchLibraryAlbums] Error deserializing user album info: %v\n", err)
+			s.Logger.Error("[services][applemusic][FetchLibraryAlbums] Error deserializing user album info.", zap.Error(err))
 			return nil, err
 		}
 
@@ -921,7 +872,7 @@ func FetchLibraryAlbums(apikey, token string) ([]blueprint.LibraryAlbum, error) 
 }
 
 // FetchTrackListeningHistory fetches all the recently listened to tracks for a user
-func FetchTrackListeningHistory(apikey, token string) ([]blueprint.TrackSearchResult, error) {
+func (s *Service) FetchTrackListeningHistory(apikey, token string) ([]blueprint.TrackSearchResult, error) {
 	inst := axios.NewInstance(&axios.InstanceConfig{
 		BaseURL: "https://api.music.apple.com/v1",
 		Headers: http.Header{
@@ -932,14 +883,14 @@ func FetchTrackListeningHistory(apikey, token string) ([]blueprint.TrackSearchRe
 
 	resp, err := inst.Get("/me/recent/played/tracks", nil)
 	if err != nil {
-		log.Printf("[services][applemusic][FetchListeningHistory] Error getting listening history: %v\n", err)
+		s.Logger.Error("[services][applemusic][FetchListeningHistory] Error getting listening history.", zap.Error(err))
 		return nil, err
 	}
 
 	var historyResponse UserTracksListeningHistoryResponse
 	err = json.Unmarshal(resp.Data, &historyResponse)
 	if err != nil {
-		log.Printf("[services][applemusic][FetchListeningHistory] Error deserializing listening history: %v\n", err)
+		s.Logger.Error("[services][applemusic][FetchListeningHistory] Error deserializing listening history.", zap.Error(err))
 		return nil, err
 	}
 
@@ -948,15 +899,15 @@ func FetchTrackListeningHistory(apikey, token string) ([]blueprint.TrackSearchRe
 		if historyResponse.Next == "" {
 			break
 		}
-		nextResp, err := inst.Get(historyResponse.Next, nil)
-		if err != nil {
-			log.Printf("[services][applemusic][FetchListeningHistory] Error getting listening history: %v\n", err)
-			return nil, err
+		nextResp, gErr := inst.Get(historyResponse.Next, nil)
+		if gErr != nil {
+			s.Logger.Error("[services][applemusic][FetchListeningHistory] Error getting listening history.", zap.Error(gErr))
+			return nil, gErr
 		}
 		var nextHistoryResponse UserTracksListeningHistoryResponse
 		err = json.Unmarshal(nextResp.Data, &nextHistoryResponse)
 		if err != nil {
-			log.Printf("[services][applemusic][FetchListeningHistory] Error deserializing tracks listening history: %v\n", err)
+			s.Logger.Error("[services][applemusic][FetchListeningHistory] Error deserializing tracks listening history.", zap.Error(err))
 			return nil, err
 		}
 		historyResponse.Data = append(historyResponse.Data, nextHistoryResponse.Data...)

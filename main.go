@@ -364,14 +364,14 @@ func main() {
 		log.Printf("[main] [info] - Queue pause successful. Server shutdown complete")
 	}()
 
-	userController := account.NewUserController(db, redisClient, asyncClient, asynqMux)
-	authMiddleware := middleware.NewAuthMiddleware(db)
-	conversionController := conversion.NewConversionController(db, redisClient, playlistQueue, QueueFactory, asyncClient, asynqServer, asynqMux)
-	// create logger
 	orchdioLogger := logger2.NewZapSentryLogger()
+	userController := account.NewUserController(db, redisClient, asyncClient, asynqMux, orchdioLogger)
+	authMiddleware := middleware.NewAuthMiddleware(db)
+	conversionController := conversion.NewConversionController(db, redisClient, playlistQueue, QueueFactory, asyncClient, asynqServer, asynqMux, orchdioLogger)
+	// create logger
 	devAppController := developer.NewDeveloperController(db, orchdioLogger)
 
-	platformsControllers := platforms.NewPlatform(redisClient, db, asyncClient, asynqMux)
+	platformsControllers := platforms.NewPlatform(redisClient, db, asyncClient, asynqMux, orchdioLogger)
 	whController := webhook.NewWebhookController(db, redisClient)
 
 	// Migrate
@@ -414,7 +414,7 @@ func main() {
 	})
 	app.Get("/vermont/info", monitor.New(monitor.Config{Title: "Orchdio-Core health info"}))
 
-	authController := auth.NewAuthController(db, asyncClient, asynqServer, asynqMux, redisClient)
+	authController := auth.NewAuthController(db, asyncClient, asynqServer, asynqMux, redisClient, orchdioLogger)
 	// connect endpoints
 	orchRouter.Get("/auth/:platform/connect", authMiddleware.AddRequestPlatformToCtx, authController.AppAuthRedirect)
 	// the callback that the auth platform will redirect to and this is where we handle the redirect and generate an auth token for the user, as response

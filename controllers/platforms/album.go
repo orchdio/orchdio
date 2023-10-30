@@ -33,7 +33,8 @@ func (p *Platforms) FetchPlatformAlbums(ctx *fiber.Ctx) error {
 		// TODO: implement fetching user library albums from apple music api
 		// remember that for applemjsic, app refresh token field is equal to the apple api key. its encrypted
 		// under the refreshtoken field for conformity with the other platforms.
-		albums, err := applemusic.FetchLibraryAlbums(decryptedCredentials.AppRefreshToken, appCtx.RefreshToken)
+		appleService := applemusic.NewService(decryptedCredentials, p.DB, p.Redis, p.Logger)
+		albums, err := appleService.FetchLibraryAlbums(decryptedCredentials.AppRefreshToken, appCtx.RefreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformAlbums] error - %s", err.Error())
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to fetch albums from Apple Music")
@@ -63,7 +64,7 @@ func (p *Platforms) FetchPlatformAlbums(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to decrypt Deezer credentials")
 		}
 
-		deezerService := deezer.NewService(&deezerCredentials, p.DB, p.Redis)
+		deezerService := deezer.NewService(&deezerCredentials, p.DB, p.Redis, p.Logger)
 		albums, err := deezerService.FetchLibraryAlbums(appCtx.RefreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformAlbums] error - %s", err.Error())

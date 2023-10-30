@@ -21,33 +21,34 @@ func NewAccountWebhookController(db *sqlx.DB) *WebhookController {
 	return &WebhookController{DB: db}
 }
 
-func (w *WebhookController) FetchWebhookUrl(c *fiber.Ctx) error {
-	log.Printf("[controller][user][FetchWebhookUrl] - fetching webhook url")
-	user := c.Locals("user").(*blueprint.User)
-
-	database := db.NewDB{DB: w.DB}
-	webhook, err := database.FetchWebhook(user.UUID.String())
-	if err != nil {
-		if err == sql.ErrNoRows {
-			log.Printf("[controller][user][FetchWebhookUrl] - error - no webhook url found for user %v\n", user.UUID)
-			return util.ErrorResponse(c, http.StatusNotFound, "not found", "No webhook information found for user")
-		}
-		log.Printf("[controller][user][FetchWebhookUrl] - error fetching webhook url %s\n", err.Error())
-		return util.ErrorResponse(c, http.StatusInternalServerError, err.Error(), "An unexpected error")
-	}
-	response := map[string]string{
-		"url": webhook.Url,
-	}
-	log.Printf("[controller][user][FetchWebhookUrl] - fetched webhook url: '%s' for user %v\n", webhook.Url, user)
-	return util.SuccessResponse(c, http.StatusCreated, response)
-}
+//func (w *WebhookController) FetchWebhookUrl(c *fiber.Ctx) error {
+//	log.Printf("[controller][user][FetchWebhookUrl] - fetching webhook url")
+//	user := c.Locals("user").(*blueprint.User)
+//
+//	//database := db.NewDB{DB: w.DB}
+//	database := db.New(w.DB)
+//	webhook, err := database.FetchWebhook(user.UUID.String())
+//	if err != nil {
+//		if err == sql.ErrNoRows {
+//			log.Printf("[controller][user][FetchWebhookUrl] - error - no webhook url found for user %v\n", user.UUID)
+//			return util.ErrorResponse(c, http.StatusNotFound, "not found", "No webhook information found for user")
+//		}
+//		log.Printf("[controller][user][FetchWebhookUrl] - error fetching webhook url %s\n", err.Error())
+//		return util.ErrorResponse(c, http.StatusInternalServerError, err.Error(), "An unexpected error")
+//	}
+//	response := map[string]string{
+//		"url": webhook.Url,
+//	}
+//	log.Printf("[controller][user][FetchWebhookUrl] - fetched webhook url: '%s' for user %v\n", webhook.Url, user)
+//	return util.SuccessResponse(c, http.StatusCreated, response)
+//}
 
 // CreateWebhookUrl creates a webhook for a user
 func (w *WebhookController) CreateWebhookUrl(ctx *fiber.Ctx) error {
-	log.Printf("[controller][user][CreateWebhookUrl] - creating webhook url")
 	user := ctx.Locals("user").(*blueprint.User)
 	//database := c.DB
 	bod := ctx.Body()
+	log.Printf("[controller][user][CreateWebhookUrl] - creating webhook url")
 
 	/**
 	it'll look like:

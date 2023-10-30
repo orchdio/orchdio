@@ -4,14 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/gofiber/fiber/v2"
 	"github.com/zmb3/spotify/v2"
+	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
 	"orchdio/db"
+	logger2 "orchdio/logger"
 	"orchdio/services/applemusic"
 	"orchdio/services/deezer"
 	spotify2 "orchdio/services/spotify"
@@ -26,12 +29,20 @@ import (
 func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 	// get the platform they want to add the playlist to
 	platform := ctx.Params("platform")
+	app := ctx.Locals("app").(*blueprint.DeveloperApp)
+	loggerOpts := &blueprint.OrchdioLoggerOptions{
+		RequestID:            ctx.Get("x-orchdio-request-id"),
+		ApplicationPublicKey: zap.String("app_pub_key", app.PublicKey.String()).String,
+		Platform:             zap.String("platform", platform).String,
+	}
+	orchdioLogger := logger2.NewZapSentryLogger(loggerOpts)
+	p.Logger = orchdioLogger
+
 	if platform == "" {
-		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "No platform in context")
+		p.Logger.Error("[controllers][platforms][AddPlaylistToAccount] error - No platform in context", zap.String("platform", platform),
+			zap.String("app_pub_key", app.PublicKey.String()), zap.String("request_id", ctx.Get("x-orchdio-request-id")))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Platform not found")
 	}
-
-	app := ctx.Locals("app").(*blueprint.DeveloperApp)
 
 	// get the playlist creation body
 	var createBodyData = struct {
@@ -42,28 +53,31 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 
 	err := ctx.BodyParser(&createBodyData)
 	if err != nil {
-		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", err)
+		p.Logger.Error("[controllers][platforms][AddPlaylistToAccount] error - error parsing request body", zap.Error(err),
+			zap.String("app_pub_key", app.PublicKey.String()), zap.String("request_id", ctx.Get("x-orchdio-request-id")))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid request body. Please make sure the body is valid.")
 	}
 
 	if len(createBodyData.Tracks) == 0 {
-		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "No tracks in playlist")
+		p.Logger.Error("[controllers][platforms][AddPlaylistToAccount] error - No tracks in playlist", zap.String("app_pub_key", app.PublicKey.String()), zap.String("request_id", ctx.Get("x-orchdio-request-id")))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "No tracks to insert into playlist. please add tracks to the playlist")
 	}
 
 	if createBodyData.Title == "" {
-		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "No title in playlist")
+		p.Logger.Error("[controllers][platforms][AddPlaylistToAccount] error - No title in playlist", zap.String("app_pub_key", app.PublicKey.String()), zap.String("request_id", ctx.Get("x-orchdio-request-id")))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "No title to insert into playlist. please add title to the playlist")
 	}
 	// find the user in the database
-	database := db.NewDB{DB: p.DB}
+	//database := db.NewDB{DB: p.DB}
+	database := db.New(p.DB, p.Logger)
 	user, err := database.FetchPlatformAndUserInfoByIdentifier(createBodyData.User, app.UID.String(), platform)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "App not found")
+		if errors.Is(err, sql.ErrNoRows) {
+			p.Logger.Warn("[controllers][platforms][AddPlaylistToAccount] error - App not found for user. User has not authorized this app for the platform access.", zap.String("app_pub_key", app.PublicKey.String()), zap.String("platform", platform), zap.String("request_id", ctx.Get("x-orchdio-request-id")))
 			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User has not authorized this app. Please authorize the app to continue.")
 		}
-		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", err)
+		p.Logger.Error("[controllers][platforms][AddPlaylistToAccount] error - error fetching user", zap.Error(err),
+			zap.String("app_pub_key", app.PublicKey.String()), zap.String("request_id", ctx.Get("x-orchdio-request-id")))
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred.")
 	}
 
@@ -71,7 +85,7 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 	t, err := util.Decrypt(user.RefreshToken, []byte(os.Getenv("ENCRYPTION_SECRET")))
 
 	if err != nil {
-		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error decrypting user refresh token - %v\n", err)
+		p.Logger.Error("[controllers][platforms][AddPlaylistToAccount] error - error decrypting user refresh token", zap.Error(err))
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred while decrypting refresh token")
 	}
 
@@ -89,13 +103,13 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 
 	cred, err := util.Decrypt(credentialsBytes, []byte(os.Getenv("ENCRYPTION_SECRET")))
 	if err != nil {
-		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error unmarshalling credentials - could not decrypt integration credentials for platform %s: %v\n", err)
+		p.Logger.Error("[controllers][platforms][AddPlaylistToAccount] error - error decrypting integration credentials", zap.Error(err), zap.String("platform", platform))
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred while unmarshalling credentials")
 	}
 	var credentials blueprint.IntegrationCredentials
 	err = json.Unmarshal(cred, &credentials)
 	if err != nil {
-		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error unmarshalling credentials - could not unmarshal integration credentials for platform %s: %v\n", err)
+		p.Logger.Error("[controllers][platforms][AddPlaylistToAccount] error - error unmarshalling integration credentials", zap.Error(err), zap.String("platform", platform))
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred while unmarshalling credentials")
 	}
 
@@ -111,7 +125,7 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		createdPlaylist, pErr := client.CreatePlaylistForUser(context.Background(), user.PlatformID, createBodyData.Title, description, true, false)
 
 		if pErr != nil {
-			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error creating new playlist for user - %v\n", pErr.Error())
+			p.Logger.Error("[controllers][platforms][AddPlaylistToAccount] error - error creating new playlist for user", zap.Error(pErr), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
 			if strings.Contains(pErr.Error(), "oauth2: cannot fetch token: 400 Bad Request") {
 				return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid client. The user or developer app's credentials might be invalid")
 			}
@@ -128,55 +142,53 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		}
 
 		// update playlist with the tracks
-		updated, cErr := client.AddTracksToPlaylist(context.Background(), createdPlaylist.ID, trackIds...)
+		_, cErr := client.AddTracksToPlaylist(context.Background(), createdPlaylist.ID, trackIds...)
 		if cErr != nil {
-			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error adding new track to playlist - %v\n", cErr)
+			p.Logger.Error("[controllers][platforms][AddPlaylistToAccount] error - error adding new track to playlist", zap.Error(cErr), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
 			if cErr.Error() == "No tracks specified." {
 				return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", cErr.Error())
 			}
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, cErr.Error(), "An internal error occurred")
 		}
-
 		playlistlink = createdPlaylist.ExternalURLs["spotify"]
-
-		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] - created playlist %v\n", updated)
+		p.Logger.Info("[controllers][platforms][AddPlaylistToAccount] - created playlist", zap.String("playlist_link", playlistlink), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
 
 	case deezer.IDENTIFIER:
-		deezerService := deezer.NewService(&credentials, p.DB, p.Redis)
-		id, err := deezerService.CreateNewPlaylist(createBodyData.Title, user.PlatformID, string(t), createBodyData.Tracks)
-		if err != nil {
-			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error creating new playlist - %v\n", err)
+		deezerService := deezer.NewService(&credentials, p.DB, p.Redis, p.Logger)
+		id, dErr := deezerService.CreateNewPlaylist(createBodyData.Title, user.PlatformID, string(t), createBodyData.Tracks)
+		if dErr != nil {
+			p.Logger.Error("[controllers][platforms][AddPlaylistToAccount] error - error creating new playlist for user", zap.Error(dErr), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not create a new playlist for user")
 		}
 
 		playlistlink = fmt.Sprintf("https://www.deezer.com/en/playlist/%s", id)
-
-		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] - created playlist %v\n", createBodyData.Title)
+		p.Logger.Info("[controllers][platforms][AddPlaylistToAccount] - created playlist", zap.String("playlist_link", playlistlink), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
 	// get the user, to see if our token is valid
 
 	case applemusic.IDENTIFIER:
-		applemusicService := applemusic.NewService(&credentials, p.DB, p.Redis)
-		pl, err := applemusicService.CreateNewPlaylist(createBodyData.Title, description, string(t), createBodyData.Tracks)
+		applemusicService := applemusic.NewService(&credentials, p.DB, p.Redis, p.Logger)
+		pl, cErr := applemusicService.CreateNewPlaylist(createBodyData.Title, description, string(t), createBodyData.Tracks)
 		playlistlink = string(pl)
-		if err != nil {
-			log.Printf("\n[controllers][platforms][AddPlaylistToAccount][error] - an error occurred while adding playlist to user platform account - %v\n", err)
-			if err == blueprint.EFORBIDDEN {
-				log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error creating new playlist - %v\n", err)
+		if cErr != nil {
+			if errors.Is(cErr, blueprint.EFORBIDDEN) {
+				p.Logger.Error("[controllers][platforms][AddPlaylistToAccount] error - error creating new playlist for user", zap.Error(cErr), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
 				return util.ErrorResponse(ctx, http.StatusForbidden, err, "Could not create new playlist for user. Access has not been granted by user")
 			}
+			p.Logger.Error("[controllers][platforms][AddPlaylistToAccount] error - error creating new playlist for user", zap.Error(cErr), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred.")
 		}
 
 	case tidal.IDENTIFIER:
 		tidalService := tidal.NewService(&credentials, p.DB, p.Redis)
-		pl, err := tidalService.CreateNewPlaylist(createBodyData.Title, description, string(t), createBodyData.Tracks)
+		pl, cErr := tidalService.CreateNewPlaylist(createBodyData.Title, description, string(t), createBodyData.Tracks)
 		playlistlink = string(pl)
-		if err != nil {
-			log.Printf("\n[controllers][platforms][AddPlaylistToAccount][error] - an error occurred while adding playlist to user platform account - %v\n", err)
-			if err == blueprint.EFORBIDDEN {
-				log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error creating new playlist - %v\n", err)
+		if cErr != nil {
+			if errors.Is(cErr, blueprint.EFORBIDDEN) {
+				p.Logger.Error("[controllers][platforms][AddPlaylistToAccount] error - error creating new playlist for user", zap.Error(cErr), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
 				return util.ErrorResponse(ctx, http.StatusForbidden, err, "Could not create new playlist for user. Access has not been granted by user")
 			}
+			p.Logger.Error("[controllers][platforms][AddPlaylistToAccount] error - error creating new playlist for user", zap.Error(cErr), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred.")
 		}
 	}
 	return util.SuccessResponse(ctx, http.StatusCreated, playlistlink)
@@ -184,49 +196,59 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 
 // FetchPlatformPlaylists fetches the all the playlists on a user's platform library
 func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
-	log.Printf("[platforms][FetchPlatformPlaylists] fetching platform playlists")
 	app := ctx.Locals("app").(*blueprint.DeveloperApp)
 	userId := ctx.Params("userId")
 	targetPlatform := ctx.Params("platform")
+	loggerOpts := &blueprint.OrchdioLoggerOptions{
+		RequestID:            ctx.Get("x-orchdio-request-id"),
+		ApplicationPublicKey: zap.String("app_pub_key", app.PublicKey.String()).String,
+		Platform:             zap.String("platform", targetPlatform).String,
+		AppID:                zap.String("app_id", app.UID.String()).String,
+	}
+	orchdioLogger := logger2.NewZapSentryLogger(loggerOpts)
+	p.Logger = orchdioLogger
+
+	p.Logger.Info("[controllers][platforms][FetchPlatformPlaylists] - fetching user's playlists", zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()))
 	if userId == "" {
-		log.Printf("[platforms][FetchPlatformPlaylists] error - userId is empty")
+		p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - userId is empty", zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "userId is empty")
 	}
 	if targetPlatform == "" {
-		log.Printf("[platforms][FetchPlatformPlaylists] error - targetPlatform is empty")
+		p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - targetPlatform is empty", zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "targetPlatform is empty")
 	}
 
-	log.Printf("[platforms][FetchPlatformPlaylists] App %s is trying to fetch user %s's %s playlists\n", app.Name, userId, strings.ToUpper(targetPlatform))
+	p.Logger.Info("[controllers][platforms][FetchPlatformPlaylists] - fetching user's playlists", zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()))
 
 	// get the user via the id to make sure the user exists
 	database := db.NewDB{DB: p.DB}
 	//user, err := database.FindUserByUUID(userId, targetPlatform)
 	user, err := database.FetchPlatformAndUserInfoByIdentifier(userId, app.UID.String(), targetPlatform)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			log.Printf("[platforms][FetchPlatformPlaylists] error - user not found %v\n", err)
+		if errors.Is(err, sql.ErrNoRows) {
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - user not found", zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()))
 			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User not found")
 		}
-		log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching user %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - error fetching user", zap.Error(err), zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()))
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 	}
-	log.Printf("[platforms][FetchPlatformPlaylists] user found. Target platform is %v %s\n", user.Username, targetPlatform)
-
+	p.Logger.Info("[controllers][platforms][FetchPlatformPlaylists] - user found", zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()))
 	var refreshToken string
 	// if the user refresh token is nil, the user has not connected this platform to Orchdio.
 	// this is because everytime a user connects a platform to Orchdio, the refresh token is updated for the platform the user connected
 	if user.RefreshToken == nil && targetPlatform != "tidal" {
-		log.Printf("[platforms][FetchPlatformPlaylists] error - user's refresh token is empty %v\n", err)
+		p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - user's refresh token is empty", zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()),
+			zap.String("user_id", user.PlatformID), zap.String("user_platform", user.Platform))
 		return util.ErrorResponse(ctx, http.StatusUnauthorized, "no access", "User has not connected this platform to Orchdio")
 	}
 
 	if user.RefreshToken != nil {
 		// decrypt the user's access token
-		r, err := util.Decrypt(user.RefreshToken, []byte(os.Getenv("ENCRYPTION_SECRET")))
-		if err != nil {
-			log.Printf("[platforms][FetchPlatformPlaylists] error - error decrypting access token %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		r, dErr := util.Decrypt(user.RefreshToken, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if dErr != nil {
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - error decrypting access token", zap.Error(dErr), zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()),
+				zap.String("user_id", user.PlatformID), zap.String("user_platform", user.Platform))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 		refreshToken = string(r)
 	}
@@ -236,28 +258,33 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 		// get the deezer playlists
 		var deezerCredentials blueprint.IntegrationCredentials
 		if app.DeezerCredentials == nil {
-			log.Printf("[platforms][FetchPlatformPlaylists] error - deezer credentials is nil")
-			return util.ErrorResponse(ctx, http.StatusUnauthorized, "internal error", "An unexpected error occured")
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - deezer credentials is nil", zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()),
+				zap.String("user_id", user.PlatformID), zap.String("user_platform", user.Platform))
+			return util.ErrorResponse(ctx, http.StatusUnauthorized, "internal error", "An unexpected error occurred")
 		}
 
 		cred, decErr := util.Decrypt(app.DeezerCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
 		if decErr != nil {
-			log.Printf("[platforms][FetchPlatformPlaylists] error - error decrypting deezer credentials while fetching user library playlists%v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - could not fetch user library playlist. error decrypting deezer credentials", zap.Error(decErr), zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()),
+				zap.String("user_id", user.PlatformID), zap.String("user_platform", user.Platform))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 		err = json.Unmarshal(cred, &deezerCredentials)
 		if err != nil {
-			log.Printf("[platforms][FetchPlatformPlaylists] error - error unmarshalling deezer credentials while fetching user library playlists%v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - could not fetch user tidal library playlist. error unmarshalling deezer credentials", zap.Error(err), zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()),
+				zap.String("user_id", user.PlatformID), zap.String("user_platform", user.Platform))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 
-		deezerService := deezer.NewService(&deezerCredentials, p.DB, p.Redis)
-		playlists, err := deezerService.FetchUserPlaylists(refreshToken)
-		if err != nil {
-			log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching deezer playlists %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		deezerService := deezer.NewService(&deezerCredentials, p.DB, p.Redis, p.Logger)
+		playlists, dErr := deezerService.FetchUserPlaylists(refreshToken)
+		if dErr != nil {
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - could not fetch user deezer library playlist. error fetching deezer playlists", zap.Error(dErr), zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()),
+				zap.String("user_id", user.PlatformID), zap.String("user_platform", user.Platform))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
-		log.Printf("[platforms][FetchPlatformPlaylists] deezer playlists fetched successfully")
+		p.Logger.Info("[controllers][platforms][FetchPlatformPlaylists] - deezer playlists fetched successfully", zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()),
+			zap.String("user_id", user.PlatformID), zap.String("user_platform", user.Platform))
 		// create a slice of UserLibraryPlaylists
 		var userPlaylists []blueprint.UserPlaylist
 		for _, playlist := range playlists.Data {
@@ -284,27 +311,31 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 		return util.SuccessResponse(ctx, http.StatusOK, response)
 	case spotify2.IDENTIFIER:
 		// decrypt integration credentials of the app
-		credBytes, err := util.Decrypt(app.SpotifyCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
-		if err != nil {
-			log.Printf("[platforms][FetchPlatformPlaylists] error - error decrypting spotify credentials while fetching user library playlist.%v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		credBytes, dErr := util.Decrypt(app.SpotifyCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if dErr != nil {
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - could not fetch user spotify library playlist. error decrypting spotify credentials", zap.Error(dErr), zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()),
+				zap.String("user_id", user.PlatformID), zap.String("user_platform", user.Platform))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 		// unmarshal the credentials
 		var spotifyCred blueprint.IntegrationCredentials
 		err = json.Unmarshal(credBytes, &spotifyCred)
 		if err != nil {
-			log.Printf("[platforms][FetchPlatformPlaylists] error - error unmarshalling spotify credentials while fetching user library playlist.%v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - could not fetch user spotify library playlist. error unmarshalling spotify credentials", zap.Error(err), zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()),
+				zap.String("user_id", user.PlatformID), zap.String("user_platform", user.Platform))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 
 		// get the spotify playlists
 		spotifyService := spotify2.NewService(&spotifyCred, p.DB, p.Redis)
-		playlists, err := spotifyService.FetchUserPlaylist(refreshToken)
-		if err != nil {
-			log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching spotify playlists %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		playlists, pErr := spotifyService.FetchUserPlaylist(refreshToken)
+		if pErr != nil {
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - could not fetch user spotify library playlist. unknown error while fetching playlist", zap.Error(pErr), zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()),
+				zap.String("user_id", user.PlatformID), zap.String("user_platform", user.Platform))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
-		log.Printf("[platforms][FetchPlatformPlaylists] spotify playlists fetched successfully")
+		p.Logger.Info("[controllers][platforms][FetchPlatformPlaylists] - spotify playlists fetched successfully", zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()),
+			zap.String("user_id", user.PlatformID), zap.String("user_platform", user.Platform))
 		// create a slice of UserLibraryPlaylists
 		var userPlaylists []blueprint.UserPlaylist
 		for _, playlist := range playlists.Playlists {
@@ -335,38 +366,48 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 		// get the tidal playlists
 		var tidalCredentials blueprint.IntegrationCredentials
 		if app.TidalCredentials == nil {
-			log.Printf("[platforms][FetchPlatformPlaylists] error - tidal credentials not found while fetching user library playlists.%v\n", err)
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - tidal credentials not found while fetching user library playlists",
+				zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()),
+				zap.String("user_id", user.PlatformID), zap.String("user_platform", user.Platform))
 			return util.ErrorResponse(ctx, http.StatusUnauthorized, "authorization error", "The developer does not have credentials setup to access this resource.")
 		}
 		credBytes, dErr := util.Decrypt(app.TidalCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
 		if dErr != nil {
-			log.Printf("[platforms][FetchPlatformPlaylists] error - error decrypting tidal credentials while fetching user library playlists.%v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - tidal credentials not found while fetching user library playlists",
+				zap.Error(dErr), zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()),
+				zap.String("user_id", user.PlatformID), zap.String("user_platform", user.Platform))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
+
 		err = json.Unmarshal(credBytes, &tidalCredentials)
 		if err != nil {
-			log.Printf("[platforms][FetchPlatformPlaylists] error - error unmarshalling tidal credentials while fetching user library playlists.%v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - tidal credentials not found while fetching user library playlists",
+				zap.Error(err), zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()),
+				zap.String("user_id", user.PlatformID), zap.String("user_platform", user.Platform))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 
 		tidalService := tidal.NewService(&tidalCredentials, p.DB, p.Redis)
-		playlists, err := tidalService.FetchUserPlaylists()
-		if err != nil {
-			log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching tidal playlists %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		playlists, pErr := tidalService.FetchUserPlaylists()
+		if pErr != nil {
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - tidal credentials not found while fetching user library playlists",
+				zap.Error(pErr), zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()),
+				zap.String("user_id", user.PlatformID), zap.String("user_platform", user.Platform))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 
 		if playlists == nil {
 			log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching tidal playlists %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - tidal credentials not found while fetching user library playlists", zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 
-		log.Printf("[platforms][FetchPlatformPlaylists] tidal playlists fetched successfully")
+		p.Logger.Info("[controllers][platforms][FetchPlatformPlaylists] - tidal playlists fetched successfully", zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()))
 		// create a slice of UserLibraryPlaylists
 		var userPlaylists []blueprint.UserPlaylist
 		for _, playlist := range playlists.Items {
 			if playlist.ItemType != "PLAYLIST" {
-				log.Printf("[platforms][FetchPlatformPlaylists] Item is not a playlist data, skipping...\n")
+				p.Logger.Warn("[controllers][platforms][FetchPlatformPlaylists] - Item is not a playlist data, skipping...", zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()))
 				continue
 			}
 
@@ -393,30 +434,30 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 		// get the apple music playlists
 		var appleMusicCredentials blueprint.IntegrationCredentials
 		if app.AppleMusicCredentials == nil {
-			log.Printf("[platforms][FetchPlatformPlaylists] error - apple music credentials not found while fetching user library playlists.%v\n", err)
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - apple music credentials not found while fetching user library playlists", zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()))
 			return util.ErrorResponse(ctx, http.StatusUnauthorized, "authorization error", "The developer does not have credentials setup to access this resource.")
 		}
 		credBytes, dErr := util.Decrypt(app.AppleMusicCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
 		if dErr != nil {
-			log.Printf("[platforms][FetchPlatformPlaylists] error - error decrypting apple music credentials while fetching user library playlists.%v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - apple music credentials not found while fetching user library playlists", zap.Error(dErr), zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 		err = json.Unmarshal(credBytes, &appleMusicCredentials)
 		if err != nil {
-			log.Printf("[platforms][FetchPlatformPlaylists] error - error unmarshalling apple music credentials while fetching user library playlists.%v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - apple music credentials not found while fetching user library playlists", zap.Error(err), zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 
-		applemusicService := applemusic.NewService(&appleMusicCredentials, p.DB, p.Redis)
-		playlists, err := applemusicService.FetchUserPlaylists(refreshToken)
-		if err != nil {
-			log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching apple music playlists %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		applemusicService := applemusic.NewService(&appleMusicCredentials, p.DB, p.Redis, p.Logger)
+		playlists, pErr := applemusicService.FetchUserPlaylists(refreshToken)
+		if pErr != nil {
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - apple music credentials not found while fetching user library playlists", zap.Error(pErr), zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 
 		if playlists == nil {
-			log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching apple music playlists %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+			p.Logger.Error("[controllers][platforms][FetchPlatformPlaylists] error - apple music credentials not found while fetching user library playlists", zap.String("platform", targetPlatform), zap.String("app_id", app.UID.String()))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 
 		// create a slice of UserLibraryPlaylists
@@ -447,43 +488,52 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 
 // FetchPlatformArtists fetches the artists from a given platform
 func (p *Platforms) FetchPlatformArtists(ctx *fiber.Ctx) error {
-	log.Printf("[platforms][FetchPlatformAlbums] fetching platform albums\n")
 	app := ctx.Locals("app").(*blueprint.DeveloperApp)
 	userId := ctx.Params("userId")
 	platform := ctx.Params("platform")
+	orchdioLogger := logger2.NewZapSentryLogger(&blueprint.OrchdioLoggerOptions{
+		RequestID:            ctx.Get("x-orchdio-request-id"),
+		ApplicationPublicKey: zap.String("app_pub_key", app.PublicKey.String()).String,
+		Platform:             zap.String("platform", platform).String,
+		AppID:                zap.String("app_id", app.UID.String()).String,
+	})
+	p.Logger = orchdioLogger
+
+	p.Logger.Info("[controllers][platforms][FetchPlatformArtists] - fetching user's artists", zap.String("platform", platform), zap.String("app_id", app.UID.String()))
 	refreshToken := ""
 
 	if userId == "" {
-		log.Printf("[platforms][FetchPlatformArtists] error - no user id provided\n")
+		p.Logger.Error("[controllers][platforms][FetchPlatformArtists] error - no user id provided", zap.String("platform", platform), zap.String("app_id", app.UID.String()))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "No user id provided")
 	}
 
 	if platform == "" {
-		log.Printf("[platforms][FetchPlatformArtists] error - no platform provided\n")
+		p.Logger.Error("[controllers][platforms][FetchPlatformArtists] error - no platform provided", zap.String("platform", platform), zap.String("app_id", app.UID.String()))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "No platform provided")
 	}
-
-	log.Printf("[platforms][FetchPlatformAlbums] app %s is trying to fetch %s's library artists on %s", app.Name, userId, platform)
-
+	p.Logger.Info("[controllers][platforms][FetchPlatformArtists] - fetching user's artists", zap.String("platform", platform), zap.String("app_id", app.UID.String()), zap.String("app_name", app.Name))
 	// get the user
 	database := db.NewDB{DB: p.DB}
 	//user, err := database.FindUserByUUID(userId, platform)
 	user, err := database.FetchPlatformAndUserInfoByIdentifier(userId, app.UID.String(), platform)
 	if err != nil {
-		log.Printf("[platforms][FetchPlatformArtists] error - error fetching user %v\n", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		if errors.Is(err, sql.ErrNoRows) {
+			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User not found")
+		}
+		p.Logger.Error("[controllers][platforms][FetchPlatformArtists] error - error fetching user", zap.Error(err), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 	}
 
 	if user.RefreshToken == nil && platform != "tidal" {
-		log.Printf("[platforms][FetchPlatformArtists] error - no refresh token found for user %v\n", err)
+		p.Logger.Error("[controllers][platforms][FetchPlatformArtists] error - no refresh token found for user", zap.String("platform", platform), zap.String("app_id", app.UID.String()))
 		return util.ErrorResponse(ctx, http.StatusUnauthorized, "unauthorized", "No refresh token found for user")
 	}
 
 	if user.RefreshToken != nil {
-		r, err := util.Decrypt(user.RefreshToken, []byte(os.Getenv("ENCRYPTION_SECRET")))
-		if err != nil {
-			log.Printf("[platforms][FetchPlatformArtists] error - error decrypting refresh token %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		r, dErr := util.Decrypt(user.RefreshToken, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if dErr != nil {
+			p.Logger.Error("[controllers][platforms][FetchPlatformArtists] error - error decrypting refresh token", zap.Error(dErr), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 		refreshToken = string(r)
 	}
@@ -491,100 +541,100 @@ func (p *Platforms) FetchPlatformArtists(ctx *fiber.Ctx) error {
 	switch platform {
 	case applemusic.IDENTIFIER:
 		// get the apple music artists
-		log.Printf("[platforms][FetchPlatformArtists] fetching apple music artists\n")
+		p.Logger.Info("[controllers][platforms][FetchPlatformArtists] - fetching user's artists", zap.String("platform", platform), zap.String("app_id", app.UID.String()))
 		var appleMusicCredentials blueprint.IntegrationCredentials
 		if app.AppleMusicCredentials == nil {
-			log.Printf("[platforms][FetchPlatformArtists] error - no apple music credentials found\n")
+			p.Logger.Error("[controllers][platforms][FetchPlatformArtists] error - no apple music credentials found", zap.String("platform", platform), zap.String("app_id", app.UID.String()))
 			return util.ErrorResponse(ctx, http.StatusUnauthorized, "authorization error", "The developer has not set up apple music credentials")
 		}
 		credBytes, dErr := util.Decrypt(app.AppleMusicCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
 		if dErr != nil {
-			log.Printf("[platforms][FetchPlatformArtists] error - error decrypting apple music credentials while fetching user library artists.%v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+			p.Logger.Error("[controllers][platforms][FetchPlatformArtists] error - error decrypting apple music credentials", zap.Error(dErr), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 
 		decErr := json.Unmarshal(credBytes, &appleMusicCredentials)
 		if decErr != nil {
-			log.Printf("[platforms][FetchPlatformArtists] error - error unmarshalling apple music credentials while fetching user library artists.%v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+			p.Logger.Error("[controllers][platforms][FetchPlatformArtists] error - error unmarshalling apple music credentials", zap.Error(decErr), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 
-		applemusicService := applemusic.NewService(&appleMusicCredentials, p.DB, p.Redis)
-		artists, err := applemusicService.FetchUserArtists(refreshToken)
-		if err != nil {
-			log.Printf("[platforms][FetchPlatformArtists] error - error fetching apple music artists %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		applemusicService := applemusic.NewService(&appleMusicCredentials, p.DB, p.Redis, p.Logger)
+		artists, pErr := applemusicService.FetchUserArtists(refreshToken)
+		if pErr != nil {
+			p.Logger.Error("[controllers][platforms][FetchPlatformArtists] error - error fetching apple music artists", zap.Error(pErr), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 		return util.SuccessResponse(ctx, http.StatusOK, artists)
 	case deezer.IDENTIFIER:
 		var deezerCredentials blueprint.IntegrationCredentials
 		if app.DeezerCredentials == nil {
-			log.Printf("[platforms][FetchPlatformArtists] error - no deezer credentials found\n")
+			p.Logger.Warn("[controllers][platforms][FetchPlatformArtists] error - developer has not set deezer credentials found", zap.String("platform", platform), zap.String("app_id", app.UID.String()))
 			return util.ErrorResponse(ctx, http.StatusUnauthorized, "authorization error", "The developer has not set up deezer credentials")
 		}
 
 		decErr := json.Unmarshal(app.DeezerCredentials, &deezerCredentials)
 		if decErr != nil {
-			log.Printf("[platforms][FetchPlatformArtists] error - error unmarshalling deezer credentials %v\n", decErr)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+			p.Logger.Error("[controllers][platforms][FetchPlatformArtists] error - error unmarshalling deezer credentials", zap.Error(decErr), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 		// get the deezer artists
-		log.Printf("[platforms][FetchPlatformArtists] fetching deezer artists\n")
-		deezerService := deezer.NewService(&deezerCredentials, p.DB, p.Redis)
-		artists, err := deezerService.FetchUserArtists(refreshToken)
-		if err != nil {
-			log.Printf("[platforms][FetchPlatformArtists] error - error fetching deezer artists %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		p.Logger.Info("[controllers][platforms][FetchPlatformArtists] - fetching user's artists", zap.String("platform", platform), zap.String("app_id", app.UID.String()))
+		deezerService := deezer.NewService(&deezerCredentials, p.DB, p.Redis, p.Logger)
+		artists, dErr := deezerService.FetchUserArtists(refreshToken)
+		if dErr != nil {
+			p.Logger.Error("[controllers][platforms][FetchPlatformArtists] error - error fetching deezer artists", zap.Error(dErr), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 		return util.SuccessResponse(ctx, http.StatusOK, artists)
 	case spotify2.IDENTIFIER:
 		// get the spotify artists
 		log.Printf("[platforms][FetchPlatformArtists] fetching spotify artists\n")
-		credBytes, err := util.Decrypt(app.SpotifyCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
-		if err != nil {
-			log.Printf("[platforms][FetchPlatformArtists] error - error decrypting spotify credentials while fetching user library spotify artists%v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		credBytes, dErr := util.Decrypt(app.SpotifyCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if dErr != nil {
+			p.Logger.Error("[controllers][platforms][FetchPlatformArtists] error - error decrypting spotify credentials", zap.Error(dErr), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 		var spotifyCreds blueprint.IntegrationCredentials
 		err = json.Unmarshal(credBytes, &spotifyCreds)
 		if err != nil {
-			log.Printf("[platforms][FetchPlatformArtists] error - error unmarshalling spotify credentials while fetching user library spotify artists%v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+			p.Logger.Error("[controllers][platforms][FetchPlatformArtists] error - error unmarshalling spotify credentials", zap.Error(err), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 
 		spotifyService := spotify2.NewService(&spotifyCreds, p.DB, p.Redis)
-		artists, err := spotifyService.FetchUserArtists(refreshToken)
-		if err != nil {
-			log.Printf("[platforms][FetchPlatformArtists] error - error fetching spotify artists %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		artists, pErr := spotifyService.FetchUserArtists(refreshToken)
+		if pErr != nil {
+			p.Logger.Error("[controllers][platforms][FetchPlatformArtists] error - error fetching spotify artists", zap.Error(pErr), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 		return util.SuccessResponse(ctx, http.StatusOK, artists)
 	case tidal.IDENTIFIER:
 		var tidalCredentials blueprint.IntegrationCredentials
 		if app.TidalCredentials == nil {
-			log.Printf("[platforms][FetchPlatformArtists] error - no tidal credentials found\n")
+			p.Logger.Warn("[controllers][platforms][FetchPlatformArtists] error - developer has not set tidal credentials found", zap.String("platform", platform), zap.String("app_id", app.UID.String()))
 			return util.ErrorResponse(ctx, http.StatusUnauthorized, "authorization error", "The developer has not set up tidal credentials")
 		}
 
 		decErr := json.Unmarshal(app.TidalCredentials, &tidalCredentials)
 		if decErr != nil {
-			log.Printf("[platforms][FetchPlatformArtists] error - error unmarshalling tidal credentials %v\n", decErr)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+			p.Logger.Error("[controllers][platforms][FetchPlatformArtists] error - error unmarshalling tidal credentials", zap.Error(decErr), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 		tidalService := tidal.NewService(&tidalCredentials, p.DB, p.Redis)
 		// get the tidal artists
-		log.Printf("[platforms][FetchPlatformArtists] fetching tidal artists\n")
+		p.Logger.Info("[controllers][platforms][FetchPlatformArtists] - fetching user's artists", zap.String("platform", platform), zap.String("app_id", app.UID.String()))
 		// deserialize the user platform ids
 		//var platformIds map[string]string
 		//if err != nil {
 		//	log.Printf("[platforms][FetchPlatformArtists] error - error deserializing platform ids %v\n", err)
-		//	return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		//	return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		//}
 		//artists, err := tidal.FetchUserArtists(platformIds["tidal"])
-		artists, err := tidalService.FetchUserArtists(user.PlatformID)
-		if err != nil {
-			log.Printf("[platforms][FetchPlatformArtists] error - error fetching tidal artists %v\n", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
+		artists, pErr := tidalService.FetchUserArtists(user.PlatformID)
+		if pErr != nil {
+			p.Logger.Error("[controllers][platforms][FetchPlatformArtists] error - error fetching tidal artists", zap.Error(pErr), zap.String("platform", platform), zap.String("app_id", app.UID.String()))
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occurred")
 		}
 		return util.SuccessResponse(ctx, http.StatusOK, artists)
 	}

@@ -38,10 +38,11 @@ type AuthController struct {
 	AsynqServer *asynq.Server
 	AsynqRouter *asynq.ServeMux
 	Redis       *redis.Client
+	Logger      *zap.Logger
 }
 
-func NewAuthController(db *sqlx.DB, asynqClient *asynq.Client, asynqServer *asynq.Server, asyqRouter *asynq.ServeMux, r *redis.Client) *AuthController {
-	return &AuthController{DB: db, AsyncClient: asynqClient, AsynqServer: asynqServer, AsynqRouter: asyqRouter, Redis: r}
+func NewAuthController(db *sqlx.DB, asynqClient *asynq.Client, asynqServer *asynq.Server, asyqRouter *asynq.ServeMux, r *redis.Client, logger *zap.Logger) *AuthController {
+	return &AuthController{DB: db, AsyncClient: asynqClient, AsynqServer: asynqServer, AsynqRouter: asyqRouter, Redis: r, Logger: logger}
 }
 
 func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
@@ -59,17 +60,18 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 	}
 
 	logger := logger2.NewZapSentryLogger(loggerOpts)
-	logger.Debug("[controllers][AppAuthRedirect] developer - Request ID passed", zap.String("request_id", reqId))
+	a.Logger = logger
+	a.Logger.Debug("[controllers][AppAuthRedirect] developer - Request ID passed", zap.String("request_id", reqId))
 
 	if pubKey == "" {
-		logger.Error("[controllers][AppAuthRedirect] developer -  error: no app id provided\n")
+		a.Logger.Error("[controllers][AppAuthRedirect] developer -  error: no app id provided\n")
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "App ID is not present. please pass your app id as a header")
 	}
 
 	// get the hostname
 	hostname := ctx.Hostname()
 	if hostname == "" {
-		logger.Error("[controllers][AppAuthRedirect] developer -  error: no hostname provided")
+		a.Logger.Error("[controllers][AppAuthRedirect] developer -  error: no hostname provided")
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Hostname is not present. please pass your hostname as a header")
 	}
 
@@ -79,7 +81,7 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 
 	if aScopes == "" && platform != deezer.IDENTIFIER {
 		//log.Printf("[controllers][AppAuthRedirect] developer -  error: no scopes provided. Please pass the scope you want to request from the user\n")
-		logger.Error("[controllers][AppAuthRedirect] developer -  error: no scopes provided while trying to connect platform.", zap.String("platform", platform))
+		a.Logger.Error("[controllers][AppAuthRedirect] developer -  error: no scopes provided while trying to connect platform.", zap.String("platform", platform))
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "No scopes provided. Please pass the scope you want to request from the user")
 	}
 
@@ -104,7 +106,7 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 	// validate app id is a valid uuid
 	isValid := util.IsValidUUID(pubKey)
 	if !isValid {
-		logger.Error("[controllers][AppAuthRedirect] developer -  error: invalid public key", zap.String("public_key", pubKey))
+		a.Logger.Error("[controllers][AppAuthRedirect] developer -  error: invalid public key", zap.String("public_key", pubKey))
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Invalid public key")
 	}
 
@@ -116,11 +118,11 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return util.ErrorResponse(ctx, fiber.StatusNotFound, "not found", "App not found")
 		}
-		logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to  fetch the developer app with pubKey", zap.Error(err), zap.String("public_key", pubKey))
+		a.Logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to  fetch the developer app with pubKey", zap.Error(err), zap.String("public_key", pubKey))
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 	}
 
-	logger.Info("[controllers][AppAuthRedirect] developer -  fetched developer app", zap.String("app_name", developerApp.Name))
+	a.Logger.Info("[controllers][AppAuthRedirect] developer -  fetched developer app", zap.String("app_name", developerApp.Name))
 
 	// fetch the app integration integrationCredentials
 	//var integrationCredentials []byte
@@ -149,13 +151,13 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 	switch platform {
 	case spotify.IDENTIFIER:
 		if string(developerApp.SpotifyCredentials) == "" {
-			logger.Error("[controllers][AppAuthRedirect] developer -  error: spotify integration is not enabled for this app")
+			a.Logger.Error("[controllers][AppAuthRedirect] developer -  error: spotify integration is not enabled for this app")
 			return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Spotify integration is not enabled for this app. Please make sure you update the app with your Spotify credentials")
 		}
 
 		credentials, decErr := util.Decrypt(developerApp.SpotifyCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
 		if decErr != nil {
-			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to decrypt spotify integrationCredentials", zap.Error(decErr))
+			a.Logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to decrypt spotify integrationCredentials", zap.Error(decErr))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 		var decryptedCredentials blueprint.IntegrationCredentials
@@ -163,17 +165,17 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 		// deserialize the app integration integrationCredentials
 		serErr := json.Unmarshal(credentials, &decryptedCredentials)
 		if serErr != nil {
-			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to deserialize spotify integrationCredentials", zap.Error(serErr))
+			a.Logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to deserialize spotify integrationCredentials", zap.Error(serErr))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 		encryptedToken, sErr := util.SignAuthJwt(&redirectToken)
 		if sErr != nil {
-			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to sign spotify auth jwt", zap.Error(sErr))
+			a.Logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to sign spotify auth jwt", zap.Error(sErr))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 		authURL, fErr := spotify.FetchAuthURL(string(encryptedToken), redirectURL, authScopes, &decryptedCredentials)
 		if fErr != nil {
-			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to fetch spotify auth url", zap.Error(fErr))
+			a.Logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to fetch spotify auth url", zap.Error(fErr))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", fErr.Error())
 		}
 
@@ -183,7 +185,7 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 	case deezer.IDENTIFIER:
 		redirectToken.Platform = "deezer"
 		if string(developerApp.DeezerCredentials) == "" {
-			logger.Error("[controllers][AppAuthRedirect] developer -  error: deezer integration is not enabled for this app")
+			a.Logger.Error("[controllers][AppAuthRedirect] developer -  error: deezer integration is not enabled for this app")
 			return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Deezer integration is not enabled for this app. Please make sure you update the app with your Deezer credentials")
 		}
 
@@ -191,14 +193,14 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 		// decrypt the app integration integrationCredentials
 		credentials, decErr := util.Decrypt(developerApp.DeezerCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
 		if decErr != nil {
-			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to decrypt deezer integrationCredentials", zap.Error(decErr))
+			a.Logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to decrypt deezer integrationCredentials", zap.Error(decErr))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		// deserialize the app integration integrationCredentials
 		dErr := json.Unmarshal(credentials, &decryptedCredentials)
 		if dErr != nil {
-			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to deserialize deezer integrationCredentials", zap.Error(dErr))
+			a.Logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to deserialize deezer integrationCredentials", zap.Error(dErr))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
@@ -210,7 +212,7 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 		return util.SuccessResponse(ctx, fiber.StatusOK, response)
 	// TODO: handle apple music auth
 	case applemusic.IDENTIFIER:
-		logger.Warn("[controllers][AppAuthRedirect] developer -  error: apple music auth not implemented yet")
+		a.Logger.Warn("[controllers][AppAuthRedirect] developer -  error: apple music auth not implemented yet")
 		return util.ErrorResponse(ctx, fiber.StatusNotImplemented, "not supported", "Apple music auth not implemented yet")
 	}
 
@@ -233,16 +235,17 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 	reqId := ctx.Get("x-orchdio-request-id")
 	loggerOpts := &blueprint.OrchdioLoggerOptions{
 		RequestID:            reqId,
-		ApplicationPublicKey: zap.String("pubkey:", developerPubKey.(string)).String,
+		ApplicationPublicKey: zap.Any("pubkey:", developerPubKey).String,
 		Platform:             platform,
 	}
 
 	logger := logger2.NewZapSentryLogger(loggerOpts)
+	a.Logger = logger
 
 	// if the verb is POST, it means that the auth is most likely Apple Music auth, so we'll handle it differently
 	if ctx.Method() == "POST" {
 		// apple music auth flow
-		logger.Info("[controllers][HandleAppAuthRedirect] developer -  handling apple music auth flow")
+		a.Logger.Info("[controllers][HandleAppAuthRedirect] developer -  handling apple music auth flow")
 		uniqueID := uuid.NewString()
 		encryptionSecret := os.Getenv("ENCRYPTION_SECRET")
 		// todo: add a new "verified_email" column in the db
@@ -252,7 +255,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		body := &blueprint.AppleMusicAuthBody{}
 		err := ctx.BodyParser(body)
 		if err != nil {
-			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to parse apple music auth body", zap.Error(err))
+			a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to parse apple music auth body", zap.Error(err))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
@@ -260,7 +263,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		state := body.State
 
 		if state == "" {
-			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: no state present. please pass a state for apple music auth")
+			a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: no state present. please pass a state for apple music auth")
 			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "no state present. please pass a state for apple music auth")
 		}
 
@@ -270,7 +273,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			if errors.Is(err, sql.ErrNoRows) {
 				return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "invalid app. please make sure that the public key belongs to an existing app.")
 			}
-			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch developer app", zap.Error(err))
+			a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch developer app", zap.Error(err))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
@@ -280,7 +283,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		}
 		encryptedRefreshToken, err := util.Encrypt([]byte(body.MusicToken), []byte(encryptionSecret))
 		if err != nil {
-			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to encrypt apple music user token", zap.Error(err))
+			a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to encrypt apple music user token", zap.Error(err))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
@@ -290,7 +293,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		hash := md5.New()
 		_, err = hash.Write([]byte(body.Email))
 		if err != nil {
-			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to hash apple music user email", zap.Error(err))
+			a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to hash apple music user email", zap.Error(err))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
@@ -300,7 +303,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 
 		err = newUser.StructScan(userProfile)
 		if err != nil {
-			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to create new user during final Auth step", zap.Error(err), zap.String("platform", "apple_music"))
+			a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to create new user during final Auth step", zap.Error(err), zap.String("platform", "apple_music"))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 		updatedUserCredentials.Username = displayName
@@ -320,7 +323,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 
 		authToken, err := util.SignJwt(&t)
 		if err != nil {
-			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign apple music auth jwt", zap.Error(err))
+			a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign apple music auth jwt", zap.Error(err))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 		var authedUserEmail = body.Email
@@ -336,26 +339,26 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 
 		userAppIDBytes, err := userAppController.CreateOrUpdateUserApp(userAppData)
 		if err != nil {
-			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to create new or update apple music app", zap.Error(err))
+			a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to create new or update apple music app", zap.Error(err))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		if userAppIDBytes != nil {
-			logger.Warn("[controllers][HandleAppAuthRedirect] developer - User has not created an apple music app before. Created one",
+			a.Logger.Warn("[controllers][HandleAppAuthRedirect] developer - User has not created an apple music app before. Created one",
 				zap.String("user_id", userProfile.UUID.String()), zap.String("username", displayName))
 		}
 		_, err = a.DB.Exec(queries.UpdatePlatformUserNameIdAndToken, updatedUserCredentials.Username,
 			updatedUserCredentials.PlatformId, updatedUserCredentials.Token, userProfile.UUID.String(), updatedUserCredentials.Platform, string(userAppIDBytes))
 		if err != nil {
-			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to update user credentials", zap.Error(err))
+			a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to update user credentials", zap.Error(err))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
-		logger.Info("[controllers][HandleAppAuthRedirect] developer -  user authorization and authentication done")
+		a.Logger.Info("[controllers][HandleAppAuthRedirect] developer -  user authorization and authentication done")
 
 		newUserApp, err := database.FetchAppByPublicKeyWithoutDevId(body.App)
 		if err != nil {
-			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch user app", zap.Error(err))
+			a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch user app", zap.Error(err))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
@@ -382,11 +385,11 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		// serialize the task data
 		_, err = json.Marshal(emailTaskData)
 		if err != nil {
-			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to serialize email task data", zap.Error(err))
+			a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to serialize email task data", zap.Error(err))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
-		logger.Info("[controllers][HandleAppAuthRedirect] developer - Authentication done. sending email notification")
+		a.Logger.Info("[controllers][HandleAppAuthRedirect] developer - Authentication done. sending email notification")
 		ctx.Accepts("access-control-allow-credentials", "true")
 		return util.SuccessResponse(ctx, fiber.StatusOK, map[string]interface{}{
 			"token": string(authToken),
@@ -416,7 +419,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		errorCode := ctx.Query("error")
 		encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
 		if state == "" && ctxPlatform != "applemusic" {
-			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: no state present. please pass a state")
+			a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: no state present. please pass a state")
 			if ctxPlatform == "deezer" {
 				return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "bad request", "You must provide a state. A state is the same as your Orchdio app id and must be updated both in your app credentials on Orchdio and in your app profile on Deezer")
 			}
@@ -436,10 +439,10 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			// decode state
 			if err != nil {
 				if errors.Is(err, jwt.ErrTokenExpired) {
-					logger.Warn("[controllers][HandleAppAuthRedirect] developer -  error: token expired", zap.Error(err), zap.String("platform", ctxPlatform))
+					a.Logger.Warn("[controllers][HandleAppAuthRedirect] developer -  error: token expired", zap.Error(err), zap.String("platform", ctxPlatform))
 					return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "token expired")
 				}
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: could not decode the auth token", zap.Error(err))
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: could not decode the auth token", zap.Error(err))
 				return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "unable to decode state")
 			}
 			decodedState = dec
@@ -464,7 +467,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 				// fetch the deezer app using the state. deezer redirects url is limited to 100 bytes. so we generate a shortid as state
 				dState, err := url.QueryUnescape(state)
 				if len(dState) > 10 {
-					logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: invalid state. Too long", zap.String("state", dState))
+					a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: invalid state. Too long", zap.String("state", dState))
 					return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "invalid state.")
 				}
 
@@ -475,7 +478,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 					if errors.Is(err, sql.ErrNoRows) {
 						return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "invalid state. please try again")
 					}
-					logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch app by deezer state", zap.Error(err))
+					a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch app by deezer state", zap.Error(err))
 					return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "unable to fetch app by deezer state")
 				}
 
@@ -506,14 +509,14 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			if errors.Is(err, sql.ErrNoRows) {
 				return util.ErrorResponse(ctx, fiber.StatusNotFound, "not found", "App not found")
 			}
-			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch app by app id", zap.Error(err))
+			a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch app by app id", zap.Error(err))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
-		logger.Info("[controllers][HandleAppAuthRedirect] developer - App found.", zap.String("app_name", app.Name), zap.String("app_uuid", app.UID.String()), zap.String("Organization", app.Organization))
+		a.Logger.Info("[controllers][HandleAppAuthRedirect] developer - App found.", zap.String("app_name", app.Name), zap.String("app_uuid", app.UID.String()), zap.String("Organization", app.Organization))
 		hostname := ctx.Hostname()
 		if hostname == "" {
-			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: no hostname provided")
+			a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: no hostname provided")
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Could not get hostname from request")
 		}
 
@@ -534,33 +537,33 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			// create a new http request to be used for the spotify auth
 			r, rErr := http.NewRequest("GET", string(ctx.Request().RequestURI()), nil)
 			if rErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to create new http request for spotify auth", zap.Error(rErr))
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to create new http request for spotify auth", zap.Error(rErr))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
 			defer func() error {
 				if zErr := recover(); zErr != nil {
-					logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: app panicked in HandleAppAuthRedirect")
+					a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: app panicked in HandleAppAuthRedirect")
 					return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 				}
 				return nil
 			}()
 
 			if app.SpotifyCredentials == nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: No spotify credentials found for app. Please add spotify credential", zap.String("app_pubkey", app.PublicKey.String()))
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: No spotify credentials found for app. Please add spotify credential", zap.String("app_pubkey", app.PublicKey.String()))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
 			// decrypt the app's integration credentials
 			decryptedIntegrationCredentials, dErr := util.Decrypt(app.SpotifyCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
 			if dErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to decrypt spotify credentials", zap.Error(dErr))
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to decrypt spotify credentials", zap.Error(dErr))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 			integrationCredentials := &blueprint.IntegrationCredentials{}
 			err = json.Unmarshal(decryptedIntegrationCredentials, integrationCredentials)
 			if err != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to unmarshal spotify credentials", zap.Error(err))
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to unmarshal spotify credentials", zap.Error(err))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
@@ -569,42 +572,42 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			client, refreshToken, cErr := spotify.CompleteUserAuth(ctx.Context(), r, redirectURL, integrationCredentials)
 			if cErr != nil {
 				if errors.Is(err, blueprint.EINVALIDAUTHCODE) {
-					logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: invalid auth code")
+					a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: invalid auth code")
 					return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "invalid auth code")
 				}
 
 				if err.Error() == "invalid_grant" {
-					logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: invalid grant")
+					a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: invalid grant")
 					return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "invalid grant")
 				}
 				if err.Error() == "invalid_client" {
-					logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: invalid client")
+					a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: invalid client")
 					return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "invalid client. please make sure the client id is valid")
 				}
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to complete spotify user auth", zap.Error(cErr))
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to complete spotify user auth", zap.Error(cErr))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
 			encryptedRefreshToken, rErr := util.Encrypt(refreshToken, []byte(encryptionSecretKey))
 			if rErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to encrypt spotify refresh token", zap.Error(rErr))
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to encrypt spotify refresh token", zap.Error(rErr))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
 			user, uErr := client.CurrentUser(ctx.Context())
 			if uErr != nil {
 				if strings.Contains(err.Error(), "User not registered") {
-					logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: user not registered", zap.Error(uErr))
+					a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: user not registered", zap.Error(uErr))
 					return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "You have not been added to the waitlist for access to spotify. Please join the waitlist and try again.")
 				}
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to get current user during auth", zap.Error(uErr))
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to get current user during auth", zap.Error(uErr))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
 			newUser := a.DB.QueryRowx(queries.CreateUserQuery, user.Email, uniqueId)
 			scErr := newUser.StructScan(userProfile)
 			if scErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to scan user during final auth", zap.Error(scErr))
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to scan user during final auth", zap.Error(scErr))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
@@ -629,7 +632,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 
 			authT, sErr := util.SignJwt(&t)
 			if sErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign spotify auth jwt", zap.Error(sErr))
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign spotify auth jwt", zap.Error(sErr))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 			// update the redirect url to the developer app redirect url. this is the final redirect url at the end of the auth flow
@@ -637,27 +640,27 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 
 			// deezer auth flow
 		case deezer.IDENTIFIER:
-			logger.Info("[controllers][HandleAppAuthRedirect] developer -  handling deezer auth flow")
+			a.Logger.Info("[controllers][HandleAppAuthRedirect] developer -  handling deezer auth flow")
 			if state == "" {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: no state present. please pass a state")
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: no state present. please pass a state")
 				return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "no code present. please pass a code")
 			}
 
 			if errorCode == "access_denied" {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: deezer returned an error", zap.String("error", errorCode))
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: deezer returned an error", zap.String("error", errorCode))
 				return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "Deezer app access denied")
 			}
 
 			var deezerCredentials blueprint.IntegrationCredentials
 			creds, credErr := util.Decrypt(app.DeezerCredentials, []byte(encryptionSecretKey))
 			if credErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to decrypt deezer credentials", zap.Error(credErr))
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to decrypt deezer credentials", zap.Error(credErr))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
 			err = json.Unmarshal(creds, &deezerCredentials)
 			if err != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to unmarshal deezer credentials", zap.Error(err))
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to unmarshal deezer credentials", zap.Error(err))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
@@ -666,27 +669,27 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			deezerUser, aErr := deezerAuth.CompleteUserAuth(deezerToken)
 			if aErr != nil {
 				if errors.Is(err, blueprint.EINVALIDPERMISSIONS) {
-					logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: deezer returned an invalid permissions error", zap.Error(aErr))
+					a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: deezer returned an invalid permissions error", zap.Error(aErr))
 					return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "Deezer app access denied. Please check the permissions passed")
 				}
 
 				if errors.Is(err, blueprint.ESERVICECLOSED) {
-					logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: deezer returned a service closed error. free service closed", zap.Error(aErr))
+					a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: deezer returned a service closed error. free service closed", zap.Error(aErr))
 					return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "Deezer app access denied. Free service closed")
 				}
 
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to complete deezer auth", zap.Error(aErr))
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to complete deezer auth", zap.Error(aErr))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
 			if deezerUser == nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: deezer user is empty. This is not expected at this point.")
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: deezer user is empty. This is not expected at this point.")
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
 			encryptedRefreshToken, encErr := util.Encrypt(deezerToken, []byte(encryptionSecretKey))
 			if encErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to encrypt deezer refresh token", zap.Error(encErr))
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to encrypt deezer refresh token", zap.Error(encErr))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
@@ -695,7 +698,7 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 
 			err = newUser.StructScan(userProfile)
 			if err != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to scan deezer user during final auth", zap.Error(err))
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to scan deezer user during final auth", zap.Error(err))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
@@ -717,18 +720,18 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 
 			authToken, sErr := util.SignJwt(&t)
 			if sErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign deezer auth jwt", zap.Error(sErr))
+				a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign deezer auth jwt", zap.Error(sErr))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 			redirectURL = fmt.Sprintf("%s?token=%s", app.RedirectURL, string(authToken))
 
 		// redirect to the redirect url from the state token.
 		default:
-			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: invalid platform", zap.String("platform", decodedState.Platform))
+			a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: invalid platform", zap.String("platform", decodedState.Platform))
 			return util.ErrorResponse(ctx, fiber.StatusNotImplemented, "unauthorized", "invalid platform")
 		}
 
-		logger.Info("[controllers][HandleAppAuthRedirect] developer -  App authenticating user is", zap.String("app_name", app.Name))
+		a.Logger.Info("[controllers][HandleAppAuthRedirect] developer -  App authenticating user is", zap.String("app_name", app.Name))
 		// create new user app
 		userAppController := services.NewUserDevAppController(a.DB)
 		userAppData := &blueprint.CreateNewUserAppData{
@@ -742,24 +745,24 @@ func (a *AuthController) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		// and we just updated the refresh token and scopes.
 		userAppIDBytes, err := userAppController.CreateOrUpdateUserApp(userAppData)
 		if err != nil {
-			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to create user app", zap.Error(err))
+			a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to create user app", zap.Error(err))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 		if userAppIDBytes != nil {
-			logger.Info("[controllers][HandleAppAuthRedirect] developer -  User has not created an app before. Created one.", zap.String("appInfo", app.UID.String()),
+			a.Logger.Info("[controllers][HandleAppAuthRedirect] developer -  User has not created an app before. Created one.", zap.String("appInfo", app.UID.String()),
 				zap.String("platform", decodedState.Platform))
 		}
 
 		_, err = a.DB.Exec(queries.UpdatePlatformUserNameIdAndToken, updatedUserCredentials.Username, updatedUserCredentials.PlatformId,
 			updatedUserCredentials.Token, userProfile.UUID.String(), updatedUserCredentials.Platform, string(userAppIDBytes))
 		if err != nil {
-			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to update platform usernames", zap.Error(err))
+			a.Logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to update platform usernames", zap.Error(err))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		// we dont really need to create a new task in the db since it is not a task that contains the data needed by a developer
 		// set the task handler
-		logger.Info("[controllers][HandleAppAuthRedirect] developer -  user authorization and authentication done. Redirecting")
+		a.Logger.Info("[controllers][HandleAppAuthRedirect] developer -  user authorization and authentication done. Redirecting")
 		return ctx.Redirect(redirectURL, fiber.StatusTemporaryRedirect)
 	}
 

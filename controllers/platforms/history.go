@@ -2,6 +2,7 @@ package platforms
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/gofiber/fiber/v2"
 	"log"
 	"net/http"
@@ -25,12 +26,13 @@ func (p *Platforms) FetchTrackListeningHistory(ctx *fiber.Ctx) error {
 		// TODO: implement fetching user listening history from apple music api
 		decryptedCreds, err := util.DecryptIntegrationCredentials(app.AppleMusicCredentials)
 		if err != nil {
-			if err == blueprint.ENOCREDENTIALS {
+			if errors.Is(err, blueprint.ENOCREDENTIALS) {
 				log.Printf("[platforms][FetchListeningHistory] error - Apple Music credentials are nil")
 				return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "authorization error", "The developer has not provided Apple Music credentials for this app and cannot access this resource.")
 			}
 		}
-		history, err := applemusic.FetchTrackListeningHistory(decryptedCreds.AppRefreshToken, userCtx.RefreshToken)
+		appleService := applemusic.NewService(decryptedCreds, p.DB, p.Redis, p.Logger)
+		history, err := appleService.FetchTrackListeningHistory(decryptedCreds.AppRefreshToken, userCtx.RefreshToken)
 		if err != nil {
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal server error", err.Error())
 		}
@@ -53,7 +55,7 @@ func (p *Platforms) FetchTrackListeningHistory(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "authorization error", "Failed to fetch listening history from Deezer")
 		}
 
-		deezerService := deezer.NewService(&deezerCredentials, p.DB, p.Redis)
+		deezerService := deezer.NewService(&deezerCredentials, p.DB, p.Redis, p.Logger)
 		history, err := deezerService.FetchTracksListeningHistory(userCtx.RefreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchListeningHistory] error - %s", err.Error())

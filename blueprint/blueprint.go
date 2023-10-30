@@ -556,6 +556,8 @@ type UserLibraryArtists struct {
 	Total   int          `json:"total"`
 }
 
+// AuthMiddlewareUserInfo represents the user info for users that have connected their accounts to
+// a streaming platform via an orchdio app.
 type AuthMiddlewareUserInfo struct {
 	Platform     string `json:"platform"`
 	PlatformID   string `json:"platform_ids"`
