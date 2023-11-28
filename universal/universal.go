@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 	"log"
 	"orchdio/blueprint"
+	webhook "orchdio/convoy.go"
 	"orchdio/db"
 	logger2 "orchdio/logger"
 	"orchdio/services/applemusic"
@@ -406,6 +407,15 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 
 	orchdioLogger.Info("[controllers][platforms][deezer][ConvertEntity] info - conversion done", zap.String("entity", info.Entity),
 		zap.String("entity_id", info.EntityID), zap.String("app_id", info.App))
+
+	// send event to webhook.
+	convoyInstance := webhook.NewConvoy()
+	// todo: get event name from blueprint
+	err = convoyInstance.SendEvent(app.ConvoyEndpointID, "track:conversion", conversion)
+	if err != nil {
+		orchdioLogger.Error("[controllers][platforms][deezer][ConvertEntity] error - could not send event to webhook", zap.Error(err))
+		return nil, err
+	}
 	return &conversion, nil
 }
 

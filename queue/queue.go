@@ -74,7 +74,7 @@ func (o *OrchdioQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task
 	cErr := o.PlaylistHandler(task.ResultWriter().TaskID(), data.ShortURL, data.LinkInfo, data.App.UID.String())
 	if cErr != nil {
 		log.Printf("[queue][PlaylistConversionHandler][conversion] - error processing task in queue handler: %v", cErr)
-		if err == blueprint.EPHANTOMERR {
+		if errors.Is(err, blueprint.EPHANTOMERR) {
 			log.Printf("[queue][PlaylistConversionHandler][conversion] - phantom error, skipping but marking as done")
 			return nil
 		}

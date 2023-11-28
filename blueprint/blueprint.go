@@ -415,6 +415,7 @@ type DeveloperApp struct {
 	DeezerCredentials     []byte    `json:"deezer_credentials,omitempty" db:"deezer_credentials"`
 	TidalCredentials      []byte    `json:"tidal_credentials,omitempty" db:"tidal_credentials"`
 	DeezerState           string    `json:"deezer_state,omitempty" db:"deezer_state,omitempty"`
+	ConvoyEndpointID      string    `json:"endpoint_id,omitempty" db:"endpoint_id"`
 }
 
 type UpdateDeveloperAppData struct {
@@ -743,6 +744,12 @@ type OrchdioLoggerOptions struct {
 	Error                interface{} `json:"error"`
 	Message              string      `json:"message"`
 	AddTrace             bool        `json:"add_trace"`
+}
+
+type ConvoyWebhookCreate struct {
+	ID          string `json:"id"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
 }
 
 //// DeveloperAppWithUserApp is similar to ```DeveloperApp``` but includes the user app id and other user app info

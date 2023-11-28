@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 	"log"
 	"orchdio/blueprint"
+	webhook "orchdio/convoy.go"
 	"orchdio/db"
 	"orchdio/services/applemusic"
 	"orchdio/services/deezer"
@@ -121,14 +122,22 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 		d.Logger.Error("[controllers][CreateApp] developer -  error: could not create new developer app", zap.Error(err))
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
 	}
+	// create a new convoy webhook endpoint
+	convoyInst := webhook.NewConvoy()
+	whResponse, err := convoyInst.CreateEndpoint(body.WebhookURL, body.Description)
+	if err != nil {
+		d.Logger.Error("[controllers][CreateApp] developer -  error: could not create webhook endpoint", zap.Error(err))
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
+	}
 
 	// update the app credentials
-	err = database.UpdateIntegrationCredentials(encryptedAppData, string(uid), body.IntegrationPlatform, body.RedirectURL, body.WebhookURL)
+	err = database.UpdateIntegrationCredentials(encryptedAppData, string(uid), body.IntegrationPlatform, body.RedirectURL, body.WebhookURL, whResponse.ID)
 	if err != nil {
 		d.Logger.Error("[controllers][CreateApp] developer -  error: could not update app credentials", zap.Error(err))
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
 	}
 	d.Logger.Info("[controllers][CreateApp] developer -  new app created", zap.String("app_id", string(uid)))
+
 	res := map[string]string{
 		"app_id": string(uid),
 	}
@@ -179,6 +188,24 @@ func (d *Controller) UpdateApp(ctx *fiber.Ctx) error {
 		}
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not update developer app")
 	}
+
+	devApp, dErr := database.FetchAppByAppId(ctx.Params("appId"))
+	if dErr != nil {
+		d.Logger.Error("[controllers][UpdateApp] developer -  error: could not fetch app in Database", zap.Error(err))
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not fetch developer app")
+	}
+
+	if devApp.ConvoyEndpointID == "" {
+		d.Logger.Error("[controllers][UpdateApp] developer -  error: convoy endpoint id is empty")
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not fetch developer app")
+	}
+
+	convoyInstance := webhook.NewConvoy()
+	err = convoyInstance.UpdateEndpoint(body.WebhookURL, body.Description, devApp.ConvoyEndpointID)
+	if err != nil {
+		d.Logger.Error("[controllers][UpdateApp] developer -  error: could not update convoy endpoint", zap.Error(err))
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not update developer app")
+	}
 	d.Logger.Info("[controllers][UpdateApp] developer -  app updated", zap.String("app_id", ctx.Params("appId")))
 	return util.SuccessResponse(ctx, fiber.StatusOK, "App updated successfully")
 }
@@ -216,14 +243,30 @@ func (d *Controller) DeleteApp(ctx *fiber.Ctx) error {
 		d.Logger.Error("[controllers][DeleteApp] developer -  error: appId is empty")
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "App ID is empty. Please pass a valid app ID")
 	}
-
-	// delete the app
+	convoyInstance := webhook.NewConvoy()
 	database := db.NewDB{DB: d.DB}
-	err := database.DeleteApp(ctx.Params("appId"), claims.DeveloperID)
+
+	devApp, err := database.FetchAppByAppIdWithoutDevId(ctx.Params("appId"))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			d.Logger.Error("[controllers][DeleteApp] developer -  error: could not fetch app in Database. App does not exist", zap.Error(err), zap.String("app_id", ctx.Params("appId")))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not fetch developer app")
+		}
+	}
+
+	err = convoyInstance.DeleteEndpoint(devApp.ConvoyEndpointID)
+	if err != nil {
+		d.Logger.Error("[controllers][DeleteApp] developer -  error: could not delete convoy endpoint", zap.Error(err), zap.String("app_id", ctx.Params("appId")))
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not delete developer app")
+	}
+	// delete the app
+	err = database.DeleteApp(ctx.Params("appId"), claims.DeveloperID)
 	if err != nil {
 		d.Logger.Error("[controllers][DeleteApp] developer -  error: could not delete app in Database", zap.Error(err))
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occured")
 	}
+
+	//err = convoyInstance.DeleteEndpoint(ctx.Params("webhookId"))
 	d.Logger.Info("[controllers][DeleteApp] developer -  app deleted", zap.String("app_id", ctx.Params("appId")))
 	return util.SuccessResponse(ctx, fiber.StatusOK, "App deleted successfully")
 }

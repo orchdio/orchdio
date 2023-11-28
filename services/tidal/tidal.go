@@ -3,6 +3,7 @@ package tidal
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/jmoiron/sqlx"
@@ -60,18 +61,15 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 		tracks, rErr := s.FetchTrackWithID(info.EntityID)
 
 		if rErr != nil {
-			if rErr == blueprint.EBADREQUEST {
+			if errors.Is(rErr, blueprint.EBADREQUEST) {
 				log.Printf("\n[services][tidal][SearchWithID] - Error fetching track conversion from TIDAL %v\n", rErr)
 			}
 
-			if rErr == blueprint.EBADCREDENTIALS {
+			if errors.Is(rErr, blueprint.EBADCREDENTIALS) {
 				log.Printf("\n[services][tidal][SearchWithID] - Error fetching track conversion from TIDAL %v\n", rErr)
 			}
 			return nil, rErr
 		}
-
-		log.Printf("\n[services][tidal][SearchWithID] - Track ID conversion (source conversion) - are here")
-		spew.Dump(tracks)
 
 		var artistes []string
 		for _, artist := range tracks.Artists {

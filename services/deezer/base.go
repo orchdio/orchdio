@@ -234,6 +234,7 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 
 // SearchTrackWithTitleChan searches for a track similar to `SearchTrackWithTitle` but uses a channel
 func (s *Service) SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup, red *redis.Client) {
+	defer wg.Done()
 	result, err := s.SearchTrackWithTitle(title, artiste)
 	if err != nil {
 		defer wg.Done()

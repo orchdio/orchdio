@@ -41,14 +41,14 @@ func (d *NewDB) CreateNewApp(name, description, redirectURL, webhookURL, publicK
 }
 
 // UpdateIntegrationCredentials updates the integration credentials for an app. this is the app id and secret for the platform
-func (d *NewDB) UpdateIntegrationCredentials(credentials []byte, appId, platform, redirectURL, webhookURL string) error {
+func (d *NewDB) UpdateIntegrationCredentials(credentials []byte, appId, platform, redirectURL, webhookURL, endpointId string) error {
 	log.Printf("[db][UpdateIntegrationCredentials] developer -  updating integration credentials for app: %s\n", appId)
 	if d.Logger == nil {
 		d.Logger = logger2.NewZapSentryLogger()
 	}
 
 	// create a new app
-	_, err := d.DB.Exec(queries.UpdateAppIntegrationCredentials, credentials, appId, platform, webhookURL, redirectURL)
+	_, err := d.DB.Exec(queries.UpdateAppIntegrationCredentials, credentials, appId, platform, webhookURL, redirectURL, endpointId)
 	if err != nil {
 		d.Logger.Error("[db][UpdateIntegrationCredentials] developer -  error: could not update integration credentials for app", zap.Error(err), zap.String("app_id", appId))
 		return err

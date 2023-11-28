@@ -4,9 +4,12 @@ module orchdio
 go 1.19
 
 require (
+	github.com/TheZeroSlave/zapsentry v1.17.0
 	github.com/antoniodipinto/ikisocket v0.0.0-20220426120810-e8049cc9e56b
 	github.com/badoux/goscraper v0.0.0-20190827161153-36995ce6b19f
 	github.com/davecgh/go-spew v1.1.1
+	github.com/frain-dev/convoy-go/v2 v2.0.1
+	github.com/getsentry/sentry-go v0.23.0
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gofiber/fiber/v2 v2.37.1
 	github.com/gofiber/jwt/v3 v3.2.12
@@ -16,7 +19,7 @@ require (
 	github.com/hibiken/asynq v0.23.0
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/joho/godotenv v1.4.0
-	github.com/lib/pq v1.10.6
+	github.com/lib/pq v1.10.7
 	github.com/minchao/go-apple-music v0.0.0-20210727003702-cefe2063f418
 	github.com/nleeper/goment v1.4.4
 	github.com/raitonoberu/ytmusic v0.0.0-20220927155833-3d1de71caa11
@@ -28,23 +31,28 @@ require (
 	github.com/vicanso/go-axios v1.4.3
 	github.com/vmihailenco/taskq/v3 v3.2.8
 	github.com/zmb3/spotify/v2 v2.2.0
-	golang.org/x/crypto v0.9.0
-	golang.org/x/oauth2 v0.0.0-20220909003341-f21342109be1
-	golang.org/x/text v0.12.0
+	go.uber.org/zap v1.25.0
+	golang.org/x/crypto v0.14.0
+	golang.org/x/oauth2 v0.0.0-20221014153046-6fdb5e3db783
+	golang.org/x/text v0.13.0
 )
 
 require (
-	github.com/TheZeroSlave/zapsentry v1.17.0 // indirect
 	github.com/andybalholm/brotli v1.0.5 // indirect
 	github.com/antihax/optional v1.0.0 // indirect
+	github.com/aws/aws-sdk-go-v2 v1.21.2 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.43 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.4.37 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.24.7 // indirect
+	github.com/aws/smithy-go v1.15.0 // indirect
 	github.com/bsm/redislock v0.7.1 // indirect
 	github.com/capnm/sysinfo v0.0.0-20130621111458-5909a53897f3 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/fasthttp/websocket v1.5.0 // indirect
+	github.com/frain-dev/convoy v0.9.2 // indirect
 	github.com/fsnotify/fsnotify v1.5.1 // indirect
-	github.com/getsentry/sentry-go v0.23.0 // indirect
 	github.com/go-redis/redis_rate/v9 v9.1.2 // indirect
 	github.com/gofiber/websocket/v2 v2.0.22 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
@@ -53,6 +61,9 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/klauspost/compress v1.16.0 // indirect
+	github.com/pierrec/lz4/v4 v4.1.15 // indirect
+	github.com/segmentio/kafka-go v0.4.44 // indirect
+	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
 	github.com/texttheater/golang-levenshtein/levenshtein v0.0.0-20200805054039-cae8b0eaed6c // indirect
 	github.com/tkuchiki/go-timezone v0.2.2 // indirect
@@ -64,13 +75,12 @@ require (
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.25.0 // indirect
 	golang.org/x/exp v0.0.0-20220303212507-bbda1eaf7a17 // indirect
-	golang.org/x/net v0.10.0 // indirect
-	golang.org/x/sys v0.11.0 // indirect
+	golang.org/x/net v0.17.0 // indirect
+	golang.org/x/sys v0.13.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/genproto v0.0.0-20220930163606-c98284e70a91 // indirect
-	google.golang.org/grpc v1.49.0 // indirect
+	google.golang.org/genproto v0.0.0-20221109142239-94d6d90a7d66 // indirect
+	google.golang.org/grpc v1.50.1 // indirect
 	google.golang.org/protobuf v1.29.1 // indirect
 )
