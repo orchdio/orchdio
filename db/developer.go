@@ -57,6 +57,21 @@ func (d *NewDB) UpdateIntegrationCredentials(credentials []byte, appId, platform
 	return nil
 }
 
+// UpdateConvoyWebhookID updates the convoy webhook ID for an App.
+func (d *NewDB) UpdateConvoyWebhookID(appId, webhookId string) error {
+	if d.Logger == nil {
+		d.Logger = logger2.NewZapSentryLogger()
+	}
+
+	_, err := d.DB.Exec(queries.UpdateConvoyEndpointID, webhookId, appId)
+	if err != nil {
+		d.Logger.Error("[db][UpdateConvoyWebhookID] developer -  error: could not update convoy webhook id for app", zap.Error(err), zap.String("app_id", appId))
+		return err
+	}
+	d.Logger.Info("[db][UpdateConvoyWebhookID] developer -  convoy webhook id updated for app", zap.String("app_id", appId))
+	return nil
+}
+
 // FetchAppByAppId fetches an app using the appId
 func (d *NewDB) FetchAppByAppId(appId string) (*blueprint.DeveloperApp, error) {
 	if d.Logger == nil {

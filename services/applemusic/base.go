@@ -119,13 +119,13 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 }
 
 // SearchTrackWithTitle searches for a track using the query.
-func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackSearchResult, error) {
-	strippedTitleInfo := util.ExtractTitle(title)
+func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error) {
+	strippedTitleInfo := util.ExtractTitle(searchData.Title)
 	// if the title is in the format of "title (feat. artiste)" then we search for the title without the feat. artiste
 	//log.Printf("Apple music: Searching with stripped artiste: %s. Original artiste: %s", strippedTitleInfo.Title, artiste)
-	if s.RedisClient.Exists(context.Background(), artiste).Val() == 1 {
-		s.Logger.Info("[services][applemusic][SearchTrackWithTitle] Track found in cache", zap.String("artiste", artiste))
-		track, err := s.RedisClient.Get(context.Background(), util.NormalizeString(artiste)).Result()
+	if s.RedisClient.Exists(context.Background(), searchData.Artists[0]).Val() == 1 {
+		s.Logger.Info("[services][applemusic][SearchTrackWithTitle] Track found in cache", zap.String("artiste", searchData.Artists[0]), zap.String("title", strippedTitleInfo.Title))
+		track, err := s.RedisClient.Get(context.Background(), util.NormalizeString(searchData.Artists[0])).Result()
 		if err != nil {
 			s.Logger.Error("[services][applemusic][SearchTrackWithTitle] Error fetching track from cache", zap.Error(err))
 			return nil, err
@@ -139,7 +139,7 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 		return result, nil
 	}
 
-	s.Logger.Info("[services][applemusic][SearchTrackWithTitle] Track not found in cache, fetching track from Apple Music", zap.String("artiste", artiste), zap.String("title", strippedTitleInfo.Title))
+	s.Logger.Info("[services][applemusic][SearchTrackWithTitle] Track not found in cache, fetching track from Apple Music", zap.Strings("artiste", searchData.Artists), zap.String("title", strippedTitleInfo.Title))
 
 	// todo: throw an error when the api key is empty. ensure that this might be the case. if not, remove the commented out code.
 	//if s.IntegrationAPIKey == "" {
@@ -170,7 +170,7 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 	}
 
 	tp := applemusic.Transport{Token: s.IntegrationAPIKey}
-	searchTerm := fmt.Sprintf("%s %s", artiste, strippedTitleInfo.Title)
+	searchTerm := fmt.Sprintf("%s %s", searchData.Artists[0], strippedTitleInfo.Title)
 	hintResponseStruct := struct {
 		Results struct {
 			Terms []string `json:"terms"`
@@ -187,7 +187,7 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 		for _, term := range hintResponseStruct.Results.Terms {
 			allArtists := strings.ReplaceAll(strings.ToLower(term), " ", ",")
 			joinedArtists := strings.Split(allArtists, ",")
-			if lo.Contains(joinedArtists, strings.ToLower(artiste)) {
+			if lo.Contains(joinedArtists, strings.ToLower(searchData.Artists[0])) {
 				searchTerm = term
 				break
 			}
@@ -213,12 +213,12 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 	}
 
 	if results.Results.Songs == nil {
-		s.Logger.Warn("[services][applemusic][SearchTrackWithTitle] No result found for track", zap.String("title", strippedTitleInfo.Title), zap.String("artiste", artiste))
+		s.Logger.Warn("[services][applemusic][SearchTrackWithTitle] No result found for track", zap.String("title", strippedTitleInfo.Title), zap.Strings("artists", searchData.Artists))
 		return nil, blueprint.ENORESULT
 	}
 
 	if len(results.Results.Songs.Data) == 0 {
-		s.Logger.Warn("[services][applemusic][SearchTrackWithTitle] No result found for track", zap.String("title", strippedTitleInfo.Title), zap.String("artiste", artiste))
+		s.Logger.Warn("[services][applemusic][SearchTrackWithTitle] No result found for track", zap.String("title", strippedTitleInfo.Title), zap.Strings("artists", searchData.Artists))
 		return nil, blueprint.ENORESULT
 	}
 
@@ -254,8 +254,8 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 		return nil, err
 	}
 
-	if lo.Contains(track.Artists, artiste) {
-		err = s.RedisClient.Set(context.Background(), fmt.Sprintf("applemusic:%s:%s", util.NormalizeString(artiste), strippedTitleInfo.Title), string(serializedTrack), time.Hour*24).Err()
+	if lo.Contains(track.Artists, searchData.Artists[0]) {
+		err = s.RedisClient.Set(context.Background(), fmt.Sprintf("applemusic:%s:%s", util.NormalizeString(searchData.Artists[0]), strippedTitleInfo.Title), string(serializedTrack), time.Hour*24).Err()
 		if err != nil {
 			s.Logger.Error("[services][applemusic][SearchTrackWithTitle] Error caching track", zap.Error(err))
 			return nil, err
@@ -268,8 +268,8 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 }
 
 // SearchTrackWithTitleChan searches for tracks using title and artistes but do so asynchronously.
-func (s *Service) SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
-	track, err := s.SearchTrackWithTitle(title, artiste)
+func (s *Service) SearchTrackWithTitleChan(searchData *blueprint.TrackSearchData, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
+	track, err := s.SearchTrackWithTitle(searchData)
 	if err != nil {
 		log.Printf("[services][applemusic][SearchTrackWithTitleChan] Error fetching track: %v\n", err)
 		defer wg.Done()
@@ -284,13 +284,15 @@ func (s *Service) SearchTrackWithTitleChan(title, artiste string, c chan *bluepr
 }
 
 // FetchTracks asynchronously fetches a list of tracks using the track id
-func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks, error) {
+func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client, appId string) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks, error) {
 	var omittedTracks []blueprint.OmittedTracks
 	var results []blueprint.TrackSearchResult
 	var ch = make(chan *blueprint.TrackSearchResult, len(tracks))
 	var wg sync.WaitGroup
 	for _, track := range tracks {
 		identifier := fmt.Sprintf("applemusic-%s-%s", track.Artistes[0], track.Title)
+
+		// fetching from cache and returning after deserializing
 		if red.Exists(context.Background(), identifier).Val() == 1 {
 			var deserializedTrack *blueprint.TrackSearchResult
 			track, err := red.Get(context.Background(), identifier).Result()
@@ -306,8 +308,14 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 			results = append(results, *deserializedTrack)
 			continue
 		}
+
+		searchData := &blueprint.TrackSearchData{
+			Title:   track.Title,
+			Artists: track.Artistes,
+			Album:   track.Album,
+		}
 		// async goes brrrr
-		go s.SearchTrackWithTitleChan(track.Title, track.Artistes[0], ch, &wg)
+		go s.SearchTrackWithTitleChan(searchData, ch, &wg)
 		chTracks := <-ch
 		if chTracks == nil {
 			omittedTracks = append(omittedTracks, blueprint.OmittedTracks{
@@ -316,6 +324,10 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 			})
 			continue
 		}
+
+		// send the webhook even to the endpoint
+		// get the
+
 		results = append(results, *chTracks)
 	}
 	wg.Wait()
@@ -323,7 +335,7 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 }
 
 // SearchPlaylistWithID fetches a list of tracks for a playlist and saves the last modified date to redis
-func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResult, error) {
+func (s *Service) SearchPlaylistWithID(id, webhookId, taskId string) (*blueprint.PlaylistSearchResult, error) {
 	tp := applemusic.Transport{Token: s.IntegrationAPIKey}
 	client := applemusic.NewClient(tp.Client())
 	playlist := &blueprint.PlaylistSearchResult{}
@@ -515,7 +527,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 
 // SearchPlaylistWithTracks fetches the tracks for a playlist based on the search result
 // from another platform
-func (s *Service) SearchPlaylistWithTracks(p *blueprint.PlaylistSearchResult) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
+func (s *Service) SearchPlaylistWithTracks(p *blueprint.PlaylistSearchResult, webhookId, taskId string) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
 	var trackSearch []blueprint.PlatformSearchTrack
 	for _, track := range p.Tracks {
 		trackSearch = append(trackSearch, blueprint.PlatformSearchTrack{
@@ -523,7 +535,7 @@ func (s *Service) SearchPlaylistWithTracks(p *blueprint.PlaylistSearchResult) (*
 			Artistes: track.Artists,
 		})
 	}
-	tracks, omittedTracks, err := s.FetchTracks(trackSearch, s.RedisClient)
+	tracks, omittedTracks, err := s.FetchTracks(trackSearch, s.RedisClient, webhookId)
 	if err != nil {
 		s.Logger.Error("[services][applemusic][FetchPlaylistTrackResultsSearchPlaylistTracks] Error fetching tracks", zap.Error(err))
 		return nil, nil

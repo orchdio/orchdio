@@ -178,6 +178,7 @@ type PlatformSearchTrack struct {
 	Title    string   `json:"title"`
 	ID       string   `json:"id"`
 	URL      string   `json:"url"`
+	Album    string   `json:"album,omitempty"`
 }
 
 // Conversion represents the final response for a typical track conversion
@@ -191,6 +192,12 @@ type Conversion struct {
 		AppleMusic *TrackSearchResult `json:"applemusic,omitempty"`
 	} `json:"platforms"`
 	ShortURL string `json:"short_url,omitempty"`
+}
+
+type TrackSearchData struct {
+	Title   string   `json:"title"`
+	Artists []string `json:"artists"`
+	Album   string   `json:"album,omitempty"`
 }
 
 type PlatformPlaylistTrackResult struct {
@@ -611,6 +618,9 @@ type SrcTargetCredentials struct {
 type ExtractedTitleInfo struct {
 	Artists []string `json:"artists"`
 	Title   string   `json:"title"`
+	// TitleExtension is the extra piece of info in the title. for example
+	// Izizwe (Red Zone Mix), Red Zone Mix is the title_extension
+	TitleExtension string `json:"title_extension,omitempty"`
 }
 
 type UserApp struct {
@@ -752,6 +762,18 @@ type ConvoyWebhookCreate struct {
 	Description string `json:"description"`
 }
 
+type PlaylistTrackConversionEvent struct {
+	Platform   string      `json:"platform"`
+	PlaylistID string      `json:"playlist_id"`
+	Event      string      `json:"event"`
+	Data       interface{} `json:"data"`
+	// ID is the id of the request. this is basically the short url
+	// generated during conversion. This is useful for tracking
+	// which request is being processed and handle the update on the target websocket
+	// server.
+	ID string `json:"id"`
+}
+
 //// DeveloperAppWithUserApp is similar to ```DeveloperApp``` but includes the user app id and other user app info
 //type DeveloperAppWithUserApp struct {
 //	ID                    int            `json:"id,omitempty" db:"id"`
@@ -764,7 +786,7 @@ type ConvoyWebhookCreate struct {
 //	RedirectURL           string         `json:"redirect_url,omitempty" db:"redirect_url"`
 //	WebhookURL            string         `json:"webhook_url,omitempty" db:"webhook_url"`
 //	VerifyToken           []byte         `json:"verify_token,omitempty" db:"verify_token"`
-//	CreatedAt             string         `json:"created_at,omitempty" db:"created_at"`
+//	CreatedAt             string         `json:"created_at,omitemptiy" db:"created_at"`
 //	UpdatedAt             string         `json:"updated_at,omitempty" db:"updated_at"`
 //	Authorized            bool           `json:"authorized,omitempty" db:"authorized"`
 //	Organization          string         `json:"organization,omitempty" db:"organization"`

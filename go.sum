@@ -814,6 +814,8 @@ github.com/frain-dev/convoy-go v1.0.2 h1:QQrvnNhTLCZwqXkfcMufwSexg687cU+qcGmY3wG
 github.com/frain-dev/convoy-go v1.0.2/go.mod h1:BTFC42HHgjO47iiXQCzMcdcn+dQ62Yqom+INtGkZIb0=
 github.com/frain-dev/convoy-go/v2 v2.0.1 h1:/E+grRf2VfaqzsfnpbDze74T8ZU3Gh+buxArqOsbrpE=
 github.com/frain-dev/convoy-go/v2 v2.0.1/go.mod h1:sQlm+jOXZrjdXcFp4fngXLhlvFGfiR0D1l4gYVncXrM=
+github.com/frain-dev/convoy-go/v2 v2.1.2 h1:wSWLod/RZmdTuS6VhWB42ZgmHTjYWERVes/twV22vTY=
+github.com/frain-dev/convoy-go/v2 v2.1.2/go.mod h1:sQlm+jOXZrjdXcFp4fngXLhlvFGfiR0D1l4gYVncXrM=
 github.com/franela/goblin v0.0.0-20200105215937-c9ffbefa60db/go.mod h1:7dvUGVsVBjqR7JHJk0brhHOZYGmfBYOrK0ZhYMEtBr4=
 github.com/franela/goreq v0.0.0-20171204163338-bcd34c9993f8/go.mod h1:ZhphrRTfi2rbfLwlschooIH4+wKKDR4Pdxhh+TRoA20=
 github.com/frankban/quicktest v1.11.3/go.mod h1:wRf/ReqHper53s+kmmSZizM8NamnL3IM0I9ntUbOk+k=
@@ -1622,6 +1624,7 @@ github.com/rogpeppe/go-internal v1.3.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFR
 github.com/rogpeppe/go-internal v1.6.1 h1:/FiVV8dS/e+YqF2JvO3yXRFbBLTIuSDkuC7aBOAvL+k=
 github.com/rogpeppe/go-internal v1.6.1/go.mod h1:xXDCJY+GAPziupqXw64V24skbSoqbTEfhy4qGm1nDQc=
 github.com/rogpeppe/go-internal v1.8.0/go.mod h1:WmiCO8CzOY8rg0OYDC4/i/2WRWAB6poM+XZ2dLUbcbE=
+github.com/rogpeppe/go-internal v1.8.1-0.20211023094830-115ce09fd6b4 h1:Ha8xCaq6ln1a+R91Km45Oq6lPXj2Mla6CRJYcuV2h1w=
 github.com/rogpeppe/go-internal v1.8.1-0.20211023094830-115ce09fd6b4/go.mod h1:JeRgkft04UBgHMgCIwADu4Pn6Mtm5d4nPKWu0nJ5d+o=
 github.com/rs/cors v1.7.0/go.mod h1:gFx+x8UowdsKA9AchylcLynDq+nNFfI8FkUZdN/jGCU=
 github.com/rs/xid v1.2.1/go.mod h1:+uKXf+4Djp6Md1KODXJxgGQPKngRmWyn10oCKFzNHOQ=

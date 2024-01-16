@@ -40,6 +40,10 @@ func (d *NewDB) FindUserByEmail(email string) (*blueprint.User, error) {
 	user := &blueprint.User{}
 	err := result.StructScan(user)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			orchdioLogger.Warn("[controller][db] user does not exist with that email")
+			return nil, sql.ErrNoRows
+		}
 		orchdioLogger.Error("[controller][db] error scanning row result. %v\n", zap.Error(err))
 		return nil, err
 	}

@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-redis/redis/v8"
 	"github.com/raitonoberu/ytmusic"
 	"log"
 	"orchdio/blueprint"
 	"orchdio/util"
-	"strings"
 	"sync"
 	"time"
 )
@@ -42,7 +42,7 @@ func NewService(redisClient *redis.Client) *Service {
 }
 
 // SearchTrackWithID fetches a track from the ID using the link.
-func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackSearchResult, error) {
+func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo, webhookId, taskId string) (*blueprint.TrackSearchResult, error) {
 	cacheKey := "ytmusic:track:" + info.EntityID
 	cachedTrack, err := s.RedisClient.Get(context.Background(), cacheKey).Result()
 	if err != nil && err != redis.Nil {
@@ -103,10 +103,10 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 	return nil, nil
 }
 
-func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackSearchResult, error) {
-	cleanedArtiste := fmt.Sprintf("ytmusic-%s-%s", util.NormalizeString(artiste), title)
+func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error) {
+	cleanedArtiste := fmt.Sprintf("ytmusic-%s-%s", util.NormalizeString(searchData.Artists[0]), searchData.Title)
 
-	log.Printf("Searching with stripped artiste: %s. Original artiste: %s", cleanedArtiste, artiste)
+	log.Printf("Searching with stripped artiste: %s. Original artiste: %v", cleanedArtiste, searchData.Artists)
 
 	if s.RedisClient.Exists(context.Background(), cleanedArtiste).Val() == 1 {
 		log.Printf("[services][ytmusic][SearchTrackWithTitle] Track found in cache: %v\n", cleanedArtiste)
@@ -123,39 +123,58 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 		}
 		return &result, nil
 	}
-	log.Printf("[services][ytmusic][SearchTrackWithTitle] Track not found in cache, fetching from YT Music: %v\n", cleanedArtiste)
-	search := ytmusic.Search(fmt.Sprintf("%s %s", artiste, title))
-	r, err := search.Next()
-	if err != nil {
-		log.Printf("[services][ytmusic][SearchTrackWithTitle] Error fetching track from YT Music: %v\n", err)
-		return nil, err
+	search := ytmusic.Search(fmt.Sprintf("%s %s %s", searchData.Artists[0], searchData.Title, searchData.Album))
+	var tracks []*ytmusic.TrackItem
+
+	for {
+		log.Printf("[services][ytmusic][SearchTrackWithTitle] Next exists, fetching next page\n")
+		r, err := search.Next()
+		if err != nil {
+			log.Printf("[services][ytmusic][SearchTrackWithTitle] Error fetching track from YT Music: %v\n", err)
+			break
+		}
+
+		tracks = append(tracks, r.Tracks...)
+		if !search.NextExists() {
+			log.Printf("[services][ytmusic][SearchTrackWithTitle] Next does not exist, breaking\n")
+			break
+		}
 	}
 
-	tracks := r.Tracks
-
-	if len(tracks) == 0 {
+	if len(tracks) == 0 && search.NextExists() {
 		return nil, nil
 	}
 
 	var track *ytmusic.TrackItem
 
+	albumAndTitleHash := util.HashIdentifier(fmt.Sprintf("%s-%s", searchData.Album, searchData.Title))
+
+	spew.Dump(searchData.Album, searchData.Title)
+
 	for _, t := range tracks {
-		if strings.Contains(t.Title, title) || strings.Contains(t.Artists[0].Name, artiste) {
+		sanitizedTitle := util.ExtractTitle(t.Title)
+
+		log.Printf("Meta hashing data comparison is \n")
+		spew.Dump(t)
+		spew.Dump(util.ExtractTitle(t.Album.Name).Title, sanitizedTitle.Title)
+
+		trackInfoHash := util.HashIdentifier(fmt.Sprintf("%s-%s", util.ExtractTitle(t.Album.Name).Title, sanitizedTitle.Title))
+		if trackInfoHash == albumAndTitleHash {
+			log.Printf("[services][ytmusic][SearchTrackWithTitle] Track found: \n")
 			track = t
+		} else {
+			log.Printf("[services][ytmusic][SearchTrackWithTitle] Track not found... using the first result: \n")
+			track = tracks[0]
 			break
 		}
-		track = t
-		break
 	}
 
 	// get artistes
 	artistes := make([]string, 0)
-
 	if track == nil {
 		log.Printf("[services][ytmusic][SearchTrackWithTitle] Track is nil, returning nil\n")
 		return nil, nil
 	}
-
 	for _, artist := range track.Artists {
 		artistes = append(artistes, artist.Name)
 	}
@@ -207,8 +226,8 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 	return result, nil
 }
 
-func (s *Service) SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
-	track, err := s.SearchTrackWithTitle(title, artiste)
+func (s *Service) SearchTrackWithTitleChan(searchData *blueprint.TrackSearchData, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
+	track, err := s.SearchTrackWithTitle(searchData)
 	if err != nil {
 		log.Printf("[services][ytmusic][SearchTrackWithTitleChan] Error searching track: %v\n", err)
 		defer wg.Done()
@@ -246,7 +265,13 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 			fetchedTracks = append(fetchedTracks, deserializedTrack)
 			continue
 		}
-		go s.SearchTrackWithTitleChan(track.Title, track.Artistes[0], c, &wg)
+
+		trackSearchData := blueprint.TrackSearchData{
+			Title:   track.Title,
+			Artists: track.Artistes,
+			Album:   track.Album,
+		}
+		go s.SearchTrackWithTitleChan(&trackSearchData, c, &wg)
 		outputTracks := <-c
 		if outputTracks != nil {
 			log.Printf("[services][ytmusic][FetchTracks] no track found for title : %v\n", track.Title)

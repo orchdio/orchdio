@@ -124,7 +124,12 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 	}
 	// create a new convoy webhook endpoint
 	convoyInst := webhook.NewConvoy()
-	whResponse, err := convoyInst.CreateEndpoint(body.WebhookURL, body.Description)
+
+	defer func() {
+		log.Printf("Some ordinary defer")
+	}()
+	webhookName := fmt.Sprintf("%s-%s", body.Name, uid)
+	whResponse, err := convoyInst.CreateEndpoint(body.WebhookURL, body.Description, webhookName)
 	if err != nil {
 		d.Logger.Error("[controllers][CreateApp] developer -  error: could not create webhook endpoint", zap.Error(err))
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
@@ -194,18 +199,33 @@ func (d *Controller) UpdateApp(ctx *fiber.Ctx) error {
 		d.Logger.Error("[controllers][UpdateApp] developer -  error: could not fetch app in Database", zap.Error(err))
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not fetch developer app")
 	}
+	convoyInstance := webhook.NewConvoy()
 
 	if devApp.ConvoyEndpointID == "" {
-		d.Logger.Error("[controllers][UpdateApp] developer -  error: convoy endpoint id is empty")
-		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not fetch developer app")
+		d.Logger.Warn("[controllers][UpdateApp] developer -  error: convoy endpoint id is empty")
+		webhookName := fmt.Sprintf("%s-%s", devApp.Name, devApp.UID.String())
+		whResponse, cErr := convoyInstance.CreateEndpoint(devApp.WebhookURL, devApp.Description, webhookName)
+		if cErr != nil {
+			d.Logger.Error("[controllers][UpdateApp] developer -  error: could not update convoy endpoint", zap.Error(cErr))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not update developer app")
+		}
+
+		err = database.UpdateConvoyWebhookID(devApp.UID.String(), whResponse.ID)
+		if err != nil {
+			d.Logger.Error("[controllers][UpdateApp] developer -  error: could not update convoy endpoint id in Database", zap.Error(err))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not update developer app")
+		}
+
+		d.Logger.Info("[controllers][UpdateApp] developer -  convoy endpoint updated", zap.String("app_id", ctx.Params("appId")))
 	}
 
-	convoyInstance := webhook.NewConvoy()
-	err = convoyInstance.UpdateEndpoint(body.WebhookURL, body.Description, devApp.ConvoyEndpointID)
+	// update convoy endpoint
+	err = convoyInstance.UpdateEndpoint(devApp.ConvoyEndpointID, devApp.WebhookURL, devApp.Description, devApp.Name)
 	if err != nil {
 		d.Logger.Error("[controllers][UpdateApp] developer -  error: could not update convoy endpoint", zap.Error(err))
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not update developer app")
 	}
+
 	d.Logger.Info("[controllers][UpdateApp] developer -  app updated", zap.String("app_id", ctx.Params("appId")))
 	return util.SuccessResponse(ctx, fiber.StatusOK, "App updated successfully")
 }
@@ -254,11 +274,14 @@ func (d *Controller) DeleteApp(ctx *fiber.Ctx) error {
 		}
 	}
 
-	err = convoyInstance.DeleteEndpoint(devApp.ConvoyEndpointID)
-	if err != nil {
-		d.Logger.Error("[controllers][DeleteApp] developer -  error: could not delete convoy endpoint", zap.Error(err), zap.String("app_id", ctx.Params("appId")))
-		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not delete developer app")
+	if devApp.ConvoyEndpointID != "" {
+		err = convoyInstance.DeleteEndpoint(devApp.ConvoyEndpointID)
+		if err != nil {
+			d.Logger.Error("[controllers][DeleteApp] developer -  error: could not delete convoy endpoint", zap.Error(err), zap.String("app_id", ctx.Params("appId")))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not delete developer app")
+		}
 	}
+
 	// delete the app
 	err = database.DeleteApp(ctx.Params("appId"), claims.DeveloperID)
 	if err != nil {
@@ -343,6 +366,15 @@ func (d *Controller) DisableApp(ctx *fiber.Ctx) error {
 		d.Logger.Error("[controllers][DisableApp] developer -  error: could not disable app in Database", zap.Error(err))
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred.")
 	}
+
+	// pause the convoy endpoint
+	convoyInstance := webhook.NewConvoy()
+	err = convoyInstance.PauseEndpoint(appId)
+	if err != nil {
+		d.Logger.Error("[controllers][DisableApp] developer -  error: could not pause convoy endpoint", zap.Error(err))
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred.")
+	}
+	d.Logger.Info("[controllers][DisableApp] developer -  convoy endpoint paused", zap.String("app_id", appId))
 	d.Logger.Info("[controllers][DisableApp] developer -  app disabled", zap.String("app_id", appId))
 	return util.SuccessResponse(ctx, fiber.StatusOK, "App disabled successfully")
 }
@@ -397,7 +429,6 @@ func (d *Controller) FetchAllDeveloperApps(ctx *fiber.Ctx) error {
 	apps, err := database.FetchApps(claims.DeveloperID, orgID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			d.Logger.Warn("[controllers][FetchAllDeveloperApps] developer -  No apps found for developer", zap.Error(err), zap.String("app_id", claims.DeveloperID))
 			return util.ErrorResponse(ctx, fiber.StatusNotFound, "not found", "No apps found for this organization.")
 		}
 		d.Logger.Error("[controllers][FetchAllDeveloperApps] developer -  error: could not fetch apps in Database", zap.Error(err))

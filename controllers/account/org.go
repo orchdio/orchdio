@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -85,11 +86,16 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 			_, dErr := u.DB.Exec(queries.CreateNewOrgUser, body.OwnerEmail, ubx, string(hashedPass))
 			if dErr != nil {
 				u.Logger.Error("[controller][account][CreateOrg] - error creating user", zap.Error(dErr))
+
+				spew.Dump(dErr)
 				return util.ErrorResponse(ctx, http.StatusInternalServerError, dErr, "Could not create organization")
 			}
 			u.Logger.Info("[controller][account][CreateOrg] - user created new user", zap.String("email", body.OwnerEmail), zap.String("id", ubx))
 			userId = ubx
 		}
+
+		u.Logger.Info("Unrecognized error")
+		spew.Dump(err)
 	}
 
 	if userInf != nil {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/gofiber/fiber/v2"
 	"github.com/zmb3/spotify/v2"
 	"go.uber.org/zap"
@@ -30,6 +31,7 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 	// get the platform they want to add the playlist to
 	platform := ctx.Params("platform")
 	app := ctx.Locals("app").(*blueprint.DeveloperApp)
+	spew.Dump("App trying to add...", app)
 	loggerOpts := &blueprint.OrchdioLoggerOptions{
 		RequestID:            ctx.Get("x-orchdio-request-id"),
 		ApplicationPublicKey: zap.String("app_pub_key", app.PublicKey.String()).String,
@@ -67,18 +69,38 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		p.Logger.Error("[controllers][platforms][AddPlaylistToAccount] error - No title in playlist", zap.String("app_pub_key", app.PublicKey.String()), zap.String("request_id", ctx.Get("x-orchdio-request-id")))
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "No title to insert into playlist. please add title to the playlist")
 	}
+
 	// find the user in the database
-	//database := db.NewDB{DB: p.DB}
+	user := &blueprint.UserAppAndPlatformInfo{}
 	database := db.New(p.DB, p.Logger)
-	user, err := database.FetchPlatformAndUserInfoByIdentifier(createBodyData.User, app.UID.String(), platform)
+	// get the user thats specified in the body
+	_user, err := database.FetchPlatformAndUserInfoByIdentifier(createBodyData.User, app.UID.String(), platform)
+	// copy it to a new variable. this is to allow use shadow it later on in the workaround for Ayomide's tidal support.
+	user = _user
+
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		// work around to support me adding my own playlist
+		if errors.Is(err, sql.ErrNoRows) && !(createBodyData.User == "onigbindeayomide@gmail.com" || createBodyData.User == os.Getenv("MY_ID") && platform == tidal.IDENTIFIER) {
 			p.Logger.Warn("[controllers][platforms][AddPlaylistToAccount] error - App not found for user. User has not authorized this app for the platform access.", zap.String("app_pub_key", app.PublicKey.String()), zap.String("platform", platform), zap.String("request_id", ctx.Get("x-orchdio-request-id")))
-			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "User has not authorized this app. Please authorize the app to continue.")
+			return util.ErrorResponse(ctx, http.StatusUnauthorized, "unauthenticated", "User has not authorized this app. Please authorize the app to continue.")
+		} else {
+			if err != nil {
+				p.Logger.Error("[controllers][platforms][AddPlaylistToAccount] error - error fetching user", zap.Error(err),
+					zap.String("app_pub_key", app.PublicKey.String()), zap.String("request_id", ctx.Get("x-orchdio-request-id")))
+				return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred.")
+			}
 		}
-		p.Logger.Error("[controllers][platforms][AddPlaylistToAccount] error - error fetching user", zap.Error(err),
-			zap.String("app_pub_key", app.PublicKey.String()), zap.String("request_id", ctx.Get("x-orchdio-request-id")))
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred.")
+	}
+
+	// workaround for admin support for tidal.
+	if createBodyData.User == "onigbindeayomide@gmail.com" || createBodyData.User == os.Getenv("MY_ID") && platform == tidal.IDENTIFIER {
+		//_user2, dErr := database.FetchPlatformAndUserInfoByIdentifier("onigbindeayomide@gmail.com", app.UID.String(), platform)
+		//if dErr != nil {
+		//	p.Logger.Error("Error fetching Admin's platform info using identifier", zap.Error(err))
+		//	return util.ErrorResponse(ctx, http.StatusInternalServerError, dErr, "An internal error occurred.")
+		//}
+		//user = _user2
+
 	}
 
 	// get the user's access token
@@ -113,7 +135,6 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "An internal error occurred while unmarshalling credentials")
 	}
 
-	//title := fmt.Sprintf("Zoove playlist: %s", createBodyData.Title)
 	description := "powered by Orchdio. https://orchdio.com"
 	playlistlink := ""
 	switch platform {

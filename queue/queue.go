@@ -196,7 +196,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 
 	log.Printf("[queue][PlaylistHandler] - created or updated task: %v", taskId)
 
-	h, err := universal.ConvertPlaylist(info, o.Red, o.DB)
+	h, err := universal.ConvertPlaylist(info, o.Red, o.DB, taskId)
 	var status string
 	// for now, we dont want to bother about retrying and all of that. we're simply going to mark a task as failed if it fails
 	// the reason is that it's hard handling the retry for it to worth it. In the future, we might add a proper retry system

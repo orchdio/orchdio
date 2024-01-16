@@ -1,6 +1,7 @@
 package webhook
 
 import (
+	convoy_go ""
 	"context"
 	"encoding/json"
 	convoy_go "github.com/frain-dev/convoy-go/v2"
@@ -20,18 +21,21 @@ const (
 )
 
 func NewConvoy() *Convoy {
-	c := convoy_go.New(BASE_URL, os.Getenv("CONVOY_API_KEY"), os.Getenv("CONVOY_APP_ID"))
+	logger := convoy_go.NewLogger(os.Stdout, convoy_go.DebugLevel)
+	c := convoy_go.New(BASE_URL, os.Getenv("CONVOY_API_KEY"),
+		os.Getenv("CONVOY_PROJECT_ID"), convoy_go.OptionLogger(logger))
 	return &Convoy{
 		Client: c,
 	}
 }
 
-func (c *Convoy) CreateEndpoint(url, description string) (*blueprint.ConvoyWebhookCreate, error) {
+func (c *Convoy) CreateEndpoint(url, description, name string) (*blueprint.ConvoyWebhookCreate, error) {
 	loggerOpts := &blueprint.OrchdioLoggerOptions{}
 	logger := logger2.NewZapSentryLogger(loggerOpts)
 	endpoint, err := c.Client.Endpoints.Create(context.Background(), &convoy_go.CreateEndpointRequest{
 		URL:         url,
 		Description: description,
+		Name:        name,
 	}, nil)
 
 	if err != nil {
@@ -56,13 +60,14 @@ func (c *Convoy) CreateEndpoint(url, description string) (*blueprint.ConvoyWebho
 	}, nil
 }
 
-func (c *Convoy) UpdateEndpoint(uid, url, description string) error {
+func (c *Convoy) UpdateEndpoint(uid, url, description, name string) error {
 	loggerOpts := &blueprint.OrchdioLoggerOptions{}
 	logger := logger2.NewZapSentryLogger(loggerOpts)
 
 	_, err := c.Client.Endpoints.Update(context.Background(), uid, &convoy_go.CreateEndpointRequest{
 		URL:         url,
 		Description: description,
+		Name:        name,
 	}, nil)
 
 	if err != nil {
@@ -128,3 +133,33 @@ func (c *Convoy) SendEvent(endpointId, event string, data interface{}) error {
 
 	return nil
 }
+
+//func (c *Convoy) SendTrackConvertedEvent(endpointId string, data interface{}, event string) error {
+//	loggerOpts := &blueprint.OrchdioLoggerOptions{}
+//	logger := logger2.NewZapSentryLogger(loggerOpts)
+//
+//	decodedMsg, err := json.Marshal(data)
+//	if err != nil {
+//		logger.Error("[convoy][SendTrackConvertedEvent] - Error sending event. Could not parse data", zap.Error(err), zap.String("endpoint_id", endpointId))
+//		return err
+//	}
+//
+//	logger.Info("[convoy][SendTrackConvertedEvent] - Sending event", zap.String("endpoint_id", endpointId), zap.String("event", event), zap.Any("data", data))
+//
+//	defer func() {
+//		logger.Info("executing deferred function")
+//	}()
+//
+//	_, e := c.Client.Events.Create(context.Background(), &convoy_go.CreateEventRequest{
+//		EndpointID: endpointId,
+//		EventType:  event,
+//		Data:       decodedMsg,
+//	})
+//
+//	if e != nil {
+//		logger.Error("[convoy][SendTrackConvertedEvent] - Error sending event", zap.Error(e), zap.String("endpoint_id", endpointId))
+//		return e
+//	}
+//
+//	return nil
+//}

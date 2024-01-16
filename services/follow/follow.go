@@ -168,7 +168,7 @@ func (s *TaskCronHandler) ProcessFollowTaskHandler(ctx context.Context, task *as
 		if err == redis.Nil {
 			log.Printf("[queue][ProcessFollowTaskHandler] - playlist hasnt been cached")
 			// todo: watch out for this
-			convertedPlaylist, err := universal.ConvertPlaylist(linkInfo, s.Red, s.DB)
+			convertedPlaylist, err := universal.ConvertPlaylist(linkInfo, s.Red, s.DB, linkInfo.EntityID)
 			if err != nil {
 				log.Printf("[queue][ProcessFollowTaskHandler][conversion] - error converting playlist: %v", err)
 				return err
@@ -199,7 +199,7 @@ func (s *TaskCronHandler) ProcessFollowTaskHandler(ctx context.Context, task *as
 	if ok {
 		log.Println("[queue][ProcessFollowTaskHandler] - playlist has been updated. Converting again to fetch new tracks")
 		// todo: watch out for this
-		updatedPlaylist, err := universal.ConvertPlaylist(linkInfo, s.Red, s.DB)
+		updatedPlaylist, err := universal.ConvertPlaylist(linkInfo, s.Red, s.DB, linkInfo.EntityID)
 		if err != nil {
 			log.Printf("[queue][ProcessFollowTaskHandler][conversion] - error converting playlist: %v", err)
 			return err

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"orchdio/blueprint"
+	webhook "orchdio/convoy.go"
 	"orchdio/util"
 	"os"
 	"strconv"
@@ -138,9 +139,9 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 // SearchTrackWithTitle searches for a track using the title (and artiste) on deezer
 // This is typically expected to be used when the track we want to fetch is the one we just
 // want to search on. That is, the other platforms that the user is trying to convert to.
-func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackSearchResult, error) {
+func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error) {
 	//searchKey := fmt.Sprintf("deezer-%s-%s", artiste, title)
-	cacheKey := fmt.Sprintf("deezer:%s:%s", util.NormalizeString(artiste), title)
+	cacheKey := fmt.Sprintf("deezer:%s:%s", util.NormalizeString(searchData.Artists[0]), util.ExtractTitle(searchData.Title).Title)
 	// get the cached track
 	if s.RedisClient.Exists(context.Background(), cacheKey).Val() == 1 {
 		s.Logger.Info("[services][deezer][SearchTrackWithTitle][SearchTrackWithTitle] Track has been cached", zap.String("cached_key", cacheKey))
@@ -161,13 +162,13 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 
 	s.Logger.Warn("[services][deezer][SearchTrackWithTitle][SearchTrackWithTitle] warning - Track has not been cached", zap.String("cached_key", cacheKey))
 
-	strippedTrackTitle := util.ExtractTitle(title)
+	strippedTrackTitle := util.ExtractTitle(searchData.Title)
 	searchTitle := strippedTrackTitle.Title
 	// for deezer we'll not trim the artiste name. this is because it becomes way less accurate.
 	// deezer has second to the lowest accuracy in terms of search results (youtube being the lowest)
 	// however, just like others, we're caching the result under the normalized string, which contains trimmed artiste name
 	// like so: "deezer-artistename-title". For example: "deezer-flatbushzombies-reelgirls
-	_link := fmt.Sprintf("track:\"%s\" artist:\"%s\"", strings.Trim(searchTitle, " "), artiste)
+	_link := fmt.Sprintf("track:\"%s\" artist:\"%s\"", strings.Trim(searchTitle, " "), searchData.Artists[0])
 	link := fmt.Sprintf("%s/search?q=%s", os.Getenv("DEEZER_API_BASE"), url.QueryEscape(_link))
 
 	response, err := axios.Get(link)
@@ -219,7 +220,7 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 		// this is because in some cases, we need to fetch by ID and not by title
 		// cache track but with identifier. this is for when we're searching by title again and its the same
 		// track as this
-		if lo.Contains(out.Artists, artiste) {
+		if lo.Contains(out.Artists, searchData.Artists[0]) {
 			cacheErr := s.RedisClient.Set(context.Background(), cacheKey, string(serializedTrack), time.Hour*24).Err()
 			if cacheErr != nil {
 				s.Logger.Warn("[services][deezer][SearchTrackWithTitle][SearchTrackWithTitle] warning - Could not cache track", zap.Error(cacheErr))
@@ -233,29 +234,31 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 }
 
 // SearchTrackWithTitleChan searches for a track similar to `SearchTrackWithTitle` but uses a channel
-func (s *Service) SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup, red *redis.Client) {
+func (s *Service) SearchTrackWithTitleChan(searchData *blueprint.TrackSearchData, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup, red *redis.Client) {
 	defer wg.Done()
-	result, err := s.SearchTrackWithTitle(title, artiste)
+	result, err := s.SearchTrackWithTitle(searchData)
 	if err != nil {
-		defer wg.Done()
+		//defer wg.Done()
 		c <- nil
-		wg.Add(1)
+		//wg.Add(1)
 		return
 	}
-	defer wg.Done()
+	//defer wg.Done()
 	c <- result
-	wg.Add(1)
+	//wg.Add(1)
 	return
 }
 
 // FetchTracks searches for the tracks (titles) passed and returns the tracks on deezer.
 // This function is used to search for tracks in the playlists the user is trying to convert, on deezer
-func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
+func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client,
+	webhookId, taskId string) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
 	var fetchedTracks []blueprint.TrackSearchResult
 	var omittedTracks []blueprint.OmittedTracks
 	var ch = make(chan *blueprint.TrackSearchResult, len(tracks))
-	var wg sync.WaitGroup
+	wg := sync.WaitGroup{}
 	for _, track := range tracks {
+		wg.Add(1)
 		// in order to create the identifier that we use to recognize tracks in cache, we simply take the artiste
 		// name. but the thing is that an artiste can have spaces in their name, etc. this is definitely going to not go as we expect
 		// so we need to remove spaces and weird characters from the artiste name
@@ -277,8 +280,14 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 			fetchedTracks = append(fetchedTracks, *deserializedTrack)
 			continue
 		}
+		searchData := blueprint.TrackSearchData{
+			Title:   track.Title,
+			Artists: track.Artistes,
+			Album:   track.Album,
+		}
+
 		// WARNING: unhandled slice index
-		go s.SearchTrackWithTitleChan(track.Title, track.Artistes[0], ch, &wg, red)
+		go s.SearchTrackWithTitleChan(&searchData, ch, &wg, red)
 
 		outputTracks := <-ch
 		if outputTracks == nil {
@@ -290,6 +299,23 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 			})
 			continue
 		}
+		// create a new webhook event
+		convoyInstance := webhook.NewConvoy()
+
+		payload := &blueprint.PlaylistTrackConversionEvent{
+			Platform: IDENTIFIER,
+			Event:    "playlist:conversion:track:result",
+			Data:     outputTracks,
+			ID:       taskId,
+		}
+
+		cErr := convoyInstance.SendEvent(webhookId, "playlist:conversion:track:result", payload)
+
+		if cErr != nil {
+			s.Logger.Error("[services][deezer][FetchTracks][FetchTracks] error - Could not send event to convoy", zap.Error(cErr))
+			return nil, nil
+		}
+
 		fetchedTracks = append(fetchedTracks, *outputTracks)
 	}
 	wg.Wait()
@@ -297,7 +323,7 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 }
 
 // SearchPlaylistWithID fetches tracks under a playlist on deezer with pagination
-func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResult, error) {
+func (s *Service) SearchPlaylistWithID(id, webhookId, taskId string) (*blueprint.PlaylistSearchResult, error) {
 	infoLink := "https://api.deezer.com/playlist/" + id + "?limit=1"
 	info, err := axios.Get(infoLink)
 	if err != nil {
@@ -315,20 +341,20 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 
 	cachedSnapshot, cacheErr := s.RedisClient.Get(context.Background(), "deezer:playlist:"+id).Result()
 
-	if cacheErr != nil && cacheErr != redis.Nil {
+	if cacheErr != nil && !errors.Is(cacheErr, redis.Nil) {
 		s.Logger.Error("[services][deezer][SearchPlaylistWithID][SearchPlaylistWithID] error - Could not get cached snapshot for playlist", zap.Error(cacheErr))
 		return nil, cacheErr
 	}
 
 	cachedSnapshotID, idErr := s.RedisClient.Get(context.Background(), "deezer:snapshot:"+id).Result()
-	if idErr != nil && idErr != redis.Nil {
+	if idErr != nil && !errors.Is(idErr, redis.Nil) {
 		s.Logger.Warn("[services][deezer][SearchPlaylistWithID][SearchPlaylistWithID] error - Could not get cached snapshot id for playlist", zap.Error(idErr))
 		return nil, idErr
 	}
 
 	// if we have not cached this track or the snapshot has changed (that is, the playlist has been updated), then
 	// we need to fetch the tracks and cache them
-	if cacheErr != nil && cacheErr == redis.Nil || cachedSnapshotID != playlistInfo.Checksum {
+	if cacheErr != nil && errors.Is(cacheErr, redis.Nil) || cachedSnapshotID != playlistInfo.Checksum {
 		var trackList PlaylistTracksSearch
 		err = json.Unmarshal(tracks.Data, &trackList)
 		if err != nil {
@@ -363,6 +389,13 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 			if jErr != nil {
 				s.Logger.Error("[services][deezer][SearchPlaylistWithID][SearchPlaylistWithID] error - Could not serialize track", zap.Error(jErr))
 				return nil, jErr
+			}
+
+			// send event to convoy. if there is an error, we just log it and continue
+			convoyInstance := webhook.NewConvoy()
+			cErr := convoyInstance.SendEvent(webhookId, "playlist:conversion:track:result", result)
+			if cErr != nil {
+				s.Logger.Error("[services][deezer][SearchPlaylistWithID][SearchPlaylistWithID] error - Could not send event to convoy", zap.Error(cErr))
 			}
 
 			err = s.RedisClient.Set(context.Background(), cacheKey, string(serialized), 0).Err()
@@ -416,7 +449,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 
 // SearchPlaylistWithTracks fetches the tracks for a playlist based on the search result
 // from another platform
-func (s *Service) SearchPlaylistWithTracks(p *blueprint.PlaylistSearchResult) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
+func (s *Service) SearchPlaylistWithTracks(p *blueprint.PlaylistSearchResult, webhookId, taskId string) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
 	var trackSearch []blueprint.PlatformSearchTrack
 	for _, track := range p.Tracks {
 		trackSearch = append(trackSearch, blueprint.PlatformSearchTrack{
@@ -426,7 +459,7 @@ func (s *Service) SearchPlaylistWithTracks(p *blueprint.PlaylistSearchResult) (*
 			URL:      track.URL,
 		})
 	}
-	deezerTracks, omittedTracks := s.FetchTracks(trackSearch, s.RedisClient)
+	deezerTracks, omittedTracks := s.FetchTracks(trackSearch, s.RedisClient, webhookId, taskId)
 	return deezerTracks, omittedTracks
 }
 

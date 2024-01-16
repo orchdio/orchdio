@@ -12,7 +12,6 @@ import (
 	"go.uber.org/zap"
 	"log"
 	"orchdio/blueprint"
-	webhook "orchdio/convoy.go"
 	"orchdio/db"
 	logger2 "orchdio/logger"
 	"orchdio/services/applemusic"
@@ -60,7 +59,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 	targetPlatform := info.TargetPlatform
 
 	var fromService interface{}
-	var toService []map[string]interface{}
+	var toServices []map[string]interface{}
 
 	//var fromPlatformIntegrationCreds blueprint.IntegrationCredentials
 	//var toPlatformIntegrationCreds blueprint.IntegrationCredentials
@@ -176,7 +175,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 		}
 
 		s := spotify.NewService(&credentials, pg, red)
-		toService = append(toService, map[string]interface{}{spotify.IDENTIFIER: s})
+		toServices = append(toServices, map[string]interface{}{spotify.IDENTIFIER: s})
 	case tidal.IDENTIFIER:
 		if len(app.TidalCredentials) == 0 {
 			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] warning - no tidal credentials provided", zap.String("app_id", info.App),
@@ -206,7 +205,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 		}
 
 		s := tidal.NewService(&credentials, pg, red)
-		toService = append(toService, map[string]interface{}{tidal.IDENTIFIER: s})
+		toServices = append(toServices, map[string]interface{}{tidal.IDENTIFIER: s})
 	case deezer.IDENTIFIER:
 		var credentials blueprint.IntegrationCredentials
 		if len(app.DeezerCredentials) == 0 {
@@ -226,7 +225,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 			return nil, err
 		}
 		s := deezer.NewService(&credentials, pg, red, orchdioLogger)
-		toService = append(toService, map[string]interface{}{deezer.IDENTIFIER: s})
+		toServices = append(toServices, map[string]interface{}{deezer.IDENTIFIER: s})
 	case applemusic.IDENTIFIER:
 		if len(app.AppleMusicCredentials) == 0 {
 			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack] error - no apple music credentials provided", zap.String("entity_target_type", "to_service"),
@@ -253,10 +252,10 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 		}
 
 		s := applemusic.NewService(&credentials, pg, red, orchdioLogger)
-		toService = append(toService, map[string]interface{}{applemusic.IDENTIFIER: s})
+		toServices = append(toServices, map[string]interface{}{applemusic.IDENTIFIER: s})
 	case ytmusic.IDENTIFIER:
 		s := ytmusic.NewService(red)
-		toService = append(toService, map[string]interface{}{ytmusic.IDENTIFIER: s})
+		toServices = append(toServices, map[string]interface{}{ytmusic.IDENTIFIER: s})
 	}
 
 	if targetPlatform == "all" {
@@ -278,7 +277,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 			encryptedCred := appCred
 			if len(encryptedCred) == 0 || encryptedCred == nil {
 				if plat == ytmusic.IDENTIFIER {
-					toService = append(toService, map[string]interface{}{ytmusic.IDENTIFIER: ytmusic.NewService(red)})
+					toServices = append(toServices, map[string]interface{}{ytmusic.IDENTIFIER: ytmusic.NewService(red)})
 				}
 				continue
 			}
@@ -290,20 +289,20 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 			switch plat {
 			case ytmusic.IDENTIFIER:
 				s := ytmusic.NewService(red)
-				toService = append(toService, map[string]interface{}{ytmusic.IDENTIFIER: s})
+				toServices = append(toServices, map[string]interface{}{ytmusic.IDENTIFIER: s})
 
 			case spotify.IDENTIFIER:
 				s := spotify.NewService(decryptedCredentials, pg, red)
-				toService = append(toService, map[string]interface{}{spotify.IDENTIFIER: s})
+				toServices = append(toServices, map[string]interface{}{spotify.IDENTIFIER: s})
 			case tidal.IDENTIFIER:
 				s := tidal.NewService(decryptedCredentials, pg, red)
-				toService = append(toService, map[string]interface{}{tidal.IDENTIFIER: s})
+				toServices = append(toServices, map[string]interface{}{tidal.IDENTIFIER: s})
 			case deezer.IDENTIFIER:
 				s := deezer.NewService(decryptedCredentials, pg, red, orchdioLogger)
-				toService = append(toService, map[string]interface{}{deezer.IDENTIFIER: s})
+				toServices = append(toServices, map[string]interface{}{deezer.IDENTIFIER: s})
 			case applemusic.IDENTIFIER:
 				s := applemusic.NewService(decryptedCredentials, pg, red, orchdioLogger)
-				toService = append(toService, map[string]interface{}{applemusic.IDENTIFIER: s})
+				toServices = append(toServices, map[string]interface{}{applemusic.IDENTIFIER: s})
 			}
 		}
 	}
@@ -316,54 +315,95 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 	}
 
 	var fromResult *blueprint.TrackSearchResult
-	var toResult []map[string]*blueprint.TrackSearchResult
+	var toResults []map[string]*blueprint.TrackSearchResult
 
 	// DANGEROUS WATERS! TREAD WITH CAUTION - DYNAMICALLY CALLING METHODS
 	if methodSearchTrackWithID.IsValid() {
-		ins := make([]reflect.Value, 2)
+		// we create a slice of reflect.Value to pass into the method call
+		ins := make([]reflect.Value, 1)
+
+		// we then assign the first value in the reflect slice to the value of the info pointer. this is because in the methods
+		// we're calling, the first argument is a pointer to the info struct.
+		// fixme: check if we can create a single reflect.Value and pass it into the method call instead of 2
 		ins[0] = reflect.ValueOf(info)
+
+		// we then call the method with the reflect slice as the argument
 		ans := methodSearchTrackWithID.Call([]reflect.Value{ins[0]})
+
+		// we then check if the method call returned any results and convert the interface to a TrackSearchResult.
+		// if the conversion fails, we return an error.
 		res, ok1 := ans[0].Interface().(*blueprint.TrackSearchResult)
 		if !ok1 {
 			orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack][reflect-meta] error - could not convert interface to TrackSearchResult.. Error dynamically calling fromMethod.",
 				zap.String("method", "SearchTrackWithID"))
 			return nil, blueprint.EUNKNOWN
 		}
+
+		// if there was a result, we assign it to the fromResult variable. so that'll be our final "from" result
 		fromResult = res
 
+		// create a new instance of trackSearchData to store the track search data
+		trackSearchData := &blueprint.TrackSearchData{
+			Title:   res.Title,
+			Artists: res.Artists,
+			Album:   res.Album,
+		}
+
 		// fetch the conversion methods for the target platforms.
-		for idx, tS := range toService {
+		for idx, tS := range toServices {
+			// if the service is nil (for example, we could not get the integration credential for the service/platform), we skip it
 			if res == nil {
 				continue
 			}
+
+			// copy the result to avoid concurrency issues. Thank you very much, Go.
 			cp := tS
 			for k, v := range cp {
 				plat := k
 				shadowService := v
+
+				// we get the method for the target platform. this is the method to search with title text and artist name
 				var methodSearchTrackWithTitle, ok2 = util.FetchMethodFromInterface(shadowService, "SearchTrackWithTitle")
 				if !ok2 {
 					return nil, blueprint.EUNKNOWN
 				}
 
-				// todo: implement nil check
+				// no result from the source platform and its the first platform in the loop? return an error
+				// this is to handle the case where the source platform does not have the track. fail fast.
 				if res == nil && idx == 0 {
 					orchdioLogger.Warn("[controllers][platforms][universal][ConvertTrack] warning - search result is nil",
 						zap.String("platform", plat))
 					return nil, blueprint.EUNKNOWN
 				}
 
+				// we got a result from the source platform. we can now call the method for the target platform
 				if methodSearchTrackWithTitle.IsValid() {
-					ins2 := make([]reflect.Value, 2)
-					ins2[0] = reflect.ValueOf(res.Title)
-					ins2[1] = reflect.ValueOf(res.Artists[0])
-					ans2 := methodSearchTrackWithTitle.Call([]reflect.Value{ins2[0], ins2[1]})
+					// create a slice of reflect.Value to pass into the method call. we need 2 values for this method call
+					//ins2 := make([]reflect.Value, 2)
+					//
+					//ins2[0] = reflect.ValueOf(res.Title)
+					//ins2[1] = reflect.ValueOf(res.Artists[0])
+					//
+					//
+					//ans2 := methodSearchTrackWithTitle.Call([]reflect.Value{ins2[0], ins2[1]})
+
+					if res == nil {
+						orchdioLogger.Warn("[controllers][platforms][universal][ConvertTrack] warning - search result is nil",
+							zap.String("platform", plat))
+						return nil, blueprint.EUNKNOWN
+					}
+
+					ins2 := make([]reflect.Value, 1)
+					ins2[0] = reflect.ValueOf(trackSearchData)
+					ans2 := methodSearchTrackWithTitle.Call([]reflect.Value{ins2[0]})
+
 					res2, ok3 := ans2[0].Interface().(*blueprint.TrackSearchResult)
 					if !ok3 {
 						orchdioLogger.Error("[controllers][platforms][universal][ConvertTrack][reflect-meta] error - could not convert interface to TrackSearchResult.. Error dynamically calling toMethod.",
 							zap.String("method", "SearchTrackWithTitle"))
 						return nil, blueprint.EUNKNOWN
 					}
-					toResult = append(toResult, map[string]*blueprint.TrackSearchResult{plat: res2})
+					toResults = append(toResults, map[string]*blueprint.TrackSearchResult{plat: res2})
 				} else {
 					return nil, blueprint.EUNKNOWN
 				}
@@ -384,7 +424,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 		conversion.Platforms.YTMusic = fromResult
 	}
 
-	for _, tR := range toResult {
+	for _, tR := range toResults {
 		// copy target result into a temp cp variable to avoid concurrency issues
 		cp := tR
 		for k, v := range cp {
@@ -408,19 +448,20 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 	orchdioLogger.Info("[controllers][platforms][deezer][ConvertEntity] info - conversion done", zap.String("entity", info.Entity),
 		zap.String("entity_id", info.EntityID), zap.String("app_id", info.App))
 
-	// send event to webhook.
-	convoyInstance := webhook.NewConvoy()
-	// todo: get event name from blueprint
-	err = convoyInstance.SendEvent(app.ConvoyEndpointID, "track:conversion", conversion)
-	if err != nil {
-		orchdioLogger.Error("[controllers][platforms][deezer][ConvertEntity] error - could not send event to webhook", zap.Error(err))
-		return nil, err
-	}
+	//// send event to webhook.
+	//convoyInstance := webhook.NewConvoy()
+	//// todo: get event name from blueprint
+	// todo: send a track event to the webhook, be sure its worth it
+	//err = convoyInstance.SendEvent("01HKTGA32FRW4FMWTHA2CCNHEB", "track:conversion", conversion)
+	//if err != nil {
+	//	orchdioLogger.Error("[controllers][platforms][deezer][ConvertEntity] error - could not send event to webhook", zap.Error(err))
+	//	return nil, err
+	//}
 	return &conversion, nil
 }
 
 // ConvertPlaylist converts a playlist from one platform to another
-func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*blueprint.PlaylistConversion, error) {
+func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB, taskId string) (*blueprint.PlaylistConversion, error) {
 	var conversion blueprint.PlaylistConversion
 	conversion.Meta.Entity = "playlist"
 	loggerOpts := &blueprint.OrchdioLoggerOptions{
@@ -442,7 +483,7 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (
 		orchdioLogger.Error("[controllers][platforms][deezer][ConvertPlaylist] error - no target platform specified", zap.String("entity_id", info.EntityID))
 		return nil, blueprint.EBADREQUEST
 	}
-	var fromService, toService interface{}
+	var fromService, toServices interface{}
 
 	// this block gets the credentials for the platform we're converting from.
 	// important so that we can get the credentials for those available for the app
@@ -532,7 +573,7 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (
 			orchdioLogger.Error("[controllers][platforms][spotify][ConvertPlaylist] error - could not unmarshal spotify credentials", zap.Error(pErr))
 			return nil, pErr
 		}
-		toService = spotify.NewService(&credentials, pg, red)
+		toServices = spotify.NewService(&credentials, pg, red)
 	case tidal.IDENTIFIER:
 		if len(app.TidalCredentials) == 0 {
 			orchdioLogger.Error("[controllers][platforms][tidal][ConvertPlaylist] error - no tidal credentials", zap.String("app_id", info.App))
@@ -548,7 +589,7 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (
 			orchdioLogger.Error("[controllers][platforms][tidal][ConvertPlaylist] error - could not unmarshal tidal credentials", zap.Error(pErr))
 			return nil, pErr
 		}
-		toService = tidal.NewService(&credentials, pg, red)
+		toServices = tidal.NewService(&credentials, pg, red)
 	case deezer.IDENTIFIER:
 		if len(app.DeezerCredentials) == 0 {
 			orchdioLogger.Error("[controllers][platforms][deezer][ConvertPlaylist] error - no deezer credentials", zap.String("app_id", info.App))
@@ -564,7 +605,7 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (
 			orchdioLogger.Error("[controllers][platforms][deezer][ConvertPlaylist] error - could not unmarshal deezer credentials", zap.Error(pErr))
 			return nil, pErr
 		}
-		toService = deezer.NewService(&credentials, pg, red, orchdioLogger)
+		toServices = deezer.NewService(&credentials, pg, red, orchdioLogger)
 	case applemusic.IDENTIFIER:
 		if len(app.AppleMusicCredentials) == 0 {
 			orchdioLogger.Error("[controllers][platforms][deezer][ConvertPlaylist] error - no applemusic credentials", zap.String("app_id", info.App))
@@ -580,7 +621,7 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (
 			orchdioLogger.Error("[controllers][platforms][deezer][ConvertPlaylist] error - could not unmarshal applemusic credentials", zap.Error(pErr))
 			return nil, pErr
 		}
-		toService = applemusic.NewService(&credentials, pg, red, orchdioLogger)
+		toServices = applemusic.NewService(&credentials, pg, red, orchdioLogger)
 
 	}
 
@@ -591,20 +632,30 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (
 		return nil, blueprint.EUNKNOWN
 	}
 
-	var methodSearchPlaylistWithTracks, ok2 = util.FetchMethodFromInterface(toService, "SearchPlaylistWithTracks")
+	var methodSearchPlaylistWithTracks, ok2 = util.FetchMethodFromInterface(toServices, "SearchPlaylistWithTracks")
 	if !ok2 {
 		orchdioLogger.Error("[controllers][platforms][ConvertPlaylist] error - could not fetch method from interface", zap.String("method", "SearchPlaylistWithTracks"),
-			zap.String("to_service", fmt.Sprintf("%v", toService)))
+			zap.String("to_service", fmt.Sprintf("%v", toServices)))
 		return nil, blueprint.EUNKNOWN
 	}
 	var idSearchResult *blueprint.PlaylistSearchResult
 	var omittedTracks *[]blueprint.OmittedTracks
 	var tracksSearchResult *[]blueprint.TrackSearchResult
 
+	// get the webhook id for the app which we'll pass to the dynamically called methods
+	appInfo, err := database.FetchAppByAppId(info.App)
+	if err != nil {
+		orchdioLogger.Error("[controllers][platforms][ConvertPlaylist] error - could not fetch app", zap.Error(err))
+		return nil, err
+	}
+
 	if methodSearchPlaylistWithID.IsValid() {
-		ins := make([]reflect.Value, 1)
+		ins := make([]reflect.Value, 3)
 		ins[0] = reflect.ValueOf(info.EntityID)
-		outs := methodSearchPlaylistWithID.Call(ins)
+		ins[1] = reflect.ValueOf(appInfo.ConvoyEndpointID)
+		ins[2] = reflect.ValueOf(info.EntityID)
+
+		outs := methodSearchPlaylistWithID.Call([]reflect.Value{ins[0], ins[1], ins[2]})
 		if len(outs) > 0 {
 			if outs[0].Interface() == nil {
 				return nil, blueprint.ENORESULT
@@ -615,9 +666,11 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (
 			}
 			// then use the above playlist info to search for srcPlatformTracks, on target platform
 			if methodSearchPlaylistWithTracks.IsValid() {
-				ins2 := make([]reflect.Value, 1)
+				ins2 := make([]reflect.Value, 2)
 				ins2[0] = reflect.ValueOf(idSearchResult)
-				outs2 := methodSearchPlaylistWithTracks.Call(ins2)
+				ins2[1] = reflect.ValueOf(appInfo.ConvoyEndpointID)
+				ins[2] = reflect.ValueOf(info.EntityID)
+				outs2 := methodSearchPlaylistWithTracks.Call([]reflect.Value{ins2[0], ins[1], ins[2]})
 				if len(outs2) > 0 {
 					if outs2[0].Interface() == nil {
 						return nil, blueprint.ENORESULT
