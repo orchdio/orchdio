@@ -1,7 +1,6 @@
 package webhook
 
 import (
-	convoy_go ""
 	"context"
 	"encoding/json"
 	convoy_go "github.com/frain-dev/convoy-go/v2"

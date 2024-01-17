@@ -1,7 +1,7 @@
 // +heroku goVersion go1.15
 module orchdio
 
-go 1.17
+go 1.19
 
 require (
 	github.com/TheZeroSlave/zapsentry v1.17.0

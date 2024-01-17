@@ -54,7 +54,7 @@ func init() {
 		log.Println("==⚠️ WARNING: env variable not set. Using dev ⚠️==")
 		env = "dev"
 	}
-	err := godotenv.Load(".env." + env)
+	err := godotenv.Load(".env.dev." + env)
 	if err != nil {
 		log.Println("Error reading the env file")
 		log.Println(err)
