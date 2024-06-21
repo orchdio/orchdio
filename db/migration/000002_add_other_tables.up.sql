@@ -1,6 +1,6 @@
 -- Version: 2
 -- Organization table
-create table public.organizations
+create table if not exists public.organizations
 (
     name        varchar,
     created_at  timestamp with time zone default now(),
@@ -35,7 +35,7 @@ alter table public.organizations
 
 
 -- Apps (dev apps) table
-create table public.apps
+create table if not exists public.apps
 (
     uuid                   uuid not null
         constraint apps_unique_pk
@@ -113,7 +113,7 @@ alter table public.apps
 
 
 -- User Apps table
-create table public.user_apps
+create table if not exists public.user_apps
 (
     uuid           uuid,
     refresh_token  bytea,
@@ -159,7 +159,7 @@ alter table public.user_apps
 
 
 -- Tasks table
-create table public.tasks
+create table if not exists public.tasks
 (
     id          integer generated always as identity
         primary key,
@@ -190,7 +190,7 @@ alter table public.tasks
 
 
 -- Follows table
-create table public.follows
+create table if not exists public.follows
 (
     id          serial
         primary key,
@@ -218,7 +218,7 @@ alter table public.follows
 
 
 -- Waitlists table
-create table public.waitlists
+create table if not exists public.waitlists
 (
     id         integer generated always as identity
         primary key,

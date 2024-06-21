@@ -1,4 +1,4 @@
-create table public.users
+create table if not exists public.users
 (
     id               integer generated always as identity
         primary key,

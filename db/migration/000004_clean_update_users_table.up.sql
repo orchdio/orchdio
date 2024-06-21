@@ -1,42 +1,42 @@
 -- drop old columns
 alter table public.users
-    drop column username;
+    drop column if exists username;
 
 alter table public.users
-    drop column usernames;
+    drop column if exists usernames;
 
 alter table public.users
-    drop column refresh_token;
+    drop column if exists refresh_token;
 
 alter table public.users
-    drop column platform_id;
+    drop column if exists platform_id;
 
 alter table public.users
-    drop column spotify_token;
+    drop column if exists spotify_token;
 
 alter table public.users
-    drop column applemusic_token;
+    drop column if exists applemusic_token;
 
 alter table public.users
-    drop column deezer_token;
+    drop column if exists deezer_token;
 
 alter table public.users
-    drop column tidal_token;
+    drop column if exists tidal_token;
 
 alter table public.users
-    drop column platform_ids;
+    drop column if exists platform_ids;
 
 
 -- new columns
 
-alter table public.users
+alter table if exists public.users
     add password text;
 
-alter table public.users
+alter table if exists public.users
     add reset_token text;
 
-alter table public.users
+alter table if exists public.users
     add reset_token_expiry timestamptz;
 
-alter table public.users
+alter table if exists public.users
     add reset_token_created_at timestamptz;
