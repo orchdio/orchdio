@@ -19,6 +19,8 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/monitor"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	jwtware "github.com/gofiber/jwt/v3"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/hibiken/asynq"
@@ -122,6 +124,34 @@ func main() {
 
 	if os.Getenv("ENV") == "production" {
 		log.Printf("\n[main] [info] - Running in production mode. Connecting to authenticated redis")
+	}
+
+	drver, err := postgres.WithInstance(db.DB, &postgres.Config{})
+	if err != nil {
+		log.Printf("Error instantiating db driver")
+		panic(err)
+	}
+
+	// Migrate
+	dbDriver, err := migrate.NewWithDatabaseInstance("file://./db/migration", "postgres", drver)
+
+	if err != nil {
+		log.Printf("Error instantiating db driver")
+		panic(err)
+	}
+
+	err = dbDriver.Up()
+	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		log.Printf("Error migrating database")
+		panic(err)
+	}
+
+	if errors.Is(err, migrate.ErrNoChange) {
+		log.Printf("Database migration already up to date. No migration to run")
+	}
+
+	if err == nil {
+		log.Printf("Database migration successful")
 	}
 
 	// ===========================================================
@@ -370,9 +400,6 @@ func main() {
 
 	platformsControllers := platforms.NewPlatform(redisClient, db, asyncClient, asynqMux)
 	whController := webhook.NewWebhookController(db, redisClient)
-
-	// Migrate
-	//dbDriver, err := migrate.NewWithDatabaseInstance("file://./db/migrations", "postgres", db)
 	/**
 	 ==================================================================
 	+
