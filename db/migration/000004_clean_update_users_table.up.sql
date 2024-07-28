@@ -29,8 +29,8 @@ alter table public.users
 
 -- new columns
 
-alter table if exists public.users
-    add password text;
+-- alter table if exists public.users
+--     add password text;
 
 alter table if exists public.users
     add reset_token text;

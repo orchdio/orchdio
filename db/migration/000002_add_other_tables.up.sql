@@ -128,7 +128,7 @@ create table if not exists public.user_apps
             references public.apps (uuid)
             on update cascade on delete cascade,
     platform       varchar,
-    scopea         character varying[]
+    scopes         character varying[]
 );
 
 comment on table public.user_apps is 'the apps the user has authed on orchdio';
@@ -151,7 +151,7 @@ comment on constraint user_apps_app__fk on public.user_apps is 'the foreign key 
 
 comment on column public.user_apps.platform is 'the platform this app belongs to';
 
-comment on column public.user_apps.scopea is 'the scopes the user authed for this app';
+comment on column public.user_apps.scopes is 'the scopes the user authed for this app';
 
 alter table public.user_apps
     owner to postgres;

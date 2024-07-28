@@ -449,7 +449,7 @@ func main() {
 		middleware.ExtractLinkInfoFromBody, platformsControllers.ConvertEntity)
 
 	orchRouter.Get("/task/:taskId", authMiddleware.AddReadOnlyDeveloperToContext, conversionController.GetPlaylistTask)
-	orchRouter.Post("/playlist/:platform/add", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.AddPlaylistToAccount)
+	orchRouter.Post("/playlist/:platform/add", authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.AddPlaylistToAccount)
 	// this is the account of the *DEVELOPER* not the user,
 	// todo: implement user account fetching using the user id or email, and verify that the developer has access to the user account, by checking
 	// 		for user apps that have the developer id
