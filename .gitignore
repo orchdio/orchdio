@@ -15,3 +15,5 @@ notes_and_issues.md
 layouts
 bin/
 .todo
+timescaledb-data
+docker-compose.yml

@@ -320,9 +320,6 @@ func (d *Controller) FetchApp(ctx *fiber.Ctx) error {
 		Credentials: creds,
 		DeezerState: app.DeezerState,
 	}
-
-	log.Printf("App info returned is")
-	spew.Dump(info)
 	return util.SuccessResponse(ctx, fiber.StatusOK, info)
 }
 
