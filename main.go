@@ -25,7 +25,6 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
-	"github.com/joho/godotenv"
 	"github.com/robfig/cron/v3"
 	"github.com/vmihailenco/taskq/v3"
 	"github.com/vmihailenco/taskq/v3/redisq"
@@ -48,19 +47,6 @@ import (
 	"syscall"
 	"time"
 )
-
-func init() {
-	env := os.Getenv("ENV")
-	if env == "dev" {
-		log.Println("==⚠️ WARNING: env variable not set. Using dev ⚠️==")
-		env = "dev"
-	}
-	err := godotenv.Load(".env." + env)
-	if err != nil {
-		log.Println("Error reading the env file")
-		log.Println(err)
-	}
-}
 
 /**
    ===========================================================
