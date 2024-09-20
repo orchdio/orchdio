@@ -51,7 +51,7 @@ import (
 
 func init() {
 	env := os.Getenv("ENV")
-	if env == "" {
+	if env == "dev" {
 		log.Println("==⚠️ WARNING: env variable not set. Using dev ⚠️==")
 		env = "dev"
 	}
