@@ -2,6 +2,7 @@ package services
 
 import (
 	"database/sql"
+	"errors"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
@@ -48,12 +49,12 @@ func (u *UserDevApp) CreateOrUpdateUserApp(body *blueprint.CreateNewUserAppData)
 
 	exRow := database.DB.QueryRowx(queries.FetchUserAppByPlatform, body.Platform, body.User, body.App)
 	exRowErr := exRow.StructScan(&userApp)
-	if exRowErr != nil && exRowErr != sql.ErrNoRows {
+	if exRowErr != nil && !errors.Is(exRowErr, sql.ErrNoRows) {
 		log.Printf("[controllers][developer][user_app] - error fetching existing user app on platform %s: %v", body.Platform, exRowErr)
 		return nil, exRowErr
 	}
 
-	if exRowErr == sql.ErrNoRows {
+	if errors.Is(exRowErr, sql.ErrNoRows) {
 		log.Printf("[controllers][developer][user_app] - user app does not exist for platform %s", body.Platform)
 		// it means the user app does not exist as we check above if the error is not sql.ErrNoRows
 		row := database.DB.QueryRowx(queries.CreateUserApp, uniqueID, body.RefreshToken,

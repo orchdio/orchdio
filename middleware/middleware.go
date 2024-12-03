@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/samber/lo"
@@ -9,6 +10,11 @@ import (
 	"net/http"
 	"orchdio/blueprint"
 	"orchdio/services"
+	"orchdio/services/applemusic"
+	"orchdio/services/deezer"
+	"orchdio/services/spotify"
+	"orchdio/services/tidal"
+	"orchdio/services/ytmusic"
 	"orchdio/util"
 	"strings"
 )
@@ -45,7 +51,7 @@ func VerifyAppJWT(ctx *fiber.Ctx) error {
 func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 	// adding all in order to support wildcard. when the option is empty, we can presume they want to convert
 	// to all platforms (that they have added their credentials for and the user has authed, that is)
-	platforms := []string{"ytmusic", "spotify", "deezer", "applemusic", "tidal", "all"}
+	platforms := []string{ytmusic.IDENTIFIER, spotify.IDENTIFIER, deezer.IDENTIFIER, applemusic.IDENTIFIER, tidal.IDENTIFIER, "all"}
 	app := ctx.Locals("app").(*blueprint.DeveloperApp)
 	linkBody := ctx.Body()
 	// todo move this to a real type in blueprint. the keys are url and target_platform
@@ -67,11 +73,11 @@ func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 	linkInfo.Developer = app.Developer.String()
 
 	if err != nil {
-		if err == blueprint.EHOSTUNSUPPORTED {
+		if errors.Is(err, blueprint.EHOSTUNSUPPORTED) {
 			return util.ErrorResponse(ctx, http.StatusNotImplemented, "not supported", "Not implemented.")
 		}
 
-		if err == blueprint.EINVALIDLINK {
+		if errors.Is(err, blueprint.EINVALIDLINK) {
 			log.Printf("[middleware][ExtractLinkInfoFromBody][warning] invalid conversionBody. are you sure its a url? %s\n", conversionBody)
 			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Bad request body. Please make sure you pass a valid conversionBody")
 		}
@@ -99,6 +105,32 @@ func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 	// it looks like: {TargetLink: "https://music.youtube.com/watch?v=Z2X4uZL2o8Q", TargetPlatform: "spotify"}
 	ctx.Locals("linkInfo", linkInfo)
 
+	// prevent entity conversion if the source platform is not supported
+	switch linkInfo.Platform {
+	case deezer.IDENTIFIER:
+		if len(app.DeezerCredentials) == 0 {
+			log.Printf("\n[middleware][ExtractLinkInfoFromBody] warning - Deezer credentials not found. Exiting entity conversion\n")
+			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Bad request. Deezer credentials not found")
+		}
+
+	case spotify.IDENTIFIER:
+		if len(app.SpotifyCredentials) == 0 {
+			log.Printf("\n[middleware][ExtractLinkInfoFromBody] warning - Spotify credentials not found. Exiting entity conversion\n")
+			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Bad request. Spotify credentials not found")
+		}
+
+	case applemusic.IDENTIFIER:
+		if len(app.AppleMusicCredentials) == 0 {
+			log.Printf("\n[middleware][ExtractLinkInfoFromBody] warning - Apple Music credentials not found. Exiting entity conversion\n")
+			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Bad request. Apple Music credentials not found")
+		}
+	case tidal.IDENTIFIER:
+		if len(app.TidalCredentials) == 0 {
+			log.Printf("\n[middleware][ExtractLinkInfoFromBody] warning - Tidal credentials not found. Exiting entity conversion\n")
+			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Bad request. Tidal credentials not found")
+		}
+	}
+
 	if strings.Contains(linkInfo.TargetLink, "playlist") {
 		log.Printf("\n[middleware][ExtractLinkInfoFromBody] method - Playlist detected. Checking for target platform\n")
 		// if the target platform is not set, we'll exit here. keep in mind in case of testing and it doesnt work as before.
@@ -119,6 +151,7 @@ func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 		// it looks like: {TargetLink: "https://music.youtube.com/playlist?list=OLAK5uy_m8ZQZ4Z1Z2X4uZL2o8Q", TargetPlatform: "spotify", Entity: "playlist"}
 		ctx.Locals("linkInfo", linkInfo)
 	}
+
 	return ctx.Next()
 }
 

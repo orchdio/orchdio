@@ -19,11 +19,12 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/monitor"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	jwtware "github.com/gofiber/jwt/v3"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
-	"github.com/joho/godotenv"
 	"github.com/robfig/cron/v3"
 	"github.com/vmihailenco/taskq/v3"
 	"github.com/vmihailenco/taskq/v3/redisq"
@@ -46,19 +47,6 @@ import (
 	"syscall"
 	"time"
 )
-
-func init() {
-	env := os.Getenv("ENV")
-	if env == "" {
-		log.Println("==⚠️ WARNING: env variable not set. Using dev ⚠️==")
-		env = "dev"
-	}
-	err := godotenv.Load(".env." + env)
-	if err != nil {
-		log.Println("Error reading the env file")
-		log.Println(err)
-	}
-}
 
 /**
    ===========================================================
@@ -122,6 +110,34 @@ func main() {
 
 	if os.Getenv("ENV") == "production" {
 		log.Printf("\n[main] [info] - Running in production mode. Connecting to authenticated redis")
+	}
+
+	drver, err := postgres.WithInstance(db.DB, &postgres.Config{})
+	if err != nil {
+		log.Printf("Error instantiating db driver")
+		panic(err)
+	}
+
+	// Migrate
+	dbDriver, err := migrate.NewWithDatabaseInstance("file://./db/migration", "postgres", drver)
+
+	if err != nil {
+		log.Printf("Error instantiating db driver")
+		panic(err)
+	}
+
+	err = dbDriver.Up()
+	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		log.Printf("Error migrating database")
+		panic(err)
+	}
+
+	if errors.Is(err, migrate.ErrNoChange) {
+		log.Printf("Database migration already up to date. No migration to run")
+	}
+
+	if err == nil {
+		log.Printf("Database migration successful")
 	}
 
 	// ===========================================================
@@ -370,9 +386,6 @@ func main() {
 
 	platformsControllers := platforms.NewPlatform(redisClient, db, asyncClient, asynqMux)
 	whController := webhook.NewWebhookController(db, redisClient)
-
-	// Migrate
-	//dbDriver, err := migrate.NewWithDatabaseInstance("file://./db/migrations", "postgres", db)
 	/**
 	 ==================================================================
 	+
@@ -422,7 +435,7 @@ func main() {
 		middleware.ExtractLinkInfoFromBody, platformsControllers.ConvertEntity)
 
 	orchRouter.Get("/task/:taskId", authMiddleware.AddReadOnlyDeveloperToContext, conversionController.GetPlaylistTask)
-	orchRouter.Post("/playlist/:platform/add", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.AddPlaylistToAccount)
+	orchRouter.Post("/playlist/:platform/add", authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.AddPlaylistToAccount)
 	// this is the account of the *DEVELOPER* not the user,
 	// todo: implement user account fetching using the user id or email, and verify that the developer has access to the user account, by checking
 	// 		for user apps that have the developer id

@@ -261,7 +261,11 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 			// ytmusic doesnt require credentials yet so we skip it
 
 			encryptedCred := appCred
-			if len(encryptedCred) == 0 && plat != ytmusic.IDENTIFIER {
+			if len(encryptedCred) == 0 || encryptedCred == nil {
+				log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - no credentials provided for %s\n", plat)
+				if plat == ytmusic.IDENTIFIER {
+					toService = append(toService, map[string]interface{}{ytmusic.IDENTIFIER: ytmusic.NewService(red)})
+				}
 				continue
 			}
 			decryptedCredentials, dErr := util.DecryptIntegrationCredentials(encryptedCred)
