@@ -18,6 +18,15 @@ const (
 	AppleMusicHost = "music.apple.com"
 )
 
+const (
+	EMAIL_QUEUE_PATTERN               = "send:appauth:email"
+	PLAYLIST_CONVERSION_QUEUE_PATTERN = "playlist:conversion"
+	SEND_RESET_PASSWIRD_QUEUE_PATTERN = "send:reset_password_email"
+	SEND_WELCOME_EMAIL_QUEUE_PATTER   = "send:welcome_email"
+)
+
+var ValidUserIdentifiers = []string{"email", "id"}
+
 // perhaps have a different Error type declarations somewhere. For now, be here
 
 var (

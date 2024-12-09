@@ -24,7 +24,6 @@ import (
 func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 	log.Printf("[controller][account][CreateOrg] - creating org")
 	// todo: implement email verification for org owner creation when they pass their email
-	//claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken)
 
 	var body blueprint.CreateOrganizationData
 	err := ctx.BodyParser(&body)
@@ -69,32 +68,32 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 	}
 
 	// if the user has been created, then we need the user id to create the org. if not, we need to create the user first
-	userInf, err := database.FindUserByEmail(body.OwnerEmail)
+	userInfo, err := database.FindUserByEmail(body.OwnerEmail)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			// create user
-			ubx := uuid.NewString()
-			_, dErr := u.DB.Exec(queries.CreateNewOrgUser, body.OwnerEmail, ubx, string(hashedPass))
+			newUserId := uuid.NewString()
+			_, dErr := u.DB.Exec(queries.CreateNewOrgUser, body.OwnerEmail, newUserId, string(hashedPass))
 			if dErr != nil {
 				log.Printf("[controller][account][CreateOrg] - error creating user: %v", dErr)
 				return util.ErrorResponse(ctx, http.StatusInternalServerError, dErr, "Could not create organization")
 			}
-			log.Printf("[controller][account][CreateOrg] - user created new user with email %s and id: %s", body.OwnerEmail, ubx)
-			userId = ubx
+			log.Printf("[controller][account][CreateOrg] - user created new user with email %s and id: %s", body.OwnerEmail, newUserId)
+			userId = newUserId
 		}
 	}
 
-	if userInf != nil {
+	if userInfo != nil {
 		// get the organizations users have.
 		// An email can be connected to a streaming platform account and then used to connect to an app on orchdio,
 		// so we need to check if the user already has an organization. This is because if a user
 		// is created by signing up by creating an organization, they must have an organization already. So if they dont have
 		// an organization we can assume that they were created by signing up with a streaming platform account.
 		// and if they do, we return an error saying that they already have an organization.
-		orgs, err := database.FetchOrgs(userInf.UUID.String())
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			log.Printf("[controller][account][CreateOrg] - error getting orgs: %v", err)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not create organization.")
+		orgs, fetchErr := database.FetchOrg(userInfo.UUID.String())
+		if fetchErr != nil && !errors.Is(fetchErr, sql.ErrNoRows) {
+			log.Printf("[controller][account][CreateOrg] - error getting orgs: %v", fetchErr)
+			return util.ErrorResponse(ctx, http.StatusInternalServerError, fetchErr, "Could not create organization.")
 		}
 
 		if orgs != nil {
@@ -103,7 +102,7 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 		}
 		// in the case where the user was created from authing with a platform for example, there will be no existing password for the user
 		// so in this case we need to update the user with the password
-		userId = userInf.UUID.String()
+		userId = userInfo.UUID.String()
 		_, dErr := u.DB.Exec(queries.UpdateUserPassword, string(hashedPass), userId)
 		if dErr != nil {
 			log.Printf("[controller][account][CreateOrg] - error updating user password: %v", dErr)
@@ -111,14 +110,13 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 		}
 	}
 
-	// fetch all the orgs.
 	// TODO: allow users to have multiple orgs. for now we allow only 1.
-	org, err := database.FetchOrgs(userId)
+	org, err := database.FetchOrg(userId)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			log.Printf("[controller][account][CreateOrg] - no orgs found for user: %s. Going to create user", userId)
 
-			// todo: send email verification to user
+			// todo: send verification email to user
 			uid, cErr := database.CreateOrg(uniqueId, body.Name, body.Description, userId)
 			if cErr != nil {
 				log.Printf("[controller][account][CreateOrg] - error creating org: %v", err)
@@ -246,7 +244,7 @@ func (u *UserController) FetchUserOrgs(ctx *fiber.Ctx) error {
 	claims := ctx.Locals("app_jwt").(*blueprint.AppJWT)
 
 	database := db.NewDB{DB: u.DB}
-	orgs, err := database.FetchOrgs(claims.DeveloperID)
+	orgs, err := database.FetchOrg(claims.DeveloperID)
 	if err != nil {
 		log.Printf("[controller][account][GetOrgs] - error getting orgs: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not get organizations")
@@ -302,7 +300,7 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Invalid login", "Could not login to organization. Password or email is incorrect.")
 	}
 
-	org, err := database.FetchOrgs(user.UUID.String())
+	org, err := database.FetchOrg(user.UUID.String())
 	if err != nil {
 		log.Printf("[controller][account][LoginUserToOrg] - error getting orgs: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not get organizations")

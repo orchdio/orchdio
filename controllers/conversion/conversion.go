@@ -3,6 +3,7 @@ package conversion
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -52,7 +53,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 	database := db.NewDB{DB: c.DB}
 	taskRecord, err := database.FetchTask(taskId)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			log.Printf("[controller][conversion][GetPlaylistTaskStatus] - task not found")
 			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "task not found")
 		}

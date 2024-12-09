@@ -7,6 +7,8 @@ import (
 	"orchdio/util"
 )
 
+// TODO: Deprecated remove this
+
 // LinkInfo returns the information about link that the information has been extracted from in the middleware
 func LinkInfo(ctx *fiber.Ctx) error {
 	local := ctx.Locals("linkInfo")

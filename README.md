@@ -1,10 +1,9 @@
 ## ORCHDIO
 
-Orchdio is an API first platform for cross-platform streaming services apps. The goal is to provide a simple and easy to use API for streaming services.
+Orchdio is an API first platform for cross-platform streaming services apps. The goal is to provide simple and easy to use unified APIs for digital streaming platforms.
 
 The current streaming platforms all do the same thing which is to stream music — and many people use different accounts on each of these platforms. This poses
-a problem for both users and developers; developers have to write the same code to use streaming music api on each platform, and users have to maintain separate accounts on each platform, Orchdio solves this by providing cross
-platform APIs that enable developers build on various streaming services at once and allow users take charge of their accounts from several services
+a problem for both users and developers; developers have to write the same code to use streaming music api on each platform, and users have to maintain separate accounts on each platform, Orchdio solves this by providing unified, cross-platform APIs that enable developers build on various streaming services at once and allow users take charge of their accounts from several services
 in one place.
 
 
@@ -15,11 +14,17 @@ Requirements:
  - Redis
  - Postgres
 
-To run the project, update the `.env` file with the necessary configuration values, then run the following commands:
-    
-    ```bash
- $ go build -o orchdio && ./orchdio
-   ```
+Set the environment variable `ORCHDIO_ENV=dev`. The application looks for a `.env.dev` file in the root directory, if the environment variable value is
+dev. Otherwise, the application looks for a `.env` file instead. Then run the following commands:   
 
-### Overview
-TODO: Add overview of the project
+
+The following could be helpful in development:
+- [Asynqmon](https://github.com/hibiken/asynqmon): This is a web UI for the [Asynq](https://github.com/hibiken/asynq) task queue used for working with queues.
+- [Tunnelto](https://tunnelto.dev/) : for exposing local servers over the internet using a custom subdomain, over HTTPs. This is useful when working with webhooks.
+
+
+```bash
+
+ $ export ORCHDIO_ENV=dev 
+ $ go build -o cmc/orchdio && ./cmd/orchdio
+   ```

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -186,14 +185,14 @@ func (u *UserController) FollowPlaylist(ctx *fiber.Ctx) error {
 	follow := orchdioFollow.NewFollow(u.DB, u.Redis)
 
 	followId, err := follow.FollowPlaylist(user.UUID.String(), app.UID.String(), subscriberBody.Url, linkInfo, subscriberBody.Users)
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		log.Printf("[controller][follow][FollowPlaylist] - error following playlist: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not follow playlist")
 	}
 
 	// if the error returned is sql.ErrNoRows, it means that the playlist is already followed
 	//and the length of subscribers passed in the request body is 1
-	if err == blueprint.EALREADY_EXISTS {
+	if errors.Is(err, blueprint.EALREADY_EXISTS) {
 		log.Printf("[controller][follow][FollowPlaylist] - playlist already followed")
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Already followed", "playlist already followed")
 	}
@@ -240,6 +239,8 @@ func (u *UserController) FetchUserInfoByIdentifier(ctx *fiber.Ctx) error {
 
 	// for each of the response, depending on the platform, we want to make a request to the endpoint of the platform
 	// to get the user info
+	// this is why we return an array of blueprint.UserInfo. This is because we can get the platforms the users have authorized
+	// for this application and then perform the action we want. if the user does not have this, we can return a good error response, for example.
 	var userInfo blueprint.UserInfo
 	for _, user := range *userProfile {
 		userInfo.Email = user.Email
@@ -378,11 +379,6 @@ func (u *UserController) ResetPassword(ctx *fiber.Ctx) error {
 		log.Printf("[controller][user][ResetPassword] - error saving reset token: %v", err)
 		return util.ErrorResponse(ctx, http.StatusUnprocessableEntity, err, "Could not set reset token")
 	}
-	//_, err = u.Redis.Set(context.Background(), redisKey, redisValue, time.Minute*15).Result()
-	//if err != nil {
-	//	log.Printf("[controller][user][ResetPassword] - error setting reset token in redis: %v", err)
-	//	return util.ErrorResponse(ctx, http.StatusUnprocessableEntity, err, "Could not set reset token")
-	//}
 
 	taskID := uuid.New().String()
 	_ = &blueprint.AppTaskData{
@@ -402,9 +398,6 @@ func (u *UserController) ResetPassword(ctx *fiber.Ctx) error {
 		TemplateID: 4,
 		Subject:    "Password Reset",
 	}
-
-	log.Printf("task data:")
-	spew.Dump(taskData)
 
 	serializedEmailData, err := json.Marshal(taskData)
 	if err != nil {
@@ -483,7 +476,7 @@ func (u *UserController) ChangePassword(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not update password")
 	}
 
-	userOrg, dErr := DB.FetchOrgs(user.UUID.String())
+	userOrg, dErr := DB.FetchOrg(user.UUID.String())
 	if dErr != nil {
 		log.Printf("[controller][user][ChangePassword] - error fetching user org: %v", dErr)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, dErr, "Could not fetch user org")
@@ -501,7 +494,6 @@ func (u *UserController) ChangePassword(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, er, "Could not fetch user apps")
 	}
 
-	// todo: perhaps move this to a util/separate func. also found in org.go
 	result := map[string]interface{}{
 		"org_id":      userOrg.UID.String(),
 		"name":        userOrg.Name,
