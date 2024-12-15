@@ -188,9 +188,6 @@ func (u *UserController) DeleteOrg(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Org ID is invalid. Please pass a valid Org ID")
 	}
 
-	// check if the user is the owner of the org
-	// if not, return error
-
 	database := db.NewDB{DB: u.DB}
 	err := database.DeleteOrg(orgId, claims.DeveloperID)
 	if err != nil {
@@ -335,9 +332,10 @@ func (u *UserController) SendAdminWelcomeEmail(email string) error {
 	taskID := uuid.NewString()
 	orchdioQueue := queue.NewOrchdioQueue(u.AsynqClient, u.DB, u.Redis, u.AsynqServer)
 	taskData := &blueprint.EmailTaskData{
-		From:       os.Getenv("ALERT_EMAIL"),
-		To:         email,
-		Payload:    nil,
+		From:    os.Getenv("ALERT_EMAIL"),
+		To:      email,
+		Payload: nil,
+		// todo: move this to a configuration, to make it easier to override
 		Subject:    "Welcome to Orchdio",
 		TaskID:     taskID,
 		TemplateID: 3,

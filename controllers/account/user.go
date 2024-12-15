@@ -316,7 +316,6 @@ func (u *UserController) FetchUserInfoByIdentifier(ctx *fiber.Ctx) error {
 }
 
 func (u *UserController) ResetPassword(ctx *fiber.Ctx) error {
-
 	// GET: check if the token is valid
 	// if the method is a GET, we want to check if the token is valid and return a 200 if not and 500 otherwise
 	if ctx.Method() == http.MethodGet {
@@ -328,9 +327,8 @@ func (u *UserController) ResetPassword(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Token not passed")
 		}
 
-		// fetch the user profile from db if the token is valid
+		// fetch the user profile from db if the token is valid. The token expires in 5 minutes.
 		database := db.NewDB{DB: u.DB}
-		log.Printf("Token passed is %s", token)
 		_, err := database.FindUserByResetToken(strings.Trim(token, " "))
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {

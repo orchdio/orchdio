@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/samber/lo"
@@ -660,9 +659,6 @@ func (d *NewDB) SaveUserResetToken(id, token string, expiry time.Time) error {
 // FindUserByResetToken finds a user by the reset token
 func (d *NewDB) FindUserByResetToken(token string) (*blueprint.User, error) {
 	log.Printf("[db][FindUserByResetToken] Running query %s\n", queries.FindUserByResetToken)
-	log.Printf("Token to search with")
-	spew.Dump(token)
-
 	row := d.DB.QueryRowx(queries.FindUserByResetToken, token)
 	var res blueprint.User
 	err := row.StructScan(&res)
