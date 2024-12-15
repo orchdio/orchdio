@@ -152,17 +152,6 @@ type TaskErrorPayload struct {
 	Message  string `json:"message"`
 }
 
-// Webhook represents a webhook record in the db
-type Webhook struct {
-	Id          int       `json:"id" db:"id"`
-	User        uuid.UUID `json:"user" db:"user"`
-	Url         string    `json:"url" db:"url"`
-	CreatedAt   string    `json:"created_at" db:"created_at"`
-	UpdatedAt   string    `json:"updated_at" db:"updated_at"`
-	VerifyToken string    `json:"verify_token" db:"verify_token"`
-	UID         uuid.UUID `json:"uuid" db:"uuid"`
-}
-
 // TaskRecord representsUs a task record in the database
 type TaskRecord struct {
 	Id int `json:"id,omitempty" db:"id"`

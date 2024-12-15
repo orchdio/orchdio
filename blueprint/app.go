@@ -257,3 +257,21 @@ type ApiKey struct {
 	CreatedAt string    `json:"created_at" db:"created_at"`
 	UpdatedAt string    `json:"updated_at" db:"updated_at"`
 }
+
+// WebhookMessage struct represents the message sent from the server to the client over webhook
+type WebhookMessage struct {
+	Message string      `json:"message"`
+	Event   string      `json:"event_name"`
+	Payload interface{} `json:"payload,omitempty"`
+}
+
+// Webhook represents a webhook record in the db
+type Webhook struct {
+	Id          int       `json:"id" db:"id"`
+	User        uuid.UUID `json:"user" db:"user"`
+	Url         string    `json:"url" db:"url"`
+	CreatedAt   string    `json:"created_at" db:"created_at"`
+	UpdatedAt   string    `json:"updated_at" db:"updated_at"`
+	VerifyToken string    `json:"verify_token" db:"verify_token"`
+	UID         uuid.UUID `json:"uuid" db:"uuid"`
+}
