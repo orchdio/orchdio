@@ -25,7 +25,6 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
-	"github.com/joho/godotenv"
 	"github.com/robfig/cron/v3"
 	"github.com/vmihailenco/taskq/v3"
 	"github.com/vmihailenco/taskq/v3/redisq"
