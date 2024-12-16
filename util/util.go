@@ -20,6 +20,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 	"io"
 	"log"
+	"net/mail"
 	"orchdio/blueprint"
 	"os"
 	"reflect"
@@ -203,7 +204,7 @@ func DeezerIsExplicit(v int) bool {
 	return out
 }
 
-// GetFormattedDuration returns the duration of a track in format ``hh:mm:ss``
+// GetFormattedDuration returns the duration of a track in format “hh:mm:ss“
 func GetFormattedDuration(v int) string {
 	hour := 0
 	min := v / 60
@@ -496,4 +497,32 @@ func DecryptIntegrationCredentials(encryptedCredentials []byte) (*blueprint.Inte
 		return nil, err
 	}
 	return &credentials, nil
+}
+
+// FetchIdentifierOption returns the type of identifier being used to fetch a user info. An identifier is either
+// email or id. id is the user's Orchdio id.
+// it returns two values — a boolean and a byte. if the identifier could be fetched, it returns a true and byte
+// of strings of the option. In the other case, it will return a false and a byte of strings containing the error message.
+func FetchIdentifierOption(identifier string) (bool, []byte) {
+	log.Printf("[db][FetchUserByIdentifier] - fetching user profile by identifier")
+	var opt string
+	isUUID := IsValidUUID(identifier)
+	parsedEmail, err := mail.ParseAddress(identifier)
+	if err != nil {
+		log.Printf("[db][FetchUserByIdentifier] warning - invalid email used as identifier for fetching user info %s\n", identifier)
+		opt = "id"
+	}
+
+	isValidEmail := parsedEmail != nil
+	if !isUUID && !isValidEmail {
+		log.Printf("[db][FetchUserByIdentifier] - invalid identifier '%s'\n", identifier)
+		return false, []byte(errors.New("invalid identifier").Error())
+	}
+
+	if isUUID {
+		opt = "id"
+	} else {
+		opt = "email"
+	}
+	return true, []byte(opt)
 }

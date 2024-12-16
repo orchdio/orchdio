@@ -27,6 +27,7 @@ type Platforms struct {
 	DB          *sqlx.DB
 	AsynqClient *asynq.Client
 	AsynqMux    *asynq.ServeMux
+	Logger      *blueprint.OrchdioLoggerOptions
 }
 
 func NewPlatform(r *redis.Client, db *sqlx.DB, asynqClient *asynq.Client, asynqMux *asynq.ServeMux) *Platforms {

@@ -44,13 +44,17 @@ func NewAuthController(db *sqlx.DB, asynqClient *asynq.Client, asynqServer *asyn
 	return &AuthController{DB: db, AsyncClient: asynqClient, AsynqServer: asynqServer, AsynqRouter: asyqRouter, Redis: r}
 }
 
+// AppAuthRedirect is called when an application performs authorization and authentication for a specific platform.
+// This controller takes care of the various auth cases and how they work and tries as best as possible to unify their
+// behaviour.
 func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 	// we want to check the incoming platform redirect. we make sure its only valid for spotify apple and deezer
 	platform := ctx.Locals("platform").(string)
 	pubKey := ctx.Get("x-orchdio-public-key")
-	aScopes := ctx.Query("scopes")
+	appScopes := ctx.Query("scopes")
 	developerPubKey := ctx.Locals("app_pub_key")
 
+	// fixme: this seems redundant in most cases i am using it. remove where unnecessary and consider the possible useful cases.
 	reqId := ctx.Get("x-orchdio-request-id")
 	loggerOpts := &blueprint.OrchdioLoggerOptions{
 		RequestID:            reqId,
@@ -77,13 +81,12 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 		hostname = fmt.Sprintf("https://%s", hostname)
 	}
 
-	if aScopes == "" && platform != deezer.IDENTIFIER {
-		//log.Printf("[controllers][AppAuthRedirect] developer -  error: no scopes provided. Please pass the scope you want to request from the user\n")
+	if appScopes == "" && platform != deezer.IDENTIFIER {
 		logger.Error("[controllers][AppAuthRedirect] developer -  error: no scopes provided while trying to connect platform.", zap.String("platform", platform))
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "No scopes provided. Please pass the scope you want to request from the user")
 	}
 
-	authScopes := strings.Split(aScopes, ",")
+	authScopes := strings.Split(appScopes, ",")
 
 	if platform == deezer.IDENTIFIER {
 		authScopes = strings.Split(deezer.ValidScopes, ",")
@@ -121,10 +124,7 @@ func (a *AuthController) AppAuthRedirect(ctx *fiber.Ctx) error {
 	}
 
 	logger.Info("[controllers][AppAuthRedirect] developer -  fetched developer app", zap.String("app_name", developerApp.Name))
-
-	// fetch the app integration integrationCredentials
-	//var integrationCredentials []byte
-
+	
 	// create new AppAuthToken action
 	var redirectToken = blueprint.AppAuthToken{
 		App: developerApp.UID.String(),

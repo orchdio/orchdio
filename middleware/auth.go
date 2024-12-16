@@ -160,7 +160,7 @@ func (a *AuthMiddleware) AddReadWriteDeveloperToContext(ctx *fiber.Ctx) error {
 }
 
 func (a *AuthMiddleware) HandleTrolls(ctx *fiber.Ctx) error {
-	var blacklists = []string{"/.env", "/_profiler/phpinfo",
+	var blacklists = []string{"/.env.dev", "/_profiler/phpinfo",
 		"/.admin",
 		"/.git",
 		"/nginx_status",
