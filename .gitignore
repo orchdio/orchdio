@@ -15,3 +15,5 @@ bin/
 timescaledb-data
 docker-compose.yml
 .env.production
+.secrets
+notes.md
