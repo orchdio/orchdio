@@ -62,9 +62,11 @@ func main() {
 		log.Fatal("No env variable ORCHDIO_ENV found")
 	}
 
-	dbErr := godotenv.Load(".env." + envr)
-	if dbErr != nil {
-		log.Fatalf("⛔ Error loading .env.%s file", envr)
+	if envr != "production" {
+		dbErr := godotenv.Load(".env." + envr)
+		if dbErr != nil {
+			log.Fatalf("⛔ Error loading .env.%s file", envr)
+		}
 	}
 
 	dbURL := os.Getenv("DATABASE_URL")
