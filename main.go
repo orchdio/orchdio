@@ -25,6 +25,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
+	"github.com/joho/godotenv"
 	"github.com/robfig/cron/v3"
 	"github.com/vmihailenco/taskq/v3"
 	"github.com/vmihailenco/taskq/v3/redisq"
@@ -56,22 +57,34 @@ import (
 func main() {
 	// Database and cache setup things
 	envr := os.Getenv("ORCHDIO_ENV")
+
+	if envr == "" {
+		log.Fatal("No env variable ORCHDIO_ENV found")
+	}
+
+	if envr != "production" {
+		dbErr := godotenv.Load(".env." + envr)
+		if dbErr != nil {
+			log.Fatalf("⛔ Error loading .env.%s file", envr)
+		}
+	}
+
 	dbURL := os.Getenv("DATABASE_URL")
 	if envr != "production" {
 		dbURL = dbURL + "?sslmode=disable"
 	}
 
 	port := os.Getenv("PORT")
-	log.Printf("Port: %v", port)
 	if port == " " {
 		port = "52800"
 	}
 
+	log.Printf("✅🔱 Port: %v", port)
 	port = fmt.Sprintf(":%s", port)
 
 	db, err := sqlx.Open("postgres", dbURL)
 	if err != nil {
-		log.Printf("Error connecting to postgresql db")
+		log.Printf("⛔ Error connecting to postgresql db")
 		panic(err)
 	}
 	defer func(db *sqlx.DB) {
@@ -82,33 +95,33 @@ func main() {
 	}(db)
 	err = db.Ping()
 	if err != nil {
-		log.Println("Error connecting to postgresql db")
+		log.Println("⛔ Error connecting to postgresql db")
 		panic(err)
 	}
 
-	log.Println("Connected to Postgresql database")
+	log.Println("✅ Connected to Postgresql database")
 
 	redisOpts, err := redis.ParseURL(os.Getenv("REDISCLOUD_URL"))
 	if err != nil {
-		log.Printf("Error parsing redis url")
+		log.Printf("⛔ Error parsing redis url")
 		panic(err)
 	}
 
+	// configure redis. following configuration is for the queue system setup, using redis.
 	redisClient := redis.NewClient(redisOpts)
 	if redisClient.Ping(context.Background()).Err() != nil {
-		log.Printf("\n[main] [error] - Could not connect to redis. Are you sure redis is configured correctly?")
+		log.Printf("\n[main] [error] - ⛔ Could not connect to redis. Are you sure redis is configured correctly?")
 		panic("Could not connect to redis. Please check your redis configuration.")
 	}
 
 	var QueueFactory = redisq.NewFactory()
-
 	var playlistQueue = QueueFactory.RegisterQueue(&taskq.QueueOptions{
 		Name:  "orchdio-playlist-queue",
 		Redis: redisClient,
 	})
 	asynqMux := asynq.NewServeMux()
 
-	if os.Getenv("ENV") == "production" {
+	if envr == "production" {
 		log.Printf("\n[main] [info] - Running in production mode. Connecting to authenticated redis")
 	}
 
@@ -120,7 +133,6 @@ func main() {
 
 	// Migrate
 	dbDriver, err := migrate.NewWithDatabaseInstance("file://./db/migration", "postgres", drver)
-
 	if err != nil {
 		log.Printf("Error instantiating db driver")
 		panic(err)
@@ -133,11 +145,11 @@ func main() {
 	}
 
 	if errors.Is(err, migrate.ErrNoChange) {
-		log.Printf("Database migration already up to date. No migration to run")
+		log.Printf("✅ Database migration already up to date. No migration to run")
 	}
 
 	if err == nil {
-		log.Printf("Database migration successful")
+		log.Printf("✅ Database migration successful")
 	}
 
 	// ===========================================================
@@ -145,7 +157,6 @@ func main() {
 	// ===========================================================
 	asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
 	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
-
 	asynqServer := asynq.NewServer(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password},
 		asynq.Config{Concurrency: 10,
 			ShutdownTimeout: 3 * time.Second,
@@ -255,10 +266,10 @@ func main() {
 
 	asynqMux.Use(queue.CheckForOrphanedTasksMiddleware)
 	orchdioQueue := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
-	asynqMux.HandleFunc("send:appauth:email", orchdioQueue.SendEmailHandler)
-	asynqMux.HandleFunc("playlist:conversion", orchdioQueue.PlaylistTaskHandler)
-	asynqMux.HandleFunc("send:reset_password_email", orchdioQueue.SendEmailHandler)
-	asynqMux.HandleFunc("send:welcome_email", orchdioQueue.SendEmailHandler)
+	asynqMux.HandleFunc(blueprint.EMAIL_QUEUE_PATTERN, orchdioQueue.SendEmailHandler)
+	asynqMux.HandleFunc(blueprint.PLAYLIST_CONVERSION_QUEUE_PATTERN, orchdioQueue.PlaylistTaskHandler)
+	asynqMux.HandleFunc(blueprint.SEND_RESET_PASSWIRD_QUEUE_PATTERN, orchdioQueue.SendEmailHandler)
+	asynqMux.HandleFunc(blueprint.SEND_WELCOME_EMAIL_QUEUE_PATTER, orchdioQueue.SendEmailHandler)
 
 	err = asynqServer.Start(asynqMux)
 	if err != nil {
@@ -323,13 +334,11 @@ func main() {
 			return nil
 		},
 	})
-	serverChan := make(chan os.Signal, 1)
-	// we listen for SIGINT, SIGTERM and SIGKILL. this sends a signal to the serverChan channel, which we listen to in the goroutine below
-	signal.Notify(serverChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
-
 	// unpause the queue server
+	//
 	// get status of the playlist conversion queue
-	// if it is paused, unpause it
+	// if it is paused, unpause it. This runs when the application is starting up.
+	// if there is an error fetching queues, kill the application.
 	queues, err := inspector.Queues()
 	if err != nil {
 		log.Printf("[main][Queue] Error getting queues %v", err)
@@ -340,44 +349,23 @@ func main() {
 	// for each queue, check if it is paused, if it is, unpause it
 	if len(queues) > 0 {
 		for _, q := range queues {
-			queueInfo, err := inspector.GetQueueInfo(q)
-			if err != nil {
+			queueInfo, qErr := inspector.GetQueueInfo(q)
+			if qErr != nil {
 				log.Printf("[main][Queue] Error getting queue info %v", err)
 				_ = app.Shutdown()
 				return
 			}
 			if queueInfo.Paused {
 				log.Printf("[main][Queue] Queue %s is paused. Unpausing..", q)
-				err = inspector.UnpauseQueue(q)
-				if err != nil {
-					log.Printf("[main][Queue] Error unpausing queue %v", err)
+				qErr = inspector.UnpauseQueue(q)
+				if qErr != nil {
+					log.Printf("[main][Queue] Error unpausing queue %v", qErr)
 					_ = app.Shutdown()
 					return
 				}
 			}
 		}
 	}
-
-	serverShutdown := make(chan struct{})
-
-	// handles the shutdown of the server.
-	go func() {
-		_ = <-serverChan
-		log.Printf("[main] [info] - Shutting down server")
-		// inspector
-		// get all active tasks
-		err := inspector.PauseQueue(queue.PlaylistConversionQueue)
-		if err != nil {
-			log.Printf("Error pausing queue %v", err)
-			_ = app.Shutdown()
-			serverShutdown <- struct{}{}
-			return
-		}
-		log.Printf("[main] [info] - Paused queue...")
-		_ = app.Shutdown()
-		serverShutdown <- struct{}{}
-		log.Printf("[main] [info] - Queue pause successful. Server shutdown complete")
-	}()
 
 	userController := account.NewUserController(db, redisClient, asyncClient, asynqMux)
 	authMiddleware := middleware.NewAuthMiddleware(db)
@@ -425,20 +413,26 @@ func main() {
 	app.Get("/vermont/info", monitor.New(monitor.Config{Title: "Orchdio-Core health info"}))
 
 	authController := auth.NewAuthController(db, asyncClient, asynqServer, asynqMux, redisClient)
+	// Auth related endpoints. full endpoint scheme is: "/v1/auth/..."
 	// connect endpoints
 	orchRouter.Get("/auth/:platform/connect", authMiddleware.AddRequestPlatformToCtx, authController.AppAuthRedirect)
 	// the callback that the auth platform will redirect to and this is where we handle the redirect and generate an auth token for the user, as response
 	orchRouter.Get("/auth/:platform/callback", authMiddleware.AddRequestPlatformToCtx, authController.HandleAppAuthRedirect)
 	// this is for the apple music auth. its a POST as it carries a body
 	orchRouter.Post("/auth/:platform/callback", authMiddleware.AddRequestPlatformToCtx, authController.HandleAppAuthRedirect)
+
+	// entity and task related controllers.
+	// entity is the type of action the user is trying to do. for example. converting a deezer link to tidal
 	orchRouter.Post("/entity/convert", authMiddleware.AddReadOnlyDeveloperToContext,
 		middleware.ExtractLinkInfoFromBody, platformsControllers.ConvertEntity)
-
+	// a task is a single conversion job or a "self-contained instance" of a typical conversion.
+	// it includes information on what platform the user is converting from, to, and other necessary info.
 	orchRouter.Get("/task/:taskId", authMiddleware.AddReadOnlyDeveloperToContext, conversionController.GetPlaylistTask)
+
+	// user account action routes. they perform actions that require (previous) authorization from the user.
+	// Endpoint scheme is: "/v1/..."
 	orchRouter.Post("/playlist/:platform/add", authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.AddPlaylistToAccount)
 	// this is the account of the *DEVELOPER* not the user,
-	// todo: implement user account fetching using the user id or email, and verify that the developer has access to the user account, by checking
-	// 		for user apps that have the developer id
 	orchRouter.Get("/account", authMiddleware.AddReadWriteDeveloperToContext, userController.FetchUserInfoByIdentifier)
 	orchRouter.Get("/me", authMiddleware.AddReadWriteDeveloperToContext, userController.FetchUserProfile)
 	orchRouter.Get("/account/:userId/:platform/playlists", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformPlaylists)
@@ -451,6 +445,7 @@ func main() {
 	orchRouter.Post("/follow", authMiddleware.AddReadWriteDeveloperToContext, userController.FollowPlaylist)
 	orchRouter.Post("/waitlist/add", authMiddleware.AddReadWriteDeveloperToContext, userController.AddToWaitlist)
 
+	// Org related endpoints. Endpoint scheme is: "/v1/org/..."
 	orgRouter := app.Group("/v1/org")
 	orgRouter.Post("/new", userController.CreateOrg)
 	orgRouter.Post("/login", userController.LoginUserToOrg)
@@ -467,9 +462,9 @@ func main() {
 			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Authorization error", "Invalid or Expired token")
 		},
 	}), middleware.VerifyAppJWT)
+	// endpoints that require jwt tokens to be authenticated and authorized.
 	orgRouter.Post("/:orgId/app/new", devAppController.CreateApp)
 	orgRouter.Get("/:orgId/apps", devAppController.FetchAllDeveloperApps)
-
 	orgRouter.Delete("/:orgId", userController.DeleteOrg)
 	orgRouter.Patch("/:orgId", userController.UpdateOrg)
 	orgRouter.Get("/all", userController.FetchUserOrgs)
@@ -490,22 +485,8 @@ func main() {
 		},
 	}), middleware.VerifyAppJWT)
 	orchRouter.Get("/app/:appId", devAppController.FetchApp)
-
 	appRouter.Get("/me", userController.FetchProfile)
-	// developer endpoints
-	//app.Get("/v1/:orgId/apps/all", jwtware.New(jwtware.Config{
-	//	SigningKey: []byte(os.Getenv("JWT_SECRET")),
-	//	Claims:     &blueprint.AppJWT{},
-	//	ContextKey: "appToken",
-	//	ErrorHandler: func(ctx *fiber.Ctx, err error) error {
-	//		log.Printf("Error validating auth token: %v\n", err)
-	//		return util.ErrorResponse(ctx, http.StatusUnauthorized, "Authorization error", "Invalid or Expired token")
-	//	},
-	//}), middleware.VerifyAppJWT, devAppController.FetchAllDeveloperApps)
-
 	appRouter.Get("/:appId/keys", devAppController.FetchKeys)
-	//appRouter.Get("/:appId", devAppController.FetchApp)
-
 	baseRouter.Post("/v1/:orgId/app/disable", devAppController.DisableApp)
 	baseRouter.Post("/v1/:orgId/app/enable", devAppController.EnableApp)
 	appRouter.Delete("/:orgId/app/delete", devAppController.DeleteApp)
@@ -514,7 +495,6 @@ func main() {
 
 	appRouter.Post("/:appId/keys/revoke", devAppController.RevokeAppKeys)
 
-	//baseRouter.Get("/heartbeat", getInfo)
 	orchRouter.Post("/white-tiger", authMiddleware.AddReadWriteDeveloperToContext, whController.Handle)
 	orchRouter.Get("/white-tiger", whController.AuthenticateWebhook)
 
@@ -522,20 +502,11 @@ func main() {
 	// NEXT ROUTES
 	nextRouter := baseRouter.Group("/next", authMiddleware.ValidateKey)
 
-	//nextRouter.Post("/playlist/convert", middleware.ExtractLinkInfoFromBody, conversionController.ConvertPlaylist)
 	// TODO: implement checking for superuser access in middleware before deleting then remove kanye prefix
 	nextRouter.Delete("/kanye/task/:taskId", conversionController.DeletePlaylistTask)
 
-	// user account action routes
-	//userActionAddRouter := nextRouter.Group("/add")
-	//userActionAddRouter.Post("/playlist/:platform/:playlistId", platformsControllers.AddPlaylistToAccount)
-	// FIXME: remove later. this is just for compatibility with the ping api for dev.
-	//nextRouter.Post("/job/ping", conversionController.ConvertPlaylist)
-
 	// FIXME: move this endpoint thats fetching link info from the `controllers` package
 	baseRouter.Get("/info", middleware.ExtractLinkInfo, controllers.LinkInfo)
-
-	//baseRouter.Get("/key", userController.RetrieveKey)
 
 	// now to the WS endpoint to connect to when they visit the website and want to "convert"
 	app.Get("/portal", ikisocket.New(func(kws *ikisocket.Websocket) {
@@ -553,10 +524,10 @@ func main() {
 	*/
 
 	// hERE WE WANT TO SETUP A CRONJOB THAT RUNS EVERY 2 MINS TO PROCESS THE FOLLOWS
+	// update: todo - consider refactoring this, revist this part of the architecture.
 	c := cron.New()
-
 	entryId, cErr := c.AddFunc("@every 1m", func() {
-		log.Printf("\n[main] [info] - Process background tasks")
+		log.Printf("\n[main] [info] - :🚂 ⏲️ Process background tasks")
 		follow2.SyncFollowsHandler(db, redisClient, asyncClient, asynqMux)
 	})
 
@@ -565,16 +536,46 @@ func main() {
 		panic(cErr)
 	}
 
+	// todo: see above.
 	//c.Start()
 
-	log.Printf("\n[main] [info] - CRONJOB Entry ID is: %v", entryId)
-	log.Printf("Server is up and running on port: %s", port)
+	serverChan := make(chan os.Signal, 1)
+	// we listen for SIGINT, SIGTERM and SIGKILL. this sends a signal to the serverChan channel, which we listen to in the goroutine below
+	signal.Notify(serverChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+
+	serverShutdown := make(chan struct{})
+
+	// handles the shutdown and the starting of the server/
+	// spin up a new go routine that pause the currently running queues. this is part of what runs when the
+	// application is shutting down either through graceful shutdown or kill.
+	// if there is not shutdown command or error processing queues, the application starts.
+	go func() {
+		_ = <-serverChan
+		log.Printf("[main] [info] - ❗🚂 Shutting down server")
+		// inspector
+		// get all active tasks
+		inspErr := inspector.PauseQueue(queue.PlaylistConversionQueue)
+		if inspErr != nil {
+			log.Printf("Error pausing queue %v", inspErr)
+			_ = app.Shutdown()
+			serverShutdown <- struct{}{}
+			return
+		}
+		log.Printf("[main] [info] - ⏸️ 🏭 Paused queue...")
+		_ = app.Shutdown()
+		serverShutdown <- struct{}{}
+		log.Printf("[main] [info] - ✅ 🏭 Queue pause successful. Server shutdown complete")
+	}()
+
+	log.Printf("\n[main] [info] - ✅ ⏲️ CRONJOB Entry ID is: %v", entryId)
+	// starting the server itself.
+	log.Printf("✅ 🚀 Server is up and running on port: %s", port)
 	err = app.Listen(port)
 
 	if err != nil {
-		log.Printf("Error starting server: %v\n", err)
+		log.Printf("⛔ 🚂 Error starting server: %v\n", err)
 		os.Exit(1)
 	}
 	<-serverShutdown
-	log.Printf("[main] [info] - Cleaning up tasks: %s", port)
+	log.Printf("[main] [info] - 🚧 🧹 Cleaning up tasks: %s", port)
 }

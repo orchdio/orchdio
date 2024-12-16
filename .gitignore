@@ -3,13 +3,10 @@
 # ignore the binary itself
 go
 
-# ignore IDE/editor thingsgit
+# ignore IDE/editor things
 .idea
 TODO.md
 cmd
-spec-1.json
-api-spec-2.json
-api-spec1.json
 applemusickey.p8
 notes_and_issues.md
 layouts
@@ -18,3 +15,6 @@ bin/
 timescaledb-data
 docker-compose.yml
 .env.production
+.secrets
+notes.md
+.env.staging

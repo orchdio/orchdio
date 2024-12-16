@@ -4,9 +4,11 @@ module orchdio
 go 1.19
 
 require (
+	github.com/TheZeroSlave/zapsentry v1.17.0
 	github.com/antoniodipinto/ikisocket v0.0.0-20220426120810-e8049cc9e56b
 	github.com/badoux/goscraper v0.0.0-20190827161153-36995ce6b19f
 	github.com/davecgh/go-spew v1.1.1
+	github.com/getsentry/sentry-go v0.23.0
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gofiber/fiber/v2 v2.37.1
 	github.com/gofiber/jwt/v3 v3.2.12
@@ -28,13 +30,13 @@ require (
 	github.com/vicanso/go-axios v1.4.3
 	github.com/vmihailenco/taskq/v3 v3.2.8
 	github.com/zmb3/spotify/v2 v2.2.0
+	go.uber.org/zap v1.25.0
 	golang.org/x/crypto v0.9.0
 	golang.org/x/oauth2 v0.0.0-20220909003341-f21342109be1
 	golang.org/x/text v0.12.0
 )
 
 require (
-	github.com/TheZeroSlave/zapsentry v1.17.0 // indirect
 	github.com/andybalholm/brotli v1.0.5 // indirect
 	github.com/antihax/optional v1.0.0 // indirect
 	github.com/bsm/redislock v0.7.1 // indirect
@@ -44,7 +46,6 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/fasthttp/websocket v1.5.0 // indirect
 	github.com/fsnotify/fsnotify v1.5.1 // indirect
-	github.com/getsentry/sentry-go v0.23.0 // indirect
 	github.com/go-redis/redis_rate/v9 v9.1.2 // indirect
 	github.com/gofiber/websocket/v2 v2.0.22 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
@@ -63,7 +64,6 @@ require (
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.25.0 // indirect
 	golang.org/x/exp v0.0.0-20220303212507-bbda1eaf7a17 // indirect
 	golang.org/x/net v0.10.0 // indirect
 	golang.org/x/sys v0.11.0 // indirect
