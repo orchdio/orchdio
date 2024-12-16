@@ -17,3 +17,4 @@ docker-compose.yml
 .env.production
 .secrets
 notes.md
+.env.staging
