@@ -45,6 +45,7 @@ import (
 	"orchdio/util"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -54,34 +55,41 @@ import (
   + Redis connections here
 */
 
+// Extracted constant for default port
+const defaultPort = "52800"
+
+// Extracted function to handle environment setup
+func setupDatabaseURL(env string) string {
+	if env != "production" {
+		err := godotenv.Load(".env." + env)
+		if err != nil {
+			log.Fatalf("Failed to load .env file for environment: %s, error: %v", env, err)
+		}
+		log.Printf("Loaded .env file for environment: %s", env)
+		return os.Getenv("DATABASE_URL") + "?sslmode=disable"
+	}
+	return os.Getenv("DATABASE_URL")
+}
+
 func main() {
 	// Database and cache setup things
-	envr := os.Getenv("ORCHDIO_ENV")
+	env := os.Getenv("ORCHDIO_ENV")
+	log.Printf("Environment: %s", env)
 
-	if envr == "" {
-		log.Fatal("No env variable ORCHDIO_ENV found")
+	// Call the extracted utility function
+	dbURL := setupDatabaseURL(env)
+	log.Printf("Database URL: %s", dbURL)
+
+	// Handle port with trimming and default fallback
+	port := strings.TrimSpace(os.Getenv("PORT"))
+	if port == "" {
+		port = defaultPort
 	}
 
-	if envr != "production" {
-		dbErr := godotenv.Load(".env." + envr)
-		if dbErr != nil {
-			log.Fatalf("⛔ Error loading .env.%s file", envr)
-		}
-	}
-
-	dbURL := os.Getenv("DATABASE_URL")
-	if envr != "production" {
-		dbURL = dbURL + "?sslmode=disable"
-	}
-
-	port := os.Getenv("PORT")
-	if port == " " {
-		port = "52800"
-	}
+	log.Printf("Application Port: %s", port)
 
 	log.Printf("✅🔱 Port: %v", port)
 	port = fmt.Sprintf(":%s", port)
-
 	db, err := sqlx.Open("postgres", dbURL)
 	if err != nil {
 		log.Printf("⛔ Error connecting to postgresql db")
