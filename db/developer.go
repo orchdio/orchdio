@@ -66,10 +66,10 @@ func (d *NewDB) CreateNewApp(name, description, redirectURL, webhookURL, publicK
 }
 
 // UpdateIntegrationCredentials updates the integration credentials for an app. this is the app id and secret for the platform
-func (d *NewDB) UpdateIntegrationCredentials(credentials []byte, appId, platform, redirectURL, webhookURL string) error {
+func (d *NewDB) UpdateIntegrationCredentials(credentials []byte, appId, platform, redirectURL, webhookURL, convoyID string) error {
 	log.Printf("[db][UpdateIntegrationCredentials] developer -  updating integration credentials for app: %s\n", appId)
 	// create a new app
-	_, err := d.DB.Exec(queries.UpdateAppIntegrationCredentials, credentials, appId, platform, webhookURL, redirectURL)
+	_, err := d.DB.Exec(queries.UpdateAppIntegrationCredentials, credentials, appId, platform, webhookURL, redirectURL, convoyID)
 	if err != nil {
 		log.Printf("[db][UpdateIntegrationCredentials] developer -  error: could not update integration credentials for app: %v\n", err)
 		return err
@@ -152,7 +152,7 @@ func (d *NewDB) FetchAppBySecretKey(secretKey []byte) (*blueprint.DeveloperApp, 
 }
 
 // UpdateApp updates an app with the passed data. It does an upsert and fields that want to be updated need to be passed.
-func (d *NewDB) UpdateApp(appId, platform, developer string, app blueprint.UpdateDeveloperAppData) error {
+func (d *NewDB) UpdateApp(appId, platform, developer string, app blueprint.UpdateDeveloperAppData) (*blueprint.DeveloperApp, error) {
 	log.Printf("[db][UpdateApp] developer -  updating app: %s\n", appId)
 
 	log.Printf("[db][UpdateApp] developer -  App ID is %s, developer %s is trying to update app %s credentials\n", appId, developer, platform)
@@ -162,9 +162,9 @@ func (d *NewDB) UpdateApp(appId, platform, developer string, app blueprint.Updat
 		log.Printf("[db][UpdateApp] developer -  error: could not update app: %v\n", err)
 		if errors.Is(err, sql.ErrNoRows) {
 			log.Printf("[db][UpdateApp] developer - App does not exist %s does not exist for developer %s\n", appId, developer)
-			return sql.ErrNoRows
+			return nil, sql.ErrNoRows
 		}
-		return err
+		return nil, err
 	}
 
 	var existingCredentials blueprint.IntegrationCredentials
@@ -184,16 +184,16 @@ func (d *NewDB) UpdateApp(appId, platform, developer string, app blueprint.Updat
 	if string(outByte) != "" {
 		log.Printf("[db][UpdateApp] developer  - No integration credentials found for app for platform %s %s\n", platform, appId)
 		// decrypt the credentials
-		decryptedData, err := util.Decrypt(outByte, []byte(os.Getenv("ENCRYPTION_SECRET")))
-		if err != nil {
+		decryptedData, decryptErr := util.Decrypt(outByte, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if decryptErr != nil {
 			log.Printf("[db][UpdateApp] developer -  error: could not update app. Could not decrypt existing credentials for platform %s: %v\n", err, platform)
-			return err
+			return nil, decryptErr
 		}
 
 		err = json.Unmarshal(decryptedData, &existingCredentials)
 		if err != nil {
 			log.Printf("[db][UpdateApp] developer -  error: could not update app. Could not deserialize existing credentials for platform %s: %v\n", err, platform)
-			return err
+			return nil, err
 		}
 	}
 
@@ -214,7 +214,7 @@ func (d *NewDB) UpdateApp(appId, platform, developer string, app blueprint.Updat
 	if !lo.Contains([]string{applemusic.IDENTIFIER, tidal.IDENTIFIER}, platform) {
 		if app.IntegrationRefreshToken != "" {
 			log.Printf("[db][UpdateApp] warning - App has refreshtoken credentials but is not a platform that requires it. Only TIDAL and Apple Music do.")
-			return blueprint.EBADCREDENTIALS
+			return nil, blueprint.EBADCREDENTIALS
 		}
 	}
 
@@ -229,16 +229,16 @@ func (d *NewDB) UpdateApp(appId, platform, developer string, app blueprint.Updat
 	credentials, err := json.Marshal(&integrationCredentials)
 	if err != nil {
 		log.Printf("[db][UpdateApp] developer -  error: could not update app: could not serialize the integration credentials %v\n", err)
-		return err
+		return nil, err
 	}
 
-	encryptedData, err := util.Encrypt(credentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
-	if err != nil {
+	encryptedData, encryptErr := util.Encrypt(credentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
+	if encryptErr != nil {
 		log.Printf("[db][UpdateApp] developer -  error: could not update app: could not encrypt the credentials %v\n", err)
-		return err
+		return nil, encryptErr
 	}
 	log.Printf("Running update query: %s for app: %s", queries.UpdateApp, appId)
-	_, err = d.DB.Exec(queries.UpdateApp,
+	row := d.DB.QueryRowx(queries.UpdateApp,
 		app.Description,
 		app.Name,
 		app.RedirectURL,
@@ -247,13 +247,17 @@ func (d *NewDB) UpdateApp(appId, platform, developer string, app blueprint.Updat
 		developer,
 		encryptedData,
 		platform)
-	if err != nil {
-		log.Printf("[db][UpdateApp] developer -  error: could not update app: %v\n", err)
-		return err
+
+	updatedApp := &blueprint.DeveloperApp{}
+	updatedErr := row.StructScan(updatedApp)
+
+	if updatedErr != nil {
+		log.Printf("[db][UpdateApp] developer -  error: could not update app: %v\n", updatedErr)
+		return nil, updatedErr
 	}
 
 	log.Printf("[db][UpdateApp] developer -  app updated: %s\n", appId)
-	return nil
+	return updatedApp, nil
 }
 
 // DeleteApp deletes an app
@@ -467,5 +471,21 @@ func (d *NewDB) DeletePlatformIntegrationCredentials(appId, platform, developerI
 		return err
 	}
 	log.Printf("[db][DeletePlatformIntegrationCredentials] developer - platform integration credentials deleted: %s\n", appId)
+	return nil
+}
+
+// UpdateWebhookAppID updates the convoy webhook ID for an App.
+func (d *NewDB) UpdateWebhookAppID(devAppId, webhookAppId string) error {
+	//if d.Logger == nil {
+	//	d.Logger = logger2.NewZapSentryLogger()
+	//}
+	_, err := d.DB.Exec(queries.UpdateConvoyEndpointID, webhookAppId, devAppId)
+	if err != nil {
+		//d.Logger.Error("[db][UpdateWebhookAppID] developer -  error: could not update convoy webhook id for app", zap.Error(err), zap.String("app_id", appId))
+		log.Println("[db][UpdateWebhookAppID] developer -  error: could not update convoy webhook id for app", err, devAppId)
+		return err
+	}
+	//d.Logger.Info("[db][UpdateWebhookAppID] developer -  convoy webhook id updated for app", zap.String("app_id", appId))
+	log.Println("[db][UpdateWebhookAppID] developer -  convoy webhook id updated for app", devAppId)
 	return nil
 }

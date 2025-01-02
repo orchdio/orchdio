@@ -8,6 +8,26 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"net/http"
+	"orchdio/blueprint"
+	"orchdio/controllers"
+	"orchdio/controllers/account"
+	"orchdio/controllers/auth"
+	"orchdio/controllers/conversion"
+	"orchdio/controllers/developer"
+	"orchdio/controllers/platforms"
+	"orchdio/controllers/webhook"
+	"orchdio/middleware"
+	"orchdio/queue"
+	follow2 "orchdio/services/follow"
+	"orchdio/util"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
 	"github.com/antoniodipinto/ikisocket"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
@@ -29,25 +49,6 @@ import (
 	"github.com/robfig/cron/v3"
 	"github.com/vmihailenco/taskq/v3"
 	"github.com/vmihailenco/taskq/v3/redisq"
-	"log"
-	"net/http"
-	"orchdio/blueprint"
-	"orchdio/controllers"
-	"orchdio/controllers/account"
-	"orchdio/controllers/auth"
-	"orchdio/controllers/conversion"
-	"orchdio/controllers/developer"
-	"orchdio/controllers/platforms"
-	"orchdio/controllers/webhook"
-	"orchdio/middleware"
-	"orchdio/queue"
-	follow2 "orchdio/services/follow"
-	"orchdio/util"
-	"os"
-	"os/signal"
-	"strings"
-	"syscall"
-	"time"
 )
 
 /**
@@ -78,8 +79,6 @@ func main() {
 
 	// Call the extracted utility function
 	dbURL := setupDatabaseURL(env)
-	log.Printf("Database URL: %s", dbURL)
-
 	// Handle port with trimming and default fallback
 	port := strings.TrimSpace(os.Getenv("PORT"))
 	if port == "" {
@@ -129,7 +128,7 @@ func main() {
 	})
 	asynqMux := asynq.NewServeMux()
 
-	if envr == "production" {
+	if env == "production" {
 		log.Printf("\n[main] [info] - Running in production mode. Connecting to authenticated redis")
 	}
 
@@ -274,10 +273,10 @@ func main() {
 
 	asynqMux.Use(queue.CheckForOrphanedTasksMiddleware)
 	orchdioQueue := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
-	asynqMux.HandleFunc(blueprint.EMAIL_QUEUE_PATTERN, orchdioQueue.SendEmailHandler)
-	asynqMux.HandleFunc(blueprint.PLAYLIST_CONVERSION_QUEUE_PATTERN, orchdioQueue.PlaylistTaskHandler)
-	asynqMux.HandleFunc(blueprint.SEND_RESET_PASSWIRD_QUEUE_PATTERN, orchdioQueue.SendEmailHandler)
-	asynqMux.HandleFunc(blueprint.SEND_WELCOME_EMAIL_QUEUE_PATTER, orchdioQueue.SendEmailHandler)
+	asynqMux.HandleFunc(blueprint.EmailQueuePattern, orchdioQueue.SendEmailHandler)
+	asynqMux.HandleFunc(blueprint.PlaylistConversionQueuePattern, orchdioQueue.PlaylistTaskHandler)
+	asynqMux.HandleFunc(blueprint.SendResetPasswordQueuePattern, orchdioQueue.SendEmailHandler)
+	asynqMux.HandleFunc(blueprint.SendWelcomeEmailQueuePattern, orchdioQueue.SendEmailHandler)
 
 	err = asynqServer.Start(asynqMux)
 	if err != nil {
@@ -394,6 +393,7 @@ func main() {
 
 	app.Use(cors.New(cors.Config{
 		AllowMethods: "GET,POST,HEAD,PUT,DELETE,PATCH",
+		AllowOrigins: "*",
 	}), authMiddleware.LogIncomingRequest, authMiddleware.HandleTrolls)
 	app.Use(compress.New(compress.Config{
 		Level: compress.LevelBestSpeed,
@@ -572,7 +572,7 @@ func main() {
 		log.Printf("[main] [info] - ⏸️ 🏭 Paused queue...")
 		_ = app.Shutdown()
 		serverShutdown <- struct{}{}
-		log.Printf("[main] [info] - ✅ 🏭 Queue pause successful. Server shutdown complete")
+		log.Printf("[main] [info] - ✅ 🏭 Queue pause successful. Shutting down server...")
 	}()
 
 	log.Printf("\n[main] [info] - ✅ ⏲️ CRONJOB Entry ID is: %v", entryId)
@@ -585,5 +585,5 @@ func main() {
 		os.Exit(1)
 	}
 	<-serverShutdown
-	log.Printf("[main] [info] - 🚧 🧹 Cleaning up tasks: %s", port)
+	log.Printf("[main] [info] - 🚧 🧹 Cleaned up server resources and server shut down.")
 }

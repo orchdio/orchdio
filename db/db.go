@@ -4,15 +4,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
-	"github.com/samber/lo"
 	"log"
 	"orchdio/blueprint"
 	"orchdio/db/queries"
 	"orchdio/util"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
+	"github.com/samber/lo"
 )
 
 // NewDB represents a new DB layer struct for performing DB related operations
@@ -146,7 +147,7 @@ func (d *NewDB) FetchWebhook(user string) (*blueprint.Webhook, error) {
 
 	scanErr := result.StructScan(&webhook)
 	if scanErr != nil {
-		if scanErr == sql.ErrNoRows {
+		if errors.Is(scanErr, sql.ErrNoRows) {
 			log.Printf("[db][FetchWebhook] no webhook found for user %s\n", user)
 			return nil, sql.ErrNoRows
 		}
@@ -241,7 +242,6 @@ func (d *NewDB) DeleteUserWebhook(user string) error {
 
 // CreateOrUpdateTask creates or updates a task and returns the id of the task or an error
 func (d *NewDB) CreateOrUpdateTask(uid, shortid, user, entityId string) ([]byte, error) {
-	log.Printf("[db][CreateOrUpdateNewTask] Running query %s with '%s', '%s', '%s'\n", queries.CreateOrUpdateTask, uid, user, entityId)
 	r := d.DB.QueryRowx(queries.CreateOrUpdateTask, uid, shortid, user, entityId)
 	var res string
 	execErr := r.Scan(&res)
@@ -255,7 +255,6 @@ func (d *NewDB) CreateOrUpdateTask(uid, shortid, user, entityId string) ([]byte,
 
 // UpdateTaskStatus updates a task's status and returns an error
 func (d *NewDB) UpdateTaskStatus(uid, status string) error {
-	log.Printf("[db][UpdateTaskStatus] Running query %s with '%s'\n", queries.UpdateTaskStatus, status)
 	_, execErr := d.DB.Exec(queries.UpdateTaskStatus, uid, status)
 	if execErr != nil {
 		log.Printf("[db][UpdateTaskStatus] error updating task status. %v\n", execErr)
@@ -267,7 +266,6 @@ func (d *NewDB) UpdateTaskStatus(uid, status string) error {
 
 // UpdateTaskResult updates a task and returns the result of the task or an error
 func (d *NewDB) UpdateTaskResult(uid, data string) (*blueprint.PlaylistConversion, error) {
-	log.Printf("[db][UpdateTaskResult] Running query %s with '%s'\n", queries.UpdateTaskResult, uid)
 	r := d.DB.QueryRowx(queries.UpdateTaskResult, uid, data)
 	//var res blueprint.PlaylistConversion
 	var res string
@@ -290,8 +288,6 @@ func (d *NewDB) UpdateTaskResult(uid, data string) (*blueprint.PlaylistConversio
 
 // FetchTask fetches a task and returns the task or an error
 func (d *NewDB) FetchTask(uid string) (*blueprint.TaskRecord, error) {
-	log.Printf("[db][FetchTask] Running query %s with '%s'\n", queries.FetchTask, uid)
-
 	// currently, in the db we were fetching by taskid, but we also want to fetch by the shortid
 	// so we check if the taskId is a valid uuid, if it is, we fetch by taskid, if not, we fetch by shortid
 	_, err := uuid.Parse(uid)
@@ -336,7 +332,6 @@ func (d *NewDB) FetchTask(uid string) (*blueprint.TaskRecord, error) {
 
 // DeleteTask deletes a task
 func (d *NewDB) DeleteTask(uid string) error {
-	log.Printf("[db][DeleteTask] Running query %s with '%s'\n", queries.DeleteTask, uid)
 	_, execErr := d.DB.Exec(queries.DeleteTask, uid)
 	if execErr != nil {
 		log.Printf("[db][DeleteTask] error deleting task. %v\n", execErr)
@@ -350,7 +345,6 @@ func (d *NewDB) DeleteTask(uid string) error {
 // a job that runs at interval to check if the playlist has been updated. This method basically fetches this task. The "user"
 // here is the developer.
 func (d *NewDB) FetchFollowTask(entityId string) (*blueprint.FollowTask, error) {
-	log.Printf("[db][FetchUserFollowedTasks] Running query '%s' with '%s'\n", queries.FetchFollowedTask, entityId)
 	rows := d.DB.QueryRowx(queries.FetchFollowedTask, entityId)
 	var res blueprint.FollowTask
 	err := rows.StructScan(&res)
@@ -367,7 +361,6 @@ func (d *NewDB) FetchFollowTask(entityId string) (*blueprint.FollowTask, error) 
 
 // FetchTaskByEntityIDAndType fetches task by entityId and taskType.
 func (d *NewDB) FetchTaskByEntityIDAndType(entityId, taskType string) (*blueprint.FollowTask, error) {
-	log.Printf("[db][FetchTaskByIDAndType] Running query %s with '%s', '%s'\n", queries.FetchTaskByEntityIdAndType, entityId, taskType)
 	rows := d.DB.QueryRowx(queries.FetchTaskByEntityIdAndType, entityId, taskType)
 	var res blueprint.FollowTask
 	err := rows.StructScan(&res)
@@ -384,7 +377,6 @@ func (d *NewDB) FetchTaskByEntityIDAndType(entityId, taskType string) (*blueprin
 
 // CreateFollowTask creates a follow task if it does not exist and updates a task if it exists and the subscriber has been subscribed
 func (d *NewDB) CreateFollowTask(developer, app, uid, entityId, entityURL string, subscribers interface{}) ([]byte, error) {
-	log.Printf("[db][CreateFollowTask] Running query %s with '%s', '%s', '%s' \n", queries.CreateOrAddSubscriberFollow, uid, entityId, developer)
 	r := d.DB.QueryRowx(queries.CreateOrAddSubscriberFollow, uid, developer, entityId, subscribers, entityURL, app)
 	var res string
 	err := r.Scan(&res)
@@ -409,7 +401,6 @@ func (d *NewDB) CreateTrackTaskRecord(uid, shortId, entityId, appId string, resu
 }
 
 func (d *NewDB) FetchFollowByEntityID(entityId string) (*blueprint.FollowTask, error) {
-	log.Printf("[db][FetchFollowByEntityID] Running query '%s' with '%s'\n", queries.FetchFollowByEntityId, entityId)
 	row := d.DB.QueryRowx(queries.FetchFollowByEntityId, entityId)
 	var res blueprint.FollowTask
 	err := row.StructScan(&res)
@@ -433,7 +424,6 @@ func (d *NewDB) FetchFollowByEntityID(entityId string) (*blueprint.FollowTask, e
 }
 
 func (d *NewDB) CreateFollowNotification(user, followID string, data interface{}) error {
-	log.Printf("[db][CreateNewFollowNotification] Running query %s with '%s', '%s', '%s'\n", queries.CreateFollowNotification, user, followID, data)
 	_, execErr := d.DB.Exec(queries.CreateFollowNotification, user, followID, data)
 	if execErr != nil {
 		log.Printf("[db][CreateNewFollowNotification] error creating new follow notification. %v\n", execErr)
@@ -445,7 +435,6 @@ func (d *NewDB) CreateFollowNotification(user, followID string, data interface{}
 
 // UpdateFollowSubscriber adds a subscriber to a follow task if they already haven't been added
 func (d *NewDB) UpdateFollowSubscriber(subscriber, entityId string) ([]byte, error) {
-	log.Printf("[db][UpdateTaskSubscriber] Running query %s with '%s', '%s'\n", queries.UpdateFollowSubscriber, subscriber, entityId)
 	r := d.DB.QueryRowx(queries.UpdateFollowSubscriber, subscriber, entityId)
 	var res string
 	err := r.Scan(&res)
@@ -459,7 +448,6 @@ func (d *NewDB) UpdateFollowSubscriber(subscriber, entityId string) ([]byte, err
 
 // FetchFollowsToProcess fetches all follow tasks that need to be processed
 func (d *NewDB) FetchFollowsToProcess() (*[]blueprint.FollowsToProcess, error) {
-	log.Printf("[db][FetchFollowsToProcess] Running query %s\n", queries.FetchPlaylistFollowsToProcess)
 	rows, err := d.DB.Queryx(queries.FetchPlaylistFollowsToProcess)
 
 	if err != nil {
@@ -491,7 +479,6 @@ func (d *NewDB) FetchFollowsToProcess() (*[]blueprint.FollowsToProcess, error) {
 }
 
 func (d *NewDB) UpdateFollowStatus(followId, status string) error {
-	log.Printf("[db][UpdateFollowStatus] Running query %s\n", queries.UpdateFollowStatus)
 	_, err := d.DB.Exec(queries.UpdateFollowStatus, status, followId)
 	if err != nil {
 		log.Printf("[db][UpdateFollowStatus] error updating follow status. %v\n", err)
@@ -502,7 +489,6 @@ func (d *NewDB) UpdateFollowStatus(followId, status string) error {
 }
 
 func (d *NewDB) AlreadyInWaitList(user string) bool {
-	log.Printf("[db][FetchUserFromWaitlist] Running query %s\n", queries.FetchUserFromWaitlist)
 	r := d.DB.QueryRowx(queries.FetchUserFromWaitlist, user)
 	var res string
 	err := r.Scan(&res)
@@ -518,7 +504,6 @@ func (d *NewDB) AlreadyInWaitList(user string) bool {
 
 // CreateOrg creates a new org in the database
 func (d *NewDB) CreateOrg(uid, name, description, owner string) ([]byte, error) {
-	log.Printf("[db][CreateOrg] Running query %s\n", queries.CreateNewOrg)
 	r := d.DB.QueryRowx(queries.CreateNewOrg, uid, name, description, owner)
 	var res string
 
@@ -535,7 +520,6 @@ func (d *NewDB) CreateOrg(uid, name, description, owner string) ([]byte, error) 
 
 // DeleteOrg deletes an org from the database
 func (d *NewDB) DeleteOrg(uid, owner string) error {
-	log.Printf("[db][DeleteOrg] Running query %s\n", queries.DeleteOrg)
 	_, err := d.DB.Exec(queries.DeleteOrg, uid, owner)
 	if err != nil {
 		log.Printf("[db][DeleteOrg] error deleting org. %v\n", err)
@@ -547,7 +531,6 @@ func (d *NewDB) DeleteOrg(uid, owner string) error {
 
 // UpdateOrg updates an org in the database
 func (d *NewDB) UpdateOrg(appId, owner string, data *blueprint.UpdateOrganizationData) error {
-	log.Printf("[db][UpdateOrg] Running query %s\n", queries.UpdateOrg)
 	_, err := d.DB.Exec(queries.UpdateOrg, data.Description, data.Name, appId, owner)
 	if err != nil {
 		log.Printf("[db][UpdateOrg] error updating org. %v\n", err)
@@ -559,7 +542,6 @@ func (d *NewDB) UpdateOrg(appId, owner string, data *blueprint.UpdateOrganizatio
 
 // FetchOrg fetches the org belonging to a user. Orgs are limited to 1 for now, for each user.
 func (d *NewDB) FetchOrg(owner string) (*blueprint.Organization, error) {
-	log.Printf("[db][FetchOrg] Running query %s\n with owner: %s", queries.FetchUserOrg, owner)
 	row := d.DB.QueryRowx(queries.FetchUserOrg, owner)
 	var res blueprint.Organization
 	err := row.StructScan(&res)
@@ -610,8 +592,6 @@ func (d *NewDB) FetchUserByIdentifier(identifier, app string) (*[]blueprint.User
 
 // FetchPlatformAndUserInfoByIdentifier fetches a user by the identifier (email or id) and a flag specifying which one and the platform the user
 func (d *NewDB) FetchPlatformAndUserInfoByIdentifier(identifier, app, platform string) (*blueprint.UserAppAndPlatformInfo, error) {
-	log.Printf("[db][FetchPlatformAndUserInfoByIdentifier] - fetching user profile by identifier")
-
 	valid, opt := util.FetchIdentifierOption(identifier)
 	if !valid {
 		log.Printf("[db][FetchPlatformAndUserInfoByIdentifier] Identifier %s is not a valid identifier\n", identifier)
@@ -635,7 +615,6 @@ func (d *NewDB) FetchPlatformAndUserInfoByIdentifier(identifier, app, platform s
 
 // UpdateUserPassword updates a user's password
 func (d *NewDB) UpdateUserPassword(hash, userId string) error {
-	log.Printf("[db][UpdateUserPassword] Running query %s\n", queries.UpdateUserPassword)
 	_, err := d.DB.Exec(queries.UpdateUserPassword, hash, userId)
 	if err != nil {
 		log.Printf("[db][UpdateUserPassword] error updating user password. %v\n", err)
@@ -646,7 +625,6 @@ func (d *NewDB) UpdateUserPassword(hash, userId string) error {
 }
 
 func (d *NewDB) SaveUserResetToken(id, token string, expiry time.Time) error {
-	log.Printf("[db][SaveUserResetToken] Running query %s\n", queries.SaveUserResetToken)
 	_, err := d.DB.Exec(queries.SaveUserResetToken, id, token, expiry)
 	if err != nil {
 		log.Printf("[db][SaveUserResetToken] error saving user reset token. %v\n", err)
@@ -658,7 +636,6 @@ func (d *NewDB) SaveUserResetToken(id, token string, expiry time.Time) error {
 
 // FindUserByResetToken finds a user by the reset token
 func (d *NewDB) FindUserByResetToken(token string) (*blueprint.User, error) {
-	log.Printf("[db][FindUserByResetToken] Running query %s\n", queries.FindUserByResetToken)
 	row := d.DB.QueryRowx(queries.FindUserByResetToken, token)
 	var res blueprint.User
 	err := row.StructScan(&res)

@@ -5,11 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
-	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
-	"github.com/samber/lo"
 	"log"
 	"orchdio/blueprint"
 	"orchdio/db"
@@ -19,7 +14,15 @@ import (
 	"orchdio/services/tidal"
 	"orchdio/services/ytmusic"
 	"orchdio/util"
+	svixwebhook "orchdio/webhooks/svix"
 	"os"
+	"strings"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
+	"github.com/samber/lo"
+	"go.uber.org/zap"
 )
 
 type Controller struct {
@@ -34,10 +37,6 @@ func NewDeveloperController(db *sqlx.DB) *Controller {
 func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 	log.Printf("[controllers][CreateApp] developer -  creating new app\n")
 	platforms := []string{applemusic.IDENTIFIER, deezer.IDENTIFIER, spotify.IDENTIFIER, tidal.IDENTIFIER, ytmusic.IDENTIFIER}
-
-	// get the claims from the context
-	// FIXME: perhaps use reflection to check type and gracefully handle
-	//claims := ctx.Locals("claims").(*blueprint.OrchdioUserToken) // THIS WILL MOST LIKELY CRASH
 	claims := ctx.Locals("app_jwt").(*blueprint.AppJWT)
 	// deserialize the request body
 	var body blueprint.CreateNewDeveloperAppData
@@ -89,26 +88,7 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 	if !lo.Contains(platforms, body.IntegrationPlatform) {
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Platform is not valid. Please pass a valid platform")
 	}
-
-	webhookURL := body.WebhookURL
-	redirectURL := body.RedirectURL
-
-	log.Printf("Webhook and redirect")
-	spew.Dump(webhookURL, redirectURL)
-	//redirectURL := fmt.Sprintf("%s/v1/auth/%s/callback", os.Getenv("APP_URL"), body.IntegrationPlatform)
-	//// if the platform to connect to is deezer, we want to add the deezer state as query params.
-	//// this is because deezer does not preserver state url upon redirect (see rest of code)
-	//if body.IntegrationPlatform == deezer.IDENTIFIER {
-	//	redirectURL = fmt.Sprintf("%s&state=%s", redirectURL, deezerState)
-	//} else{
-	//	redirectURL
-	//}
-
-	log.Printf("Incoming creaation data is")
-	spew.Dump(body)
-
 	// TODO: check if the app id and app secret are valid for the platform
-
 	// create a json object to store the app data. for now, we assume all apps have app id and app secret
 	appData := blueprint.IntegrationCredentials{
 		AppID:     body.IntegrationAppId,
@@ -116,14 +96,14 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 		Platform:  body.IntegrationPlatform,
 	}
 
-	ser, err := json.Marshal(appData)
+	serializedAppData, err := json.Marshal(appData)
 	if err != nil {
 		log.Printf("[controllers][CreateApp] developer -  error: could not marshal app data: %v\n", err)
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
 	}
 
 	//encrypt the app data
-	encryptedAppData, err := util.Encrypt(ser, []byte(os.Getenv("ENCRYPTION_SECRET")))
+	encryptedAppData, err := util.Encrypt(serializedAppData, []byte(os.Getenv("ENCRYPTION_SECRET")))
 	if err != nil {
 		log.Printf("[controllers][CreateApp] developer -  error: could not encrypt app data: %v\n", err)
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
@@ -137,23 +117,30 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
 	}
 
-	// update the deezer state in the database. this is unique
-	// to deezer so it should be fine to update instead of add during app creation
-	//if body.IntegrationPlatform == deezer.IDENTIFIER {
-	//	_, err = d.DB.Exec(queries.UpdateDeezerState, deezerState, string(uid))
-	//	if err != nil {
-	//		log.Printf("[controllers][CreateApp] developer -  error: could not update deezer state: %v\n", err)
-	//		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
-	//	}
-	//}
+	// create a new instance of svix service
+	svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), true)
+	webhookName := fmt.Sprintf("%s:%s", body.Name, string(uid))
+	whResponse, whErr := svixInstance.CreateApp(webhookName)
 
-	// update the app credentials
-	err = database.UpdateIntegrationCredentials(encryptedAppData, string(uid), body.IntegrationPlatform, body.RedirectURL, body.WebhookURL)
-	if err != nil {
-		log.Printf("[controllers][CreateApp] developer -  error: could not update app credentials: %v\n", err)
-		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
+	if whErr != nil {
+		log.Printf("[controllers][CreateApp] developer -  error: could not create developer app: %v\n", whErr)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, whErr, "An internal error occurred and could not create developer app.")
 	}
 
+	endpointUniqID := svixwebhook.FormatSvixEndpointUID(string(uid))
+	_, epErr := svixInstance.CreateEndpoint(whResponse.Id, endpointUniqID, body.WebhookURL)
+	if epErr != nil {
+		log.Printf("[controller][CreateApp] developer -  error: could not create developer app: %v\n", epErr)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, epErr, "An internal error occurred and could not create developer app.")
+	}
+
+	updErr := database.UpdateWebhookAppID(string(uid), whResponse.Id)
+	if updErr != nil {
+		log.Printf("[controllers][CreateApp] developer -  error: could not update developer app: %v\n", err)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, updErr, "An internal error occurred and could not update developer app.")
+	}
+
+	err = database.UpdateIntegrationCredentials(encryptedAppData, string(uid), body.IntegrationPlatform, body.RedirectURL, body.WebhookURL, whResponse.Id)
 	log.Printf("[controllers][CreateApp] developer -  new app created: %s\n", body.Name)
 	res := map[string]string{
 		"app_id": string(uid),
@@ -180,11 +167,6 @@ func (d *Controller) UpdateApp(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Could not deserialize request body. Please make sure you pass the correct data")
 	}
 
-	//if body.IntegrationPlatform == "" && (body.IntegrationAppID != "" || body.IntegrationAppSecret != "" || body.IntegrationRefreshToken != "") {
-	//	log.Printf("[controllers][UpdateApp] developer -  error: platform is empty\n")
-	//	return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Platform is empty. Please pass a valid platform")
-	//}
-
 	if body.IntegrationPlatform == "" {
 		if body.IntegrationAppID != "" {
 			log.Printf("[controllers][UpdateApp] developer -  error: app id is empty\n")
@@ -202,7 +184,7 @@ func (d *Controller) UpdateApp(ctx *fiber.Ctx) error {
 
 	// update the app
 	database := db.NewDB{DB: d.DB}
-	err := database.UpdateApp(ctx.Params("appId"), body.IntegrationPlatform, claims.DeveloperID, body)
+	updatedApp, err := database.UpdateApp(ctx.Params("appId"), body.IntegrationPlatform, claims.DeveloperID, body)
 	if err != nil {
 		log.Printf("[controllers][UpdateApp] developer -  error: could not update app in Database: %v\n", err)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -211,7 +193,84 @@ func (d *Controller) UpdateApp(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not update developer app")
 	}
 
-	log.Printf("[controllers][UpdateApp] developer -  app updated: %s\n", ctx.Params("appId"))
+	svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), true)
+	// todo: finalize webhook name format standard.
+	webhookName := fmt.Sprintf("%s-orchdio-%s", updatedApp.Name, updatedApp.UID.String())
+	whAppName := fmt.Sprintf("%s:%s", updatedApp.Name, updatedApp.UID.String())
+	endpointUniqID := svixwebhook.FormatSvixEndpointUID(updatedApp.UID.String())
+
+	// if webhook app id is empty, then that means the application was not created on Svix.
+	// this is largely due to backwards compatibility.
+	// Fixme: remove this after fixing DB issues
+	if updatedApp.WebhookAppID == "" {
+		// check if app already exists
+		_, exErr := svixInstance.GetApp(whAppName)
+		if exErr != nil {
+			log.Printf("[controllers][updateApp] developer -  error: could not get existing svix app:\n")
+			// hack: not sure how to get the correct error object from the svix go module. the error returned seems to be a string
+			// so the solution below uses keyword detection.
+			if strings.Contains(exErr.Error(), "404") {
+				log.Printf("[controllers][updateApp] developer -  error: app does not exist\n")
+
+				// create new app on svix
+				svixApp, appErr := svixInstance.CreateApp(whAppName)
+				if appErr != nil {
+					log.Printf("[controllers][UpdateApp] developer -  error: could not create app in Database: %v\n", err)
+					return util.ErrorResponse(ctx, fiber.StatusInternalServerError, appErr, "Could not create developer app")
+				}
+
+				_, whErr := svixInstance.CreateEndpoint(svixApp.Id, endpointUniqID, updatedApp.WebhookURL)
+				if whErr != nil {
+					log.Printf("[controllers][UpdateApp] developer -  error: could not create webhook: %v\n", whErr)
+					return util.ErrorResponse(ctx, fiber.StatusInternalServerError, whErr, "Could not create webhook")
+				}
+
+				err = database.UpdateWebhookAppID(updatedApp.UID.String(), svixApp.Id)
+				if err != nil {
+					log.Printf("[controllers][UpdateApp] developer -  error: could not update webhook: %v\n", err)
+					return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not update webhook")
+				}
+				updatedApp.WebhookAppID = svixApp.Id
+				updatedApp.Name = webhookName
+				return util.SuccessResponse(ctx, fiber.StatusCreated, "App updated successfully")
+			}
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not get existing svix app")
+		}
+	}
+
+	// note: here we are checking if the endpoint exists for an app. This is because at the moment, we want to make sure
+	// an app has only one webhook url (equivalent to endpoint in Svix). We're doing this in order to reduce the cognitive
+	// load of thinking about multiple endpoints for a single application and how to handle making sure events
+	// will be sent only to appropriate endpoints.
+	//
+	// we could ideally do this by simply making sure that when we create a new endpoint, we subscribe them to only the
+	// events we expect them to be subscribed to. But this would require having a way to specify which events to support
+	// for each application on Svix. Svix offers Portal to do this (last i checked) but the thing is that this is exactly
+	// (part of) the cognitive load — we dont want to bother about thinking  3rd party integration docs and architecture
+	// right now
+	_, epErr := svixInstance.GetEndpoint(updatedApp.WebhookAppID, endpointUniqID)
+	if epErr != nil {
+		log.Printf("[controllers][updateApp] developer -  error: could not get existing svix app: %v\n", err)
+		if strings.Contains(epErr.Error(), "404") {
+			// create a new endpoint.
+			_, cErr := svixInstance.CreateEndpoint(updatedApp.WebhookAppID, endpointUniqID, updatedApp.WebhookURL)
+			if cErr != nil {
+				log.Printf("[controllers][UpdateApp] developer -  error: could not create endpoint: %v\n", cErr)
+				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, cErr, "Could not create endpoint")
+			}
+			return util.SuccessResponse(ctx, fiber.StatusCreated, "App updated successfully")
+		}
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, epErr, "Could not get existing svix app")
+	}
+
+	// update Svix endpoint
+	_, uErr := svixInstance.UpdateEndpoint(updatedApp.WebhookAppID, endpointUniqID, updatedApp.WebhookURL)
+	if uErr != nil {
+		log.Printf("[controllers][updateApp] developer -  error: could not update endpoint: %v\n", uErr)
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, uErr, "Could not update endpoint")
+	}
+
+	log.Println("[controllers][UpdateApp] developer -  app updated", zap.String("app_id", ctx.Params("appId")))
 	return util.SuccessResponse(ctx, fiber.StatusOK, "App updated successfully")
 }
 
@@ -283,10 +342,10 @@ func (d *Controller) FetchApp(ctx *fiber.Ctx) error {
 	var creds []blueprint.IntegrationCredentials
 
 	var credK = map[string][]byte{
-		"spotify":    app.SpotifyCredentials,
-		"deezer":     app.DeezerCredentials,
-		"applemusic": app.AppleMusicCredentials,
-		"tidal":      app.TidalCredentials,
+		spotify.IDENTIFIER:    app.SpotifyCredentials,
+		deezer.IDENTIFIER:     app.DeezerCredentials,
+		applemusic.IDENTIFIER: app.AppleMusicCredentials,
+		tidal.IDENTIFIER:      app.TidalCredentials,
 	}
 
 	for k, v := range credK {
@@ -380,15 +439,11 @@ func (d *Controller) FetchKeys(ctx *fiber.Ctx) error {
 	keys, err := database.FetchAppKeys(appId, claims.DeveloperID)
 	if err != nil {
 		log.Printf("[controllers][FetchKeys] developer -  error: could not fetch app keys from the Database: %v\n", err)
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return util.ErrorResponse(ctx, fiber.StatusNotFound, "not found", "App not found")
 		}
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred.")
 	}
-
-	log.Printf("[controllers][FetchKeys] developer -  app keys fetched: %s\n", appId)
-
-	// parse spotify credentials
 	return util.SuccessResponse(ctx, fiber.StatusOK, keys)
 }
 
@@ -409,8 +464,6 @@ func (d *Controller) FetchAllDeveloperApps(ctx *fiber.Ctx) error {
 		}
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occured.")
 	}
-
-	log.Printf("[controllers][FetchAllDeveloperApps] developer -  apps fetched: %s\n", claims.DeveloperID)
 	return util.SuccessResponse(ctx, fiber.StatusOK, apps)
 }
 
@@ -421,6 +474,7 @@ func (d *Controller) RevokeAppKeys(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "App ID is empty. Please pass a valid app ID.")
 	}
 
+	// todo: move this into a proper type
 	reqBody := struct {
 		KeyType string `json:"key_type"`
 	}{}
@@ -438,7 +492,7 @@ func (d *Controller) RevokeAppKeys(ctx *fiber.Ctx) error {
 	database := db.NewDB{DB: d.DB}
 	updatedKeys := &blueprint.AppKeys{}
 
-	if reqBody.KeyType == "secret" {
+	if reqBody.KeyType == blueprint.SecretKeyType {
 		privateKey := uuid.NewString()
 		err := database.RevokeSecretKey(appId, privateKey)
 		if err != nil {
@@ -448,7 +502,7 @@ func (d *Controller) RevokeAppKeys(ctx *fiber.Ctx) error {
 		updatedKeys.SecretKey = privateKey
 	}
 
-	if reqBody.KeyType == "verify" {
+	if reqBody.KeyType == blueprint.VerifyKeyType {
 		verifySecret := uuid.NewString()
 		err := database.RevokeVerifySecret(appId, verifySecret)
 		if err != nil {
@@ -458,7 +512,7 @@ func (d *Controller) RevokeAppKeys(ctx *fiber.Ctx) error {
 		updatedKeys.VerifySecret = verifySecret
 	}
 
-	if reqBody.KeyType == "public" {
+	if reqBody.KeyType == blueprint.PublicKeyType {
 		publicKey := uuid.NewString()
 		err := database.RevokePublicKey(appId, publicKey)
 		if err != nil {
@@ -467,7 +521,7 @@ func (d *Controller) RevokeAppKeys(ctx *fiber.Ctx) error {
 		}
 	}
 
-	if reqBody.KeyType == "deezer_state" {
+	if reqBody.KeyType == blueprint.DeezerStateType {
 		deezerState := string(util.GenerateShortID())
 		err := database.RevokeDeezerState(appId, deezerState)
 		if err != nil {

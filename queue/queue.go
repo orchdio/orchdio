@@ -4,20 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
+	"orchdio/blueprint"
+	"orchdio/db"
+	"orchdio/universal"
+	"os"
+	"time"
+
 	"github.com/go-redis/redis/v8"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
 	sendinblue "github.com/sendinblue/APIv3-go-library/v2/lib"
-	"github.com/vicanso/go-axios"
-	"log"
-	"net/http"
-	"orchdio/blueprint"
-	"orchdio/db"
-	"orchdio/universal"
-	"orchdio/util"
-	"os"
-	"strings"
-	"time"
 )
 
 const (
@@ -172,10 +169,10 @@ func (o *OrchdioQueue) SendEmailHandler(_ context.Context, task *asynq.Task) err
 func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.LinkInfo, appId string) error {
 	log.Printf("[queue][PlaylistHandler] - processing task: %v", uid)
 	database := db.NewDB{DB: o.DB}
-	log.Printf("[queue][PlaylistHandler] - processing playlist: %v %v %v\n", database, info.TargetLink, appId)
+	log.Printf("[queue][PlaylistHandler] - processing playlist: %v %v\n", info.TargetLink, appId)
 
 	// fetch app from db
-	app, err := database.FetchAppByAppIdWithoutDevId(appId)
+	_, err := database.FetchAppByAppIdWithoutDevId(appId)
 	if err != nil {
 		log.Printf("[queue][PlaylistHandler] - could not find user: %v", err)
 		return err
@@ -189,14 +186,11 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 	}
 	taskId := task.UID.String()
 
-	if dbErr != nil {
-		log.Printf("[queue][EnqueueTask] - error creating or updating task: %v", dbErr)
-		return dbErr
-	}
-
 	log.Printf("[queue][PlaylistHandler] - created or updated task: %v", taskId)
 
-	h, err := universal.ConvertPlaylist(info, o.Red, o.DB)
+	playlist, err := universal.ConvertPlaylist(info, o.Red, o.DB)
+	// todo: implement webhook event sending here, when emitting events for playlist creation (metadata sent first.)
+
 	var status string
 	// for now, we dont want to bother about retrying and all of that. we're simply going to mark a task as failed if it fails
 	// the reason is that it's hard handling the retry for it to worth it. In the future, we might add a proper retry system
@@ -216,7 +210,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 			}
 
 			// serialize the payload
-			ser, err := json.Marshal(&payload)
+			serializedPayload, err := json.Marshal(&payload)
 			if err != nil {
 				log.Printf("[queue][EnqueueTask] - error marshalling task 'result not found' payload: %v", err)
 			}
@@ -227,7 +221,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 			}
 
 			// update task result to payload
-			_, updateErr := database.UpdateTaskResult(taskId, string(ser))
+			_, updateErr := database.UpdateTaskResult(taskId, string(serializedPayload))
 			if updateErr != nil {
 				log.Printf("[queue][EnqueueTask] - could not update task result in DB when updating not found conversion: %v", updateErr)
 				return updateErr
@@ -271,7 +265,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 	}
 
 	// these seem to be for backwards compatibility and stuff. keep note and remove at a later date
-	if h != nil {
+	if playlist != nil {
 		status = "completed"
 	}
 
@@ -280,17 +274,17 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 		return nil
 	}
 
-	h.Meta.ShortURL = shorturl
-	h.Meta.Entity = "playlist"
+	playlist.Meta.ShortURL = shorturl
+	playlist.Meta.Entity = "playlist"
 
-	// serialize h
-	ser, mErr := json.Marshal(h)
+	// serialize playlist
+	ser, mErr := json.Marshal(playlist)
 	if mErr != nil {
 		log.Printf("[queue][EnqueueTask] - error marshalling playlist conversion: %v", mErr)
 		return mErr
 	}
 	log.Printf("[queue][PlaylistHandler] - serialized conversion data")
-	result, rErr := database.UpdateTaskResult(taskId, string(ser))
+	_, rErr := database.UpdateTaskResult(taskId, string(ser))
 	if rErr != nil {
 		log.Printf("[queue][EnqueueTask] - error updating task status: %v", rErr)
 		return rErr
@@ -304,42 +298,42 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 	}
 
 	// post to the developer webhook
-	r := blueprint.WebhookMessage{
-		Message: "playlist conversion done",
-		Event:   blueprint.EEPLAYLISTCONVERSION,
-		Payload: &result,
-	}
+	// r := blueprint.WebhookMessage{
+	// 	Message: "playlist conversion done",
+	// 	Event:   blueprint.EEPLAYLISTCONVERSION,
+	// 	Payload: &result,
+	// }
 
 	// generate the hmac for the webhook
-	hmac := util.GenerateHMAC(r, string(app.VerifyToken))
-	ax := axios.NewInstance(&axios.InstanceConfig{
-		Headers: map[string][]string{
-			"x-orchdio-hmac": {string(hmac)},
-		},
-	})
+	// hmac := util.GenerateHMAC(r, string(app.VerifyToken))
+	// ax := axios.NewInstance(&axios.InstanceConfig{
+	// 	Headers: map[string][]string{
+	// 		"x-orchdio-hmac": {string(hmac)},
+	// 	},
+	// })
 
-	if app.WebhookURL == "" {
-		log.Printf("[queue][PlaylistHandler] - no webhook found. Skipping. Task done.")
-		return nil
-	}
+	// if app.WebhookURL == "" {
+	// 	log.Printf("[queue][PlaylistHandler] - no webhook found. Skipping. Task done.")
+	// 	return nil
+	// }
 
-	re, pErr := ax.Post(app.WebhookURL, r)
-	if pErr != nil {
-		log.Printf("[queue][PlaylistHandler] - error posting to webhook: %v", pErr.Error())
-		// TODO: implement retry logic. For now, if the webhook is unavailable, it will NOT be retried since we're returning nil
-		// hack: check if the error is a "no such host" error. If so, skip. useful esp for tunneling
-		if strings.Contains(pErr.Error(), "no such host") {
-			log.Printf("[queue][PlaylistHandler] - webhook unavailable, skipping")
-			return nil
-		}
-		log.Printf("[queue][PlaylistHandler] - error posting webhook to endpoint %s=%v", app.WebhookURL, pErr)
-		return nil
-	}
+	// re, pErr := ax.Post(app.WebhookURL, r)
+	// if pErr != nil {
+	// 	log.Printf("[queue][PlaylistHandler] - error posting to webhook: %v", pErr.Error())
+	// 	// TODO: implement retry logic. For now, if the webhook is unavailable, it will NOT be retried since we're returning nil
+	// 	// hack: check if the error is a "no such host" error. If so, skip. useful esp for tunneling
+	// 	if strings.Contains(pErr.Error(), "no such host") {
+	// 		log.Printf("[queue][PlaylistHandler] - webhook unavailable, skipping")
+	// 		return nil
+	// 	}
+	// 	log.Printf("[queue][PlaylistHandler] - error posting webhook to endpoint %s=%v", app.WebhookURL, pErr)
+	// 	return nil
+	// }
 
-	if re.Status != http.StatusOK {
-		log.Printf("[queue][PlaylistHandler][warning] - error posting webhook: %v", re)
-		return nil
-	}
+	// if re.Status != http.StatusOK {
+	// 	log.Printf("[queue][PlaylistHandler][warning] - error posting webhook: %v", re)
+	// 	return nil
+	// }
 	log.Printf("[queue][EnqueueTask] - successfully processed task: %v", taskId)
 	// NOTE: In the case of a "follow", instead of just exiting here, we reschedule the task to  like 2 mins later.
 	return nil

@@ -4,11 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-redis/redis/v8"
-	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
-	"github.com/hibiken/asynq"
-	"github.com/jmoiron/sqlx"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
@@ -19,6 +14,12 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/go-redis/redis/v8"
+	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
+	"github.com/jmoiron/sqlx"
 )
 
 // Platforms represents the structure for the platforms
@@ -66,7 +67,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 				return util.ErrorResponse(ctx, http.StatusUnauthorized, "credentials missing", fmt.Sprintf("%s. Please update your app with the missing platform's credentials.", conversionError.Error()))
 			}
 
-			log.Printf("\n[controllers][platforms][base][ConvertEntity] - Could not convert track")
+			log.Printf("\n[controllers][platforms][base][ConvertEntity] - Could not convert track %v", conversionError.Error())
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, conversionError, "An internal error occurred")
 		}
 
@@ -111,8 +112,6 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 
 	// make sure we're actually handling for playlist alone, not track.
 	if strings.Contains(linkInfo.Entity, "playlist") {
-		log.Printf("\n[controllers][platforms][deezer][ConvertEntity] warning - It is a playlist URL")
-
 		uniqueId := uuid.New().String()
 		shortURL := util.GenerateShortID()
 		taskData := &blueprint.PlaylistTaskData{
@@ -120,11 +119,6 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 			App:      app,
 			TaskID:   uniqueId,
 			ShortURL: string(shortURL),
-		}
-
-		if !strings.Contains(linkInfo.Entity, "playlist") {
-			log.Printf("[controller][conversion][EchoConversion] - not a playlist")
-			return ctx.Status(http.StatusBadRequest).JSON("not a playlist")
 		}
 
 		orchdioQueue := queue.NewOrchdioQueue(p.AsynqClient, p.DB, p.Redis, p.AsynqMux)
@@ -145,12 +139,12 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 			return ctx.Status(http.StatusInternalServerError).JSON("error enqueuing task")
 		}
 
-		database := db.NewDB{DB: p.DB}
 		_, err = redis.ParseURL(os.Getenv("REDISCLOUD_URL"))
 		if err != nil {
 			log.Printf("[controller][conversion][EchoConversion] - error parsing redis url: %v", err)
 			return ctx.Status(http.StatusInternalServerError).JSON("error parsing redis url")
 		}
+		database := db.NewDB{DB: p.DB}
 
 		// we were saving the task developer as user before but now we save the app
 		_taskId, dbErr := database.CreateOrUpdateTask(uniqueId, string(shortURL), app.UID.String(), linkInfo.EntityID)

@@ -5,13 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-redis/redis/v8"
-	"github.com/jmoiron/sqlx"
-	"github.com/samber/lo"
-	"github.com/zmb3/spotify/v2"
-	spotifyauth "github.com/zmb3/spotify/v2/auth"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/clientcredentials"
 	"log"
 	"net/url"
 	"orchdio/blueprint"
@@ -19,6 +12,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/go-redis/redis/v8"
+	"github.com/jmoiron/sqlx"
+	"github.com/samber/lo"
+	"github.com/zmb3/spotify/v2"
+	spotifyauth "github.com/zmb3/spotify/v2/auth"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/clientcredentials"
 )
 
 // ExtractArtiste retrieves an artiste from a passed string containing something like
@@ -348,9 +349,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 		log.Printf("\n[services][spotify][base][SearchPlaylistWithID] error - could not fetch token\n")
 		return nil, errors.New("could not fetch token")
 	}
-	//httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID),
-	//	spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(ctx, token)
-	//client := spotify.New(httpClient)
+
 	client := s.NewClient(ctx, token)
 	options := spotify.Fields("description,uri,external_urls,snapshot_id,name,images")
 

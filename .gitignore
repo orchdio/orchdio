@@ -21,3 +21,6 @@ docker-compose.yml
 .secrets
 notes.md
 .env.staging
+todo
+misc.json
+db/migrations

@@ -2,8 +2,9 @@ package blueprint
 
 import (
 	"errors"
-	"github.com/google/uuid"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 var DeezerHost = []string{"deezer.page.link", "www.deezer.com"}
@@ -16,11 +17,25 @@ const (
 )
 
 const (
-	EMAIL_QUEUE_PATTERN               = "send:appauth:email"
-	PLAYLIST_CONVERSION_QUEUE_PATTERN = "playlist:conversion"
-	SEND_RESET_PASSWIRD_QUEUE_PATTERN = "send:reset_password_email"
-	SEND_WELCOME_EMAIL_QUEUE_PATTER   = "send:welcome_email"
+	EmailQueuePattern              = "send:appauth:email"
+	PlaylistConversionQueuePattern = "playlist:conversion"
+	SendResetPasswordQueuePattern  = "send:reset_password_email"
+	SendWelcomeEmailQueuePattern   = "send:welcome_email"
 )
+
+// PlaylistConversionEvent is the event emitted when the meta of a playlist conversion is done.
+// it uses lowercase snake_case because svix, the webhook service used does not allow
+// : as delimiter
+var PlaylistConversionEvent = "playlist_conversion_metadata"
+
+const (
+	SecretKeyType   = "secret"
+	VerifyKeyType   = "verify"
+	PublicKeyType   = "public"
+	DeezerStateType = "deezer_state"
+)
+
+// NB: (Svix) Endpoint ID format is: "endpoint_" + <devAppId>
 
 var ValidUserIdentifiers = []string{"email", "id"}
 
@@ -60,14 +75,6 @@ type UserProfile struct {
 	UpdatedAt string      `json:"updated_at,omitempty" db:"updated_at"`
 }
 
-//type AppleMusicAuthBody struct {
-//	Authorization struct {
-//		Code    string `json:"code"`
-//		IdToken string `json:"id_token"`
-//		State   string `json:"state"`
-//	} `json:"authorization"`
-//}
-
 type AppleMusicAuthBody struct {
 	MusicToken    string `json:"token"`
 	Email         string `json:"email"`
@@ -95,14 +102,12 @@ type ErrorResponse struct {
 	Error  interface{} `json:"error"`
 }
 
-type (
-	SpotifyUser struct {
-		Name      string   `json:"name,omitempty"`
-		Moniker   string   `json:"moniker"`
-		Platforms []string `json:"platforms"`
-		Email     string   `json:"email"`
-	}
-)
+type SpotifyUser struct {
+	Name      string   `json:"name,omitempty"`
+	Moniker   string   `json:"moniker"`
+	Platforms []string `json:"platforms"`
+	Email     string   `json:"email"`
+}
 
 // LinkInfo represents the metadata about a link user wants to convert
 type LinkInfo struct {
@@ -113,6 +118,11 @@ type LinkInfo struct {
 	TargetPlatform string `json:"target_platform,omitempty"`
 	App            string `json:"app,omitempty"`
 	Developer      string `json:"developer,omitempty"`
+}
+
+type ConversionBody struct {
+	URL            string `json:"url"`
+	TargetPlatform string `json:"target_platform,omitempty"`
 }
 
 type Pagination struct {
@@ -154,8 +164,7 @@ type TaskErrorPayload struct {
 
 // TaskRecord representsUs a task record in the database
 type TaskRecord struct {
-	Id int `json:"id,omitempty" db:"id"`
-	//User       uuid.UUID `json:"user,omitempty" db:"user"`
+	Id         int       `json:"id,omitempty" db:"id"`
 	UID        uuid.UUID `json:"uid,omitempty" db:"uuid"`
 	CreatedAt  time.Time `json:"created_at,omitempty" db:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at,omitempty" db:"updated_at"`
@@ -194,9 +203,7 @@ type FollowsToProcess struct {
 	Developer   uuid.UUID   `json:"user,omitempty" db:"developer"`
 	App         uuid.UUID   `json:"app,omitempty" db:"app"`
 	Subscribers interface{} `json:"subscribers,omitempty" db:"subscribers"`
-	//Result    interface{} `json:"result,omitempty" db:"result"`
-	//Type      string      `json:"type,omitempty" db:"type"`
-	EntityURL string `json:"entity_url,omitempty" db:"entity_url"`
+	EntityURL   string      `json:"entity_url,omitempty" db:"entity_url"`
 }
 
 type FollowTaskData struct {

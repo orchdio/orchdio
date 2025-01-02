@@ -205,6 +205,7 @@ type DeveloperApp struct {
 	DeezerCredentials     []byte    `json:"deezer_credentials,omitempty" db:"deezer_credentials"`
 	TidalCredentials      []byte    `json:"tidal_credentials,omitempty" db:"tidal_credentials"`
 	DeezerState           string    `json:"deezer_state,omitempty" db:"deezer_state,omitempty"`
+	WebhookAppID          string    `json:"webhook_app_id,omitempty" db:"webhook_app_id,omitempty"`
 }
 
 type UpdateDeveloperAppData struct {

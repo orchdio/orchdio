@@ -8,8 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
-	"github.com/jmoiron/sqlx"
 	"log"
 	"orchdio/blueprint"
 	"orchdio/db"
@@ -22,6 +20,9 @@ import (
 	"os"
 	"reflect"
 	"time"
+
+	"github.com/davecgh/go-spew/spew"
+	"github.com/jmoiron/sqlx"
 
 	"github.com/go-redis/redis/v8"
 )
@@ -316,31 +317,25 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 		fromResult = res
 
 		// fetch the conversion methods for the target platforms.
-		for idx, tS := range toService {
+		for _, serviceInstance := range toService {
 			if res == nil {
 				continue
 			}
-			cp := tS
-			for k, v := range cp {
-				plat := k
-				shadowService := v
+			instance := serviceInstance
+			for platform, service := range instance {
+				plat := platform
+				shadowService := service
 				var methodSearchTrackWithTitle, ok2 = util.FetchMethodFromInterface(shadowService, "SearchTrackWithTitle")
 				if !ok2 {
 					return nil, blueprint.EUNKNOWN
 				}
 
-				// todo: implement nil check
-				if res == nil && idx == 0 {
-					log.Printf("\n[controllers][platforms][universal][ConvertTrack] warning - search result is nil\n")
-					return nil, blueprint.EUNKNOWN
-				}
-
 				if methodSearchTrackWithTitle.IsValid() {
-					ins2 := make([]reflect.Value, 2)
-					ins2[0] = reflect.ValueOf(res.Title)
-					ins2[1] = reflect.ValueOf(res.Artists[0])
-					ans2 := methodSearchTrackWithTitle.Call([]reflect.Value{ins2[0], ins2[1]})
-					res2, ok3 := ans2[0].Interface().(*blueprint.TrackSearchResult)
+					params := make([]reflect.Value, 2)
+					params[0] = reflect.ValueOf(res.Title)
+					params[1] = reflect.ValueOf(res.Artists[0])
+					searchTrackWithTitleResults := methodSearchTrackWithTitle.Call([]reflect.Value{params[0], params[1]})
+					res2, ok3 := searchTrackWithTitleResults[0].Interface().(*blueprint.TrackSearchResult)
 					if !ok3 {
 						log.Printf("\n[controllers][platforms][universal][ConvertTrack] error - could not convert interface to TrackSearchResult.. Error dynamically calling toMethod.\n")
 						return nil, blueprint.EUNKNOWN
@@ -560,38 +555,54 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (
 		log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist] error - could not fetch method from interface\n")
 		return nil, blueprint.EUNKNOWN
 	}
+	// this is the result of searching for a playlist on a platform, using the resource id (spotify playlist for example)
 	var idSearchResult *blueprint.PlaylistSearchResult
+	// the omitted tracks when searching for a new track. these are track info from the "source" platform (fromService)
 	var omittedTracks *[]blueprint.OmittedTracks
+	// the real result of searching for the playlist tracks on another platform.
 	var tracksSearchResult *[]blueprint.TrackSearchResult
 
 	if methodSearchPlaylistWithID.IsValid() {
-		ins := make([]reflect.Value, 1)
-		ins[0] = reflect.ValueOf(info.EntityID)
-		outs := methodSearchPlaylistWithID.Call(ins)
-		log.Printf("\n[controllers][platforms][deezer][ConvertPlaylist] Playlist conversion stuff here ")
-		spew.Dump(outs)
-		if len(outs) > 0 {
-			if outs[0].Interface() == nil {
+		params := make([]reflect.Value, 1)
+		params[0] = reflect.ValueOf(info.EntityID)
+		playlistSearchWithIDResults := methodSearchPlaylistWithID.Call(params)
+		if len(playlistSearchWithIDResults) > 0 {
+			if playlistSearchWithIDResults[0].Interface() == nil {
 				return nil, blueprint.ENORESULT
 			}
 			// for playlist results, the second result returned from method call is a pointer to the playlist search result from source platform
-			if outs[0].Interface() != nil {
-				idSearchResult = outs[0].Interface().(*blueprint.PlaylistSearchResult)
+			if playlistSearchWithIDResults[0].Interface() != nil {
+				idSearchResult = playlistSearchWithIDResults[0].Interface().(*blueprint.PlaylistSearchResult)
 			}
 			// then use the above playlist info to search for srcPlatformTracks, on target platform
 			if methodSearchPlaylistWithTracks.IsValid() {
-				ins2 := make([]reflect.Value, 1)
-				ins2[0] = reflect.ValueOf(idSearchResult)
-				outs2 := methodSearchPlaylistWithTracks.Call(ins2)
-				if len(outs2) > 0 {
-					if outs2[0].Interface() == nil {
+				params := make([]reflect.Value, 1)
+				params[0] = reflect.ValueOf(idSearchResult)
+
+				conversion.Meta.URL = idSearchResult.URL
+				conversion.Meta.Title = idSearchResult.Title
+				conversion.Meta.Length = idSearchResult.Length
+				conversion.Meta.Owner = idSearchResult.Owner
+				conversion.Meta.Cover = idSearchResult.Cover
+
+				// todo: implement sending webhook event here.
+				//convoyInst := webhook_service.NewConvoy(convoy_go.DebugLevel)
+				//whErr := convoyInst.SendEvent(app.ConvoyEndpointID, "playlist:conversion:meta", conversion.Meta)
+				//if whErr != nil {
+				//	log.Printf("\n[controllers][platforms][ConvertPlaylist] error - could not send webhook event: %v\n", whErr)
+				//}
+				// convoyInst.SendWebhookEvent(info.App, info.EntityID, info.Platform, info.TargetPlatform, "playlist", "conversion", time.Now().String())
+
+				playlistSearchWithTracksResults := methodSearchPlaylistWithTracks.Call(params)
+				if len(playlistSearchWithTracksResults) > 0 {
+					if playlistSearchWithTracksResults[0].Interface() == nil {
 						return nil, blueprint.ENORESULT
 					}
 					// the first result returned from the method call is a pointer to an array of track search results from target platform
-					tracksSearchResult = outs2[0].Interface().(*[]blueprint.TrackSearchResult)
+					tracksSearchResult = playlistSearchWithTracksResults[0].Interface().(*[]blueprint.TrackSearchResult)
 					// the second result returned from the method call is a pointer to the omitted srcPlatformTracks from the playlist
-					if outs2[1].Interface() != nil {
-						omittedTracks = outs2[1].Interface().(*[]blueprint.OmittedTracks)
+					if playlistSearchWithTracksResults[1].Interface() != nil {
+						omittedTracks = playlistSearchWithTracksResults[1].Interface().(*[]blueprint.OmittedTracks)
 					}
 				}
 			}
