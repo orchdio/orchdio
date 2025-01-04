@@ -81,8 +81,8 @@ var (
 )
 
 const (
-	TASK_STATUS_COMPLETED = "completed"
-	TASK_STATUS_FAILED    = "failed"
+	TaskStatusCompleted = "completed"
+	TaskStatusFailed    = "failed"
 )
 
 type UserProfile struct {

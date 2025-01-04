@@ -180,7 +180,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 	// calling the endpoint again, which will create a new task.
 	if cErr != nil {
 		log.Printf("[queue][EnqueueTask] - error converting playlist: %v", err)
-		status = blueprint.TASK_STATUS_FAILED
+		status = blueprint.TaskStatusFailed
 		// this is for when for example, apple music returns Not Found for a playlist thats visible but not public. (needs citation)
 		if errors.Is(cErr, blueprint.EnoResult) {
 			// create a new payload
@@ -223,7 +223,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 		// create new task error payload
 		payload := blueprint.TaskErrorPayload{
 			Platform: info.Platform,
-			Status:   blueprint.TASK_STATUS_FAILED,
+			Status:   blueprint.TaskStatusFailed,
 			Error:    err.Error(),
 			Message:  "An error occurred while converting the playlist",
 		}
@@ -248,7 +248,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 
 	// these seem to be for backwards compatibility and stuff. keep note and remove at a later date
 	if playlist != nil {
-		status = blueprint.TASK_STATUS_COMPLETED
+		status = blueprint.TaskStatusCompleted
 	}
 
 	if status == "" {
@@ -273,7 +273,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 	}
 
 	// update the task status to completed
-	taskErr := database.UpdateTaskStatus(taskId, blueprint.TASK_STATUS_COMPLETED)
+	taskErr := database.UpdateTaskStatus(taskId, blueprint.TaskStatusCompleted)
 	if taskErr != nil {
 		log.Printf("[queue][EnqueueTask] - error updating task status: %v", taskErr)
 		return taskErr

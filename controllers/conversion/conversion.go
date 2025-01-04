@@ -61,7 +61,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 	}
 
 	// check if the task is a playlist task. this is for short url support. A task has a short url
-	// so when we get a task, we are technically getting two types of tasks in two different contexts.\
+	// so when we get a task, we are technically getting two types of tasks in two different contexts.
 	// in this case, if the task is not a valid uuid, that means it's a short url task. we then return
 	// the task result task (context) data.
 	taskUUID, pErr := uuid.Parse(taskId)
@@ -89,7 +89,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		return util.SuccessResponse(ctx, http.StatusOK, result)
 	}
 
-	if taskRecord.Status == blueprint.TASK_STATUS_FAILED {
+	if taskRecord.Status == blueprint.TaskStatusFailed {
 		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - task ")
 		// deserialize the taskrecord result into blueprint.TaskErrorPayload
 		var res blueprint.TaskErrorPayload

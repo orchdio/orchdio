@@ -241,7 +241,6 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*
 		}
 		return tidalTrack, nil
 	}
-	log.Printf("\n[controllers][platforms][tidal][SearchTrackWithTitle] - no track found for title '%s' on tidal\n", searchData.Title)
 	return nil, blueprint.EnoResult
 
 }

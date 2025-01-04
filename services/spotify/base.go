@@ -169,13 +169,6 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*
 		// panic for now.. at least until i figure out how to handle it if it can fail at all or not or can fail but be taken care of
 		return nil, blueprint.EnoResult
 	}
-
-	//if spotifySearch.Artists == nil {
-	//	log.Printf("\n[controllers][platforms][spotify][ConvertEntity] error - error fetching single track on spotify\n")
-	//	// panic for now.. at least until i figure out how to handle it if it can fail at all or not or can fail but be taken care of
-	//	return nil, blueprint.EnoResult
-	//}
-
 	log.Printf("\n[controllers][platforms][spotify][ConvertEntity] info - found %v tracks on spotify\n", len(spotifySearch.Tracks.Tracks))
 
 	var fullSpotifyTrack spotify.FullTrack
@@ -426,7 +419,6 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 			}
 
 			// send webhook event to svix
-			// todo: implement this
 			svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
 			ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, &blueprint.PlaylistConversionEventTrack{
 				Track:    &trackCopy,
@@ -437,17 +429,16 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - Could not send webhook event\n")
 			}
 
-			//whEvent, whErr := svixInstance.SendEvent()
 			tracks = append(tracks, trackCopy)
 			// cache the track. the scheme is: "spotify:track_id"
 			cacheKey := "spotify:track:" + track.Track.Track.ID.String()
-			serialized, err := json.Marshal(trackCopy)
-			if err != nil {
-				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not serialize track: %v\n", err)
+			serialized, sErr := json.Marshal(trackCopy)
+			if sErr != nil {
+				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not serialize track: %v\n", sErr)
 			}
-			err = s.RedisClient.Set(context.Background(), cacheKey, string(serialized), time.Hour*24).Err()
-			if err != nil {
-				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not cache track: %v\n", err)
+			pErr := s.RedisClient.Set(context.Background(), cacheKey, string(serialized), time.Hour*24).Err()
+			if pErr != nil {
+				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not cache track: %v\n", pErr)
 			} else {
 				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] success - track %s by %s has been cached\n", trackCopy.Title, trackCopy.Artists[0])
 			}
@@ -455,10 +446,9 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 
 		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - playlist trcaks length: %v\n", len(tracks))
 
-		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - Owner info is: %v\n", info.Owner)
-
+		// fixme: handle nil value to pointer info
 		playlistResult := blueprint.PlaylistSearchResult{
-			URL:    info.ExternalURLs["spotify"],
+			URL:    info.ExternalURLs[IDENTIFIER],
 			Tracks: tracks,
 			Title:  info.Name,
 			Length: util.GetFormattedDuration(playlistLength),
@@ -507,9 +497,9 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack) (*[]bluepr
 			Artists: t.Artistes,
 			Title:   t.Title,
 		}
-		// FIXME: unhandled slice index
 		go s.SearchTrackWithTitleChan(searchData, ch, &wg)
 		outputTrack := <-ch
+
 		// for some reason, there is no spotify url which means could not fetch track, we
 		// want to add to the list of "not found" tracks.
 		if outputTrack == nil || outputTrack.URL == "" {
