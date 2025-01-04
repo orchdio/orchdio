@@ -23,4 +23,3 @@ notes.md
 .env.staging
 todo
 misc.json
-db/migrations
