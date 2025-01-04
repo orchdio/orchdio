@@ -40,6 +40,7 @@ type Service struct {
 func NewService(redisClient *redis.Client, devApp *blueprint.DeveloperApp) *Service {
 	return &Service{
 		RedisClient: redisClient,
+		App:         devApp,
 		//IntegrationAppID:     integrationAppID,
 		//IntegrationAppSecret: integrationAppSecret,
 	}
