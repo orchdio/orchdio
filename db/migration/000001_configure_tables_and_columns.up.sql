@@ -1,3 +1,35 @@
+-- Migration 1
+
+create table if not exists public.users
+(
+    id               integer generated always as identity
+        primary key,
+    email            text
+        unique,
+    username         text,
+    uuid             uuid
+        unique,
+    created_at       date default '2022-09-08'::date,
+    updated_at       date default '2022-09-08'::date,
+    usernames        json,
+    refresh_token    bytea,
+    platform_id      text
+        unique,
+    spotify_token    bytea,
+    applemusic_token bytea,
+    deezer_token     bytea,
+    tidal_token      bytea,
+    platform_ids     json
+);
+
+comment on column public.users.platform_ids is 'the json holding the platform and the ids for the user as key and value respectively.';
+
+alter table public.users
+    owner to postgres;
+
+
+-- Migration 2
+
 -- Version: 2
 -- Organization table
 create table if not exists public.organizations
@@ -224,8 +256,8 @@ create table if not exists public.waitlists
         primary key,
     email      text
         unique,
-    created_at time,
-    updated_at time,
+    created_at timestamptz,
+    updated_at timestamptz,
     uuid       uuid
         unique,
     platform   text
@@ -237,4 +269,155 @@ alter table public.waitlists
     owner to postgres;
 
 
+-- Migration 3
+-- drop old columns
+alter table if exists public.users
+    drop column if exists username;
+
+alter table if exists public.users
+    drop column if exists usernames;
+
+alter table if exists public.users
+    drop column if exists refresh_token;
+
+alter table if exists public.users
+    drop column if exists platform_id;
+
+alter table if exists public.users
+    drop column if exists spotify_token;
+
+alter table if exists public.users
+    drop column if exists applemusic_token;
+
+alter table if exists public.users
+    drop column if exists deezer_token;
+
+alter table if exists public.users
+    drop column if exists tidal_token;
+
+alter table if exists public.users
+    drop column if exists platform_ids;
+
+
+-- new columns
+
+alter table if exists public.users
+    add if not exists password text;
+
+alter table if exists public.users
+    add if not exists reset_token text;
+
+alter table if exists public.users
+    add if not exists reset_token_expiry timestamptz;
+
+alter table if exists public.users
+    add if not exists reset_token_created_at timestamptz;
+
+
+-- Migration 4
+-- drop old columns
+alter table public.users
+    drop column if exists username;
+
+alter table public.users
+    drop column if exists usernames;
+
+alter table public.users
+    drop column if exists refresh_token;
+
+alter table public.users
+    drop column if exists platform_id;
+
+alter table public.users
+    drop column if exists spotify_token;
+
+alter table public.users
+    drop column if exists applemusic_token;
+
+alter table public.users
+    drop column if exists deezer_token;
+
+alter table public.users
+    drop column if exists tidal_token;
+
+alter table public.users
+    drop column if exists platform_ids;
+
+
+-- new columns
+
+-- alter table if exists public.users
+--     add password text;
+
+alter table if exists public.users
+    add if not exists reset_token text;
+
+alter table if exists public.users
+    add if not exists reset_token_expiry timestamptz;
+
+alter table if exists public.users
+    add if not exists reset_token_created_at timestamptz;
+
+
+-- Migration 5
+alter table if exists users
+    alter column created_at type timestamptz using created_at::timestamptz;
+
+alter table if exists users
+    alter column created_at set default '2022-09-08'::timestamptz;
+
+alter table if exists users
+    alter column updated_at type timestamptz using updated_at::timestamptz;
+
+alter table if exists users
+    alter column updated_at set default '2022-09-08'::timestamptz;
+
+
+-- Migration 6
+alter table if exists user_apps
+    add if not exists id integer generated always as identity;
+
+alter table if exists user_apps
+    add if not exists username varchar;
+
+alter table if exists user_apps
+    add constraint user_apps_pk
+        primary key (id);
+
+
+-- Migration 7
+alter table if exists user_apps
+    add if not exists platform_ids text;
+
+
+-- Migration 8
+alter table if exists apps
+    alter column created_at type timestamptz using created_at::timestamptz;
+
+alter table apps
+    alter column updated_at type timestamptz using updated_at::timestamptz;
+
+
+-- Migration 9
+alter table if exists apps add if not exists webhook_app_id text null;
+
+
+-- Migration 10
+alter table follows
+    alter column created_at type timestamptz using created_at::timestamptz;
+
+alter table follows
+    alter column created_at set default '2022-09-08'::timestamptz;
+
+alter table tasks
+    alter column created_at type timestamptz using created_at::timestamptz;
+
+alter table tasks
+    alter column updated_at type timestamptz using updated_at::timestamptz;
+
+alter table user_apps
+    alter column authed_at type timestamptz using authed_at::timestamptz;
+
+alter table user_apps
+    alter column last_authed_at type timestamptz using last_authed_at::timestamptz;
 
