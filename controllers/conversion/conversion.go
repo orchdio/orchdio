@@ -49,20 +49,23 @@ func NewConversionController(db *sqlx.DB, red *redis.Client, queue taskq.Queue, 
 func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 	log.Printf("[controller][conversion][GetPlaylistTaskStatus] - getting playlist task status")
 	taskId := ctx.Params("taskId")
-	log.Printf("[controller][conversion][GetPlaylistTaskStatus] - taskId: %s", taskId)
 	database := db.NewDB{DB: c.DB}
 	taskRecord, err := database.FetchTask(taskId)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			log.Printf("[controller][conversion][GetPlaylistTaskStatus] - task not found")
+			log.Printf("[controller][conversion][GetPlaylistTaskStatus] - task not found: Task ID: \n%s", taskId)
 			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "task not found")
 		}
 		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - error fetching task: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "error fetching task")
 	}
 
-	taskUUID, err := uuid.Parse(taskId)
-	if err != nil {
+	// check if the task is a playlist task. this is for short url support. A task has a short url
+	// so when we get a task, we are technically getting two types of tasks in two different contexts.\
+	// in this case, if the task is not a valid uuid, that means it's a short url task. we then return
+	// the task result task (context) data.
+	taskUUID, pErr := uuid.Parse(taskId)
+	if pErr != nil {
 		log.Printf("[controller][conversion][GetPlaylistTaskStatus][warning] - not a playlist task, most likely a short url")
 
 		// we are casting the result into an interface. Before, we wanted to type each response
@@ -72,9 +75,9 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		// is ok because each of these results were typed from a struct before being serialized into the DB for storage.
 		var res interface{}
 		// HACK: to check if the task is a playlist task result as to be able to format the right type
-		err = json.Unmarshal([]byte(taskRecord.Result), &res)
-		if err != nil {
-			log.Printf("[controller][conversion][GetPlaylistTaskStatus] - not a playlist task")
+		mErr := json.Unmarshal([]byte(taskRecord.Result), &res)
+		if mErr != nil {
+			log.Printf("[controller][conversion][GetPlaylistTaskStatus] - not a playlist task: Error: \n%v", mErr)
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not deserialize task result")
 		}
 
@@ -83,11 +86,10 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 			Status:  taskRecord.Status,
 			Payload: res,
 		}
-
 		return util.SuccessResponse(ctx, http.StatusOK, result)
 	}
 
-	if taskRecord.Status == "failed" {
+	if taskRecord.Status == blueprint.TASK_STATUS_FAILED {
 		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - task ")
 		// deserialize the taskrecord result into blueprint.TaskErrorPayload
 		var res blueprint.TaskErrorPayload

@@ -1,9 +1,10 @@
-package svix_webhook
+package svixwebhook
 
 import (
 	"context"
 	"fmt"
 	svix "github.com/svix/svix-webhooks/go"
+	"log"
 	"orchdio/blueprint"
 	xlogger "orchdio/logger"
 )
@@ -73,7 +74,7 @@ func (s *SvixWebhook) CreateEndpoint(appId, uid, endpoint string) (*svix.Endpoin
 	whEnd, err := s.Client.Endpoint.Create(context.Background(), appId, &svix.EndpointIn{
 		Url: endpoint,
 		// todo: add more events.
-		FilterTypes: []string{blueprint.PlaylistConversionEvent},
+		FilterTypes: []string{blueprint.PlaylistConversionMetadataEvent, blueprint.PlaylistConversionTrackEvent, blueprint.PlaylistConversionDoneEvent},
 		Uid:         &uid,
 	})
 
@@ -182,4 +183,15 @@ func (s *SvixWebhook) CreateEventType(eventName, description string) (*svix.Even
 
 func FormatSvixEndpointUID(devAppId string) string {
 	return fmt.Sprintf("endpoint_%s", devAppId)
+}
+
+func (s *SvixWebhook) SendTrackEvent(appId string, out *blueprint.PlaylistConversionEventTrack) bool {
+	whResponse, whErr := s.SendEvent(appId, blueprint.PlaylistConversionTrackEvent, out)
+	if whErr != nil {
+		log.Printf("\n[services] error - Could not send webhook event: %v\n", whErr)
+		return false
+	}
+	// for debugging only for now
+	log.Printf("[services][applemusic][SearchTrackWithTitle] Webhook response: %v\n", whResponse)
+	return true
 }

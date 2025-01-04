@@ -50,8 +50,6 @@ require (
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/fasthttp/websocket v1.5.0 // indirect
-	github.com/frain-dev/convoy v0.9.2 // indirect
-	github.com/frain-dev/convoy-go/v2 v2.1.14 // indirect
 	github.com/fsnotify/fsnotify v1.5.1 // indirect
 	github.com/go-redis/redis_rate/v9 v9.1.2 // indirect
 	github.com/gofiber/websocket/v2 v2.0.22 // indirect

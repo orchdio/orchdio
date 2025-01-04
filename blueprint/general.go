@@ -17,16 +17,26 @@ const (
 )
 
 const (
-	EmailQueuePattern              = "send:appauth:email"
-	PlaylistConversionQueuePattern = "playlist:conversion"
-	SendResetPasswordQueuePattern  = "send:reset_password_email"
-	SendWelcomeEmailQueuePattern   = "send:welcome_email"
+	EmailQueueTaskTypePattern         = "send_appauth_email"
+	PlaylistConversionTaskTypePattern = "playlist_conversion_"
+	SendResetPasswordTaskPattern      = "send_reset_password_email"
+	SendWelcomeEmailTaskPattern       = "send_welcome_email"
 )
 
-// PlaylistConversionEvent is the event emitted when the meta of a playlist conversion is done.
+const (
+	PlaylistConversionQueueName = "playlist_conversion"
+	EmailQueueName              = "email"
+	DefaultQueueName            = "default"
+)
+
+// PlaylistConversionMetadataEvent is the event emitted when the meta of a playlist conversion is done.
 // it uses lowercase snake_case because svix, the webhook service used does not allow
 // : as delimiter
-var PlaylistConversionEvent = "playlist_conversion_metadata"
+var (
+	PlaylistConversionMetadataEvent = "playlist_conversion_metadata"
+	PlaylistConversionTrackEvent    = "playlist_conversion_track"
+	PlaylistConversionDoneEvent     = "playlist_conversion_done"
+)
 
 const (
 	SecretKeyType   = "secret"
@@ -35,36 +45,44 @@ const (
 	DeezerStateType = "deezer_state"
 )
 
-// NB: (Svix) Endpoint ID format is: "endpoint_" + <devAppId>
-
 var ValidUserIdentifiers = []string{"email", "id"}
 
 // perhaps have a different Error type declarations somewhere. For now, be here
 var (
-	EHOSTUNSUPPORTED    = errors.New("EHOSTUNSUPPORTED")
-	ENORESULT           = errors.New("Not Found")
-	ENOTIMPLEMENTED     = errors.New("NOT_IMPLEMENTED")
-	EGENERAL            = errors.New("EGENERAL")
-	EUNKNOWN            = errors.New("EUNKNOWN")
-	EINVALIDLINK        = errors.New("invalid link")
-	EALREADY_EXISTS     = errors.New("already exists")
-	EPHANTOMERR         = errors.New("unexpected error")
-	ERRTOOMANY          = errors.New("too many parameters")
-	EFORBIDDEN          = errors.New("403 Forbidden")
-	EUNAUTHORIZED       = errors.New("401 Unauthorized")
-	EBADREQUEST         = errors.New("400 Bad Request")
-	EINVALIDAUTHCODE    = errors.New("INVALID_AUTH_CODE")
-	ECREDENTIALSMISSING = errors.New("credentials not added for platform")
-	EINVALIDPERMISSIONS = errors.New("invalid permissions")
-	ESERVICECLOSED      = errors.New("service closed")
-	EINVALIDPLATFORM    = errors.New("invalid platform")
-	ENOCREDENTIALS      = errors.New("no credentials")
-	EBADCREDENTIALS     = errors.New("bad credentials")
+	ErrHostUnsupported    = errors.New("ErrHostUnsupported")
+	EnoResult             = errors.New("Not Found")
+	ErrNotImplemented     = errors.New("NOT_IMPLEMENTED")
+	EGENERAL              = errors.New("EGENERAL")
+	ErrUnknown            = errors.New("ErrUnknown")
+	ErrInvalidLink        = errors.New("invalid link")
+	EalreadyExists        = errors.New("already exists")
+	ErrPhantomErr         = errors.New("unexpected error")
+	ErrTooMany            = errors.New("too many parameters")
+	ErrForbidden          = errors.New("403 Forbidden")
+	ErrUnAuthorized       = errors.New("401 Unauthorized")
+	ErrBadRequest         = errors.New("400 Bad Request")
+	ErrInvalidAuthCode    = errors.New("INVALID_AUTH_CODE")
+	ErrCredentialsMissing = errors.New("credentials not added for platform")
+	ErrInvalidPermissions = errors.New("invalid permissions")
+	ErrServiceClosed      = errors.New("service closed")
+	ErrInvalidPlatform    = errors.New("invalid platform")
+	ErrNoCredentials      = errors.New("no credentials")
+	ErrBadCredentials     = errors.New("bad credentials")
+
+	// possible auth errors from each of the streaming platforms
+
+	ErrSpotifyUserNotRegistered = "User not registered"
+	ErrSpotifyInvalidGrant      = "invalid_grant"
+	ErrSpotifyInvalidClient     = "invalid_client"
+	ErrSpotifyInvalidRequest    = "invalid_request"
+
+	ErrDeezerAccessDenied = "access_denied"
+	ErrFreeServiceClosed  = "free service is closed"
 )
 
-var (
-	EEDESERIALIZE        = "EVENT_DESERIALIZE_MESSAGE_ERROR"
-	EEPLAYLISTCONVERSION = "playlist:conversion"
+const (
+	TASK_STATUS_COMPLETED = "completed"
+	TASK_STATUS_FAILED    = "failed"
 )
 
 type UserProfile struct {
@@ -253,28 +271,3 @@ type OrchdioLoggerOptions struct {
 	Message              string      `json:"message"`
 	AddTrace             bool        `json:"add_trace"`
 }
-
-//// DeveloperAppWithUserApp is similar to ```DeveloperApp``` but includes the user app id and other user app info
-//type DeveloperAppWithUserApp struct {
-//	ID                    int            `json:"id,omitempty" db:"id"`
-//	UID                   uuid.UUID      `json:"uid,omitempty" db:"uuid"`
-//	Name                  string         `json:"name,omitempty" db:"name"`
-//	Description           string         `json:"description,omitempty" db:"description"`
-//	Developer             uuid.UUID      `json:"developer,omitempty" db:"developer"`
-//	SecretKey             []byte         `json:"secret_key,omitempty" db:"secret_key"`
-//	PublicKey             uuid.UUID      `json:"public_key,omitempty" db:"public_key"`
-//	RedirectURL           string         `json:"redirect_url,omitempty" db:"redirect_url"`
-//	WebhookURL            string         `json:"webhook_url,omitempty" db:"webhook_url"`
-//	VerifyToken           []byte         `json:"verify_token,omitempty" db:"verify_token"`
-//	CreatedAt             string         `json:"created_at,omitempty" db:"created_at"`
-//	UpdatedAt             string         `json:"updated_at,omitempty" db:"updated_at"`
-//	Authorized            bool           `json:"authorized,omitempty" db:"authorized"`
-//	Organization          string         `json:"organization,omitempty" db:"organization"`
-//	SpotifyCredentials    []byte         `json:"spotify_credentials,omitempty" db:"spotify_credentials"`
-//	AppleMusicCredentials []byte         `json:"applemusic_credentials,omitempty" db:"applemusic_credentials"`
-//	DeezerCredentials     []byte         `json:"deezer_credentials,omitempty" db:"deezer_credentials"`
-//	TidalCredentials      []byte         `json:"tidal_credentials,omitempty" db:"tidal_credentials"`
-//	DeezerState           string         `json:"deezer_state,omitempty" db:"deezer_state,omitempty"`
-//	UserAppID             string         `json:"user_app_id,omitempty" db:"user_app_id"`
-//	Scopes                pq.StringArray `json:"scopes,omitempty" db:"scopes"`
-//}

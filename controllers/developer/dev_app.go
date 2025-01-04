@@ -118,7 +118,7 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 	}
 
 	// create a new instance of svix service
-	svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), true)
+	svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
 	webhookName := fmt.Sprintf("%s:%s", body.Name, string(uid))
 	whResponse, whErr := svixInstance.CreateApp(webhookName)
 
@@ -193,7 +193,7 @@ func (d *Controller) UpdateApp(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not update developer app")
 	}
 
-	svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), true)
+	svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
 	// todo: finalize webhook name format standard.
 	webhookName := fmt.Sprintf("%s-orchdio-%s", updatedApp.Name, updatedApp.UID.String())
 	whAppName := fmt.Sprintf("%s:%s", updatedApp.Name, updatedApp.UID.String())

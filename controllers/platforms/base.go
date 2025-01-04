@@ -55,7 +55,7 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 
 		conversion, conversionError := universal.ConvertTrack(linkInfo, p.Redis, p.DB)
 		if conversionError != nil {
-			if errors.Is(conversionError, blueprint.ENOTIMPLEMENTED) {
+			if errors.Is(conversionError, blueprint.ErrNotImplemented) {
 				log.Printf("\n[controllers][platforms][deezer][ConvertEntity] error - %v\n", "Not implemented")
 				return util.ErrorResponse(ctx, http.StatusNotImplemented, "not supported", "Not implemented")
 			}
@@ -132,8 +132,8 @@ func (p *Platforms) ConvertEntity(ctx *fiber.Ctx) error {
 			return ctx.Status(http.StatusInternalServerError).JSON("error marshalling link info")
 		}
 		// create new task
-		conversionTask, err := orchdioQueue.NewTask(fmt.Sprintf("playlist:conversion:%s", taskData.TaskID), queue.PlaylistConversionTask, 1, ser)
-		enqErr := orchdioQueue.EnqueueTask(conversionTask, queue.PlaylistConversionQueue, taskData.TaskID, time.Second*1)
+		conversionTask, err := orchdioQueue.NewTask(fmt.Sprintf("%s_%s", blueprint.PlaylistConversionTaskTypePattern, taskData.TaskID), blueprint.PlaylistConversionTaskTypePattern, 1, ser)
+		enqErr := orchdioQueue.EnqueueTask(conversionTask, blueprint.PlaylistConversionQueueName, taskData.TaskID, time.Second*1)
 		if enqErr != nil {
 			log.Printf("[controller][conversion][EchoConversion] - error enqueuing task: %v", enqErr)
 			return ctx.Status(http.StatusInternalServerError).JSON("error enqueuing task")

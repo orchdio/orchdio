@@ -104,7 +104,7 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 	playlistlink := ""
 	switch platform {
 	case spotify2.IDENTIFIER:
-		spotifyService := spotify2.NewService(&credentials, p.DB, p.Redis)
+		spotifyService := spotify2.NewService(&credentials, p.DB, p.Redis, app)
 		client := spotifyService.NewClient(context.Background(), &oauth2.Token{
 			RefreshToken: string(t),
 		})
@@ -116,7 +116,7 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 				return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid client. The user or developer app's credentials might be invalid")
 			}
 			if strings.Contains(pErr.Error(), "This request requires user authentication") {
-				return util.ErrorResponse(ctx, http.StatusInternalServerError, blueprint.EUNAUTHORIZED, "Please reauthenticate this app with the permission to read playlists and try again.")
+				return util.ErrorResponse(ctx, http.StatusInternalServerError, blueprint.ErrUnAuthorized, "Please reauthenticate this app with the permission to read playlists and try again.")
 			}
 		}
 
@@ -142,7 +142,7 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] - created playlist %v\n", updated)
 
 	case deezer.IDENTIFIER:
-		deezerService := deezer.NewService(&credentials, p.DB, p.Redis)
+		deezerService := deezer.NewService(&credentials, p.DB, p.Redis, app)
 		id, err := deezerService.CreateNewPlaylist(createBodyData.Title, user.PlatformID, string(t), createBodyData.Tracks)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error creating new playlist - %v\n", err)
@@ -155,12 +155,12 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 	// get the user, to see if our token is valid
 
 	case applemusic.IDENTIFIER:
-		applemusicService := applemusic.NewService(&credentials, p.DB, p.Redis)
+		applemusicService := applemusic.NewService(&credentials, p.DB, p.Redis, app)
 		pl, err := applemusicService.CreateNewPlaylist(createBodyData.Title, description, string(t), createBodyData.Tracks)
 		playlistlink = string(pl)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][AddPlaylistToAccount][error] - an error occurred while adding playlist to user platform account - %v\n", err)
-			if err == blueprint.EFORBIDDEN {
+			if err == blueprint.ErrForbidden {
 				log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error creating new playlist - %v\n", err)
 				return util.ErrorResponse(ctx, http.StatusForbidden, err, "Could not create new playlist for user. Access has not been granted by user")
 			}
@@ -168,12 +168,12 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		}
 
 	case tidal.IDENTIFIER:
-		tidalService := tidal.NewService(&credentials, p.DB, p.Redis)
+		tidalService := tidal.NewService(&credentials, p.DB, p.Redis, app)
 		pl, err := tidalService.CreateNewPlaylist(createBodyData.Title, description, string(t), createBodyData.Tracks)
 		playlistlink = string(pl)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][AddPlaylistToAccount][error] - an error occurred while adding playlist to user platform account - %v\n", err)
-			if err == blueprint.EFORBIDDEN {
+			if err == blueprint.ErrForbidden {
 				log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error creating new playlist - %v\n", err)
 				return util.ErrorResponse(ctx, http.StatusForbidden, err, "Could not create new playlist for user. Access has not been granted by user")
 			}
@@ -251,7 +251,7 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
 		}
 
-		deezerService := deezer.NewService(&deezerCredentials, p.DB, p.Redis)
+		deezerService := deezer.NewService(&deezerCredentials, p.DB, p.Redis, app)
 		playlists, err := deezerService.FetchUserPlaylists(refreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching deezer playlists %v\n", err)
@@ -298,7 +298,7 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 		}
 
 		// get the spotify playlists
-		spotifyService := spotify2.NewService(&spotifyCred, p.DB, p.Redis)
+		spotifyService := spotify2.NewService(&spotifyCred, p.DB, p.Redis, app)
 		playlists, err := spotifyService.FetchUserPlaylist(refreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching spotify playlists %v\n", err)
@@ -349,7 +349,7 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
 		}
 
-		tidalService := tidal.NewService(&tidalCredentials, p.DB, p.Redis)
+		tidalService := tidal.NewService(&tidalCredentials, p.DB, p.Redis, app)
 		playlists, err := tidalService.FetchUserPlaylists()
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching tidal playlists %v\n", err)
@@ -407,7 +407,7 @@ func (p *Platforms) FetchPlatformPlaylists(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
 		}
 
-		applemusicService := applemusic.NewService(&appleMusicCredentials, p.DB, p.Redis)
+		applemusicService := applemusic.NewService(&appleMusicCredentials, p.DB, p.Redis, app)
 		playlists, err := applemusicService.FetchUserPlaylists(refreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching apple music playlists %v\n", err)
@@ -509,7 +509,7 @@ func (p *Platforms) FetchPlatformArtists(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
 		}
 
-		applemusicService := applemusic.NewService(&appleMusicCredentials, p.DB, p.Redis)
+		applemusicService := applemusic.NewService(&appleMusicCredentials, p.DB, p.Redis, app)
 		artists, err := applemusicService.FetchUserArtists(refreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformArtists] error - error fetching apple music artists %v\n", err)
@@ -530,7 +530,7 @@ func (p *Platforms) FetchPlatformArtists(ctx *fiber.Ctx) error {
 		}
 		// get the deezer artists
 		log.Printf("[platforms][FetchPlatformArtists] fetching deezer artists\n")
-		deezerService := deezer.NewService(&deezerCredentials, p.DB, p.Redis)
+		deezerService := deezer.NewService(&deezerCredentials, p.DB, p.Redis, app)
 		artists, err := deezerService.FetchUserArtists(refreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformArtists] error - error fetching deezer artists %v\n", err)
@@ -552,7 +552,7 @@ func (p *Platforms) FetchPlatformArtists(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
 		}
 
-		spotifyService := spotify2.NewService(&spotifyCreds, p.DB, p.Redis)
+		spotifyService := spotify2.NewService(&spotifyCreds, p.DB, p.Redis, app)
 		artists, err := spotifyService.FetchUserArtists(refreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformArtists] error - error fetching spotify artists %v\n", err)
@@ -571,7 +571,7 @@ func (p *Platforms) FetchPlatformArtists(ctx *fiber.Ctx) error {
 			log.Printf("[platforms][FetchPlatformArtists] error - error unmarshalling tidal credentials %v\n", decErr)
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured")
 		}
-		tidalService := tidal.NewService(&tidalCredentials, p.DB, p.Redis)
+		tidalService := tidal.NewService(&tidalCredentials, p.DB, p.Redis, app)
 		// get the tidal artists
 		log.Printf("[platforms][FetchPlatformArtists] fetching tidal artists\n")
 		// deserialize the user platform ids

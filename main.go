@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/vmihailenco/taskq/v3"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
@@ -17,7 +18,6 @@ import (
 	"orchdio/controllers/conversion"
 	"orchdio/controllers/developer"
 	"orchdio/controllers/platforms"
-	"orchdio/controllers/webhook"
 	"orchdio/middleware"
 	"orchdio/queue"
 	follow2 "orchdio/services/follow"
@@ -47,7 +47,6 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/joho/godotenv"
 	"github.com/robfig/cron/v3"
-	"github.com/vmihailenco/taskq/v3"
 	"github.com/vmihailenco/taskq/v3/redisq"
 )
 
@@ -123,7 +122,7 @@ func main() {
 
 	var QueueFactory = redisq.NewFactory()
 	var playlistQueue = QueueFactory.RegisterQueue(&taskq.QueueOptions{
-		Name:  "orchdio-playlist-queue",
+		Name:  blueprint.PlaylistConversionQueueName,
 		Redis: redisClient,
 	})
 	asynqMux := asynq.NewServeMux()
@@ -132,17 +131,17 @@ func main() {
 		log.Printf("\n[main] [info] - Running in production mode. Connecting to authenticated redis")
 	}
 
-	drver, err := postgres.WithInstance(db.DB, &postgres.Config{})
-	if err != nil {
+	drver, iErr := postgres.WithInstance(db.DB, &postgres.Config{})
+	if iErr != nil {
 		log.Printf("Error instantiating db driver")
-		panic(err)
+		panic(iErr)
 	}
 
 	// Migrate
-	dbDriver, err := migrate.NewWithDatabaseInstance("file://./db/migration", "postgres", drver)
-	if err != nil {
+	dbDriver, dErr := migrate.NewWithDatabaseInstance("file://./db/migration", "postgres", drver)
+	if dErr != nil {
 		log.Printf("Error instantiating db driver")
-		panic(err)
+		panic(dErr)
 	}
 
 	err = dbDriver.Up()
@@ -168,12 +167,12 @@ func main() {
 		asynq.Config{Concurrency: 10,
 			ShutdownTimeout: 3 * time.Second,
 			Queues: map[string]int{
-				"playlist-conversion": 5,
-				"email":               2,
-				"default":             1,
+				blueprint.PlaylistConversionQueueName: 5,
+				blueprint.EmailQueueName:              2,
+				blueprint.DefaultQueueName:            1,
 			},
-			// NB: from the queue CheckForOrphanedTasksMiddleware, when we handle orphaned task and we return a blueprint.ENORESULT error, the execution
-			// jumps here, so when the middleware runs and we return a blueprint.ENORESULT error, it'll run this block and reprocess the task
+			// NB: from the queue CheckForOrphanedTasksMiddleware, when we handle orphaned task and we return a blueprint.EnoResult error, the execution
+			// jumps here, so when the middleware runs and we return a blueprint.EnoResult error, it'll run this block and reprocess the task
 			// if the handler has successfully been attached or do nothing (and let the queue retry later) if there was an error
 			ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
 				log.Printf("[main][QueueErrorHandler] Running queue server error handler...")
@@ -182,14 +181,14 @@ func main() {
 				// check if the task is an email task
 				isEmailQueue := util.IsTaskType(task.Type(), "send:appauth")
 				if isEmailQueue {
-					queueInfo, qErr := inspector.GetQueueInfo(queue.EmailQueue)
+					queueInfo, qErr := inspector.GetQueueInfo(blueprint.EmailQueueName)
 					if qErr != nil {
 						log.Printf("[main] [QueueErrorHandler] Error getting queue info %v", qErr)
 						return
 					}
 					if queueInfo.Paused {
 						log.Printf("[main] [QueueErrorHandler] Email queue is paused.. Unpausing")
-						err = inspector.UnpauseQueue(queue.EmailQueue)
+						err = inspector.UnpauseQueue(blueprint.EmailQueueName)
 						return
 					}
 					notFound := asynq.NotFound(context.Background(), task)
@@ -218,10 +217,10 @@ func main() {
 				}
 
 				// conversion queue
-				isConversionQueue := util.IsTaskType(task.Type(), "playlist:conversion")
+				isConversionQueue := util.IsTaskType(task.Type(), blueprint.PlaylistConversionTaskTypePattern)
 				if isConversionQueue {
 					// check that the queue isnt paused
-					queueInfo, qErr := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
+					queueInfo, qErr := inspector.GetQueueInfo(blueprint.PlaylistConversionQueueName)
 					if qErr != nil {
 						log.Printf("[main] [QueueErrorHandler] Error getting queue info %v", qErr)
 						return
@@ -236,7 +235,7 @@ func main() {
 					log.Printf("[main] [QueueErrorHandler] Queue info %v", queueInfo)
 					if queueInfo.Paused {
 						log.Printf("[main][QueueErrorHandler] Queue is paused")
-						err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
+						err = inspector.UnpauseQueue(blueprint.PlaylistConversionQueueName)
 						return
 					}
 
@@ -273,10 +272,10 @@ func main() {
 
 	asynqMux.Use(queue.CheckForOrphanedTasksMiddleware)
 	orchdioQueue := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
-	asynqMux.HandleFunc(blueprint.EmailQueuePattern, orchdioQueue.SendEmailHandler)
-	asynqMux.HandleFunc(blueprint.PlaylistConversionQueuePattern, orchdioQueue.PlaylistTaskHandler)
-	asynqMux.HandleFunc(blueprint.SendResetPasswordQueuePattern, orchdioQueue.SendEmailHandler)
-	asynqMux.HandleFunc(blueprint.SendWelcomeEmailQueuePattern, orchdioQueue.SendEmailHandler)
+	asynqMux.HandleFunc(blueprint.EmailQueueTaskTypePattern, orchdioQueue.SendEmailHandler)
+	asynqMux.HandleFunc(blueprint.PlaylistConversionTaskTypePattern, orchdioQueue.PlaylistTaskHandler)
+	asynqMux.HandleFunc(blueprint.SendResetPasswordTaskPattern, orchdioQueue.SendEmailHandler)
+	asynqMux.HandleFunc(blueprint.SendWelcomeEmailTaskPattern, orchdioQueue.SendEmailHandler)
 
 	err = asynqServer.Start(asynqMux)
 	if err != nil {
@@ -380,7 +379,6 @@ func main() {
 	devAppController := developer.NewDeveloperController(db)
 
 	platformsControllers := platforms.NewPlatform(redisClient, db, asyncClient, asynqMux)
-	whController := webhook.NewWebhookController(db, redisClient)
 	/**
 	 ==================================================================
 	+
@@ -503,9 +501,6 @@ func main() {
 
 	appRouter.Post("/:appId/keys/revoke", devAppController.RevokeAppKeys)
 
-	orchRouter.Post("/white-tiger", authMiddleware.AddReadWriteDeveloperToContext, whController.Handle)
-	orchRouter.Get("/white-tiger", whController.AuthenticateWebhook)
-
 	// ==========================================
 	// NEXT ROUTES
 	nextRouter := baseRouter.Group("/next", authMiddleware.ValidateKey)
@@ -562,7 +557,7 @@ func main() {
 		log.Printf("[main] [info] - ❗🚂 Shutting down server")
 		// inspector
 		// get all active tasks
-		inspErr := inspector.PauseQueue(queue.PlaylistConversionQueue)
+		inspErr := inspector.PauseQueue(blueprint.PlaylistConversionQueueName)
 		if inspErr != nil {
 			log.Printf("Error pausing queue %v", inspErr)
 			_ = app.Shutdown()

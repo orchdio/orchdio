@@ -18,10 +18,6 @@ type WebhookController struct {
 	DB *sqlx.DB
 }
 
-func NewAccountWebhookController(db *sqlx.DB) *WebhookController {
-	return &WebhookController{DB: db}
-}
-
 func (w *WebhookController) FetchWebhookUrl(c *fiber.Ctx) error {
 	log.Printf("[controller][user][FetchWebhookUrl] - fetching webhook url")
 	user := c.Locals("user").(*blueprint.User)
@@ -47,7 +43,6 @@ func (w *WebhookController) FetchWebhookUrl(c *fiber.Ctx) error {
 func (w *WebhookController) CreateWebhookUrl(ctx *fiber.Ctx) error {
 	log.Printf("[controller][user][CreateWebhookUrl] - creating webhook url")
 	user := ctx.Locals("user").(*blueprint.User)
-	//database := c.DB
 	bod := ctx.Body()
 
 	/**
@@ -123,7 +118,7 @@ func (w *WebhookController) CreateWebhookUrl(ctx *fiber.Ctx) error {
 
 	err = database.CreateUserWebhook(user.UUID.String(), webhookUrl, webhoookBody.VerifyToken)
 	if err != nil {
-		if errors.Is(err, blueprint.EALREADY_EXISTS) {
+		if errors.Is(err, blueprint.EalreadyExists) {
 			log.Printf("[controller][user][CreateWebhookUrl] - error - user already has a webhook url")
 			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "App already has a webhook url")
 		}
@@ -198,6 +193,7 @@ func (w *WebhookController) DeleteUserWebhookUrl(ctx *fiber.Ctx) error {
 	user := ctx.Locals("user").(*blueprint.User)
 
 	database := db.NewDB{DB: w.DB}
+	// todo: implement delete user webhoook on svix
 	upErr := database.DeleteUserWebhook(user.UUID.String())
 
 	if upErr != nil {

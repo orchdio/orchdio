@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"orchdio/blueprint"
 	"orchdio/util"
+	svixwebhook "orchdio/webhooks/svix"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -37,15 +39,17 @@ type Service struct {
 	IntegrationAppSecret string
 	RedisClient          *redis.Client
 	PgClient             *sqlx.DB
+	App                  *blueprint.DeveloperApp
 }
 
-func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client) *Service {
+func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client, devApp *blueprint.DeveloperApp) *Service {
 	return &Service{
 		IntegrationAppID:     credentials.AppID,
 		IntegrationAppSecret: credentials.AppSecret,
 		// the refreshtoken is optional for this so we're not declaring it
 		RedisClient: redisClient,
 		PgClient:    pgClient,
+		App:         devApp,
 	}
 }
 
@@ -77,7 +81,7 @@ func (s *Service) NewClient(ctx context.Context, token *oauth2.Token) *spotify.C
 }
 
 // FetchSingleTrack returns a single track by searching with the title
-func (s *Service) FetchSingleTrack(title, artiste string) *spotify.SearchResult {
+func (s *Service) FetchSingleTrack(searchData *blueprint.TrackSearchData) *spotify.SearchResult {
 	config := &clientcredentials.Config{
 		ClientID:     s.IntegrationAppID,
 		ClientSecret: s.IntegrationAppSecret,
@@ -93,7 +97,7 @@ func (s *Service) FetchSingleTrack(title, artiste string) *spotify.SearchResult 
 	httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), token)
 	client := spotify.New(httpClient)
 
-	results, err := client.Search(context.Background(), fmt.Sprintf("%s %s", artiste, title), spotify.SearchTypeTrack)
+	results, err := client.Search(context.Background(), fmt.Sprintf("%s %s", searchData.Artists[0], searchData.Title), spotify.SearchTypeTrack)
 	if err != nil {
 		log.Printf("\n[services][spotify][base][FetchingSingleTrack] error - could not search for track: %v\n", err)
 		return nil
@@ -103,10 +107,10 @@ func (s *Service) FetchSingleTrack(title, artiste string) *spotify.SearchResult 
 }
 
 // SearchTrackWithTitleChan searches a for a track using the title and channel
-func (s *Service) SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
-	result, err := s.SearchTrackWithTitle(title, artiste)
+func (s *Service) SearchTrackWithTitleChan(searchData *blueprint.TrackSearchData, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
+	result, err := s.SearchTrackWithTitle(searchData)
 	if err != nil {
-		log.Printf("\nError fetching track %s with channels\n. Error: %v", title, err)
+		log.Printf("\nError fetching track %s with channels\n. Error: %v", searchData.Title, err)
 		defer wg.Done()
 		c <- nil
 		wg.Add(1)
@@ -123,11 +127,11 @@ func (s *Service) SearchTrackWithTitleChan(title, artiste string, c chan *bluepr
 // SearchTrackWithTitle searches spotify using the title of a track
 // This is typically expected to be used when the track we want to fetch is the one we just
 // want to search on. That is, the other platforms that the user is trying to convert to.
-func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackSearchResult, error) {
-	strippedArtiste := ExtractArtiste(artiste)
-	cleanedArtiste := fmt.Sprintf("spotify-%s-%s", util.NormalizeString(artiste), title)
+func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error) {
+	searchData.Artists[0] = ExtractArtiste(searchData.Artists[0])
+	cleanedArtiste := fmt.Sprintf("spotify-%s-%s", util.NormalizeString(searchData.Artists[0]), searchData.Title)
 
-	log.Printf("Spotify: Searching with stripped artiste: %s. Original artiste: %s", cleanedArtiste, strippedArtiste)
+	log.Printf("Spotify: Searching with stripped artiste: %s. Original artiste: %s", cleanedArtiste, searchData.Artists[0])
 	// if we have searched for this specific track before, we return the cached result
 	// And how do we know if we have cached it before?
 	// We store the hash of the title and artiste of the track in redis. we check if the hash of the
@@ -149,11 +153,11 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 		return result, nil
 	}
 
-	spotifySearch := s.FetchSingleTrack(title, strippedArtiste)
+	spotifySearch := s.FetchSingleTrack(searchData)
 	if spotifySearch == nil {
 		log.Printf("\n[controllers][platforms][spotify][ConvertEntity] error - error fetching single track on spotify\n")
 		// panic for now.. at least until i figure out how to handle it if it can fail at all or not or can fail but be taken care of
-		return nil, blueprint.ENORESULT
+		return nil, blueprint.EnoResult
 	}
 
 	// probably better to deserialize the ```spotifySearch.Tracks``` so we can check if its nil or not
@@ -163,50 +167,50 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 	if len(spotifySearch.Tracks.Tracks) == 0 {
 		log.Printf("\n[controllers][platforms][spotify][ConvertEntity] error - error fetching single track on spotify\n")
 		// panic for now.. at least until i figure out how to handle it if it can fail at all or not or can fail but be taken care of
-		return nil, blueprint.ENORESULT
+		return nil, blueprint.EnoResult
 	}
 
 	//if spotifySearch.Artists == nil {
 	//	log.Printf("\n[controllers][platforms][spotify][ConvertEntity] error - error fetching single track on spotify\n")
 	//	// panic for now.. at least until i figure out how to handle it if it can fail at all or not or can fail but be taken care of
-	//	return nil, blueprint.ENORESULT
+	//	return nil, blueprint.EnoResult
 	//}
 
 	log.Printf("\n[controllers][platforms][spotify][ConvertEntity] info - found %v tracks on spotify\n", len(spotifySearch.Tracks.Tracks))
 
-	var spSingleTrack spotify.FullTrack
+	var fullSpotifyTrack spotify.FullTrack
 
 	// we're extracting just the first track.
 	// NB: when the time comes to properly handle the results and return the best match (sometimes its like the 2nd result)
 	// then, this is where to probably start.
 	if len(spotifySearch.Tracks.Tracks) > 0 {
-		spSingleTrack = spotifySearch.Tracks.Tracks[0]
+		fullSpotifyTrack = spotifySearch.Tracks.Tracks[0]
 	}
 
 	var cover string
 	// fetch the spotify image preview.
-	if len(spSingleTrack.Album.Images) > 0 {
-		cover = spSingleTrack.Album.Images[0].URL
+	if len(fullSpotifyTrack.Album.Images) > 0 {
+		cover = fullSpotifyTrack.Album.Images[0].URL
 	}
 
 	// fetch all the tracks from the contributors.
 	var spTrackContributors []string
 	// reminder: for now, i'm just returning the name of the artiste
-	for _, contributor := range spSingleTrack.Artists {
+	for _, contributor := range fullSpotifyTrack.Artists {
 		spTrackContributors = append(spTrackContributors, contributor.Name)
 	}
 
 	fetchedSpotifyTrack := blueprint.TrackSearchResult{
-		Released:      spSingleTrack.Album.ReleaseDate,
-		URL:           spSingleTrack.SimpleTrack.ExternalURLs["spotify"],
+		Released:      fullSpotifyTrack.Album.ReleaseDate,
+		URL:           fullSpotifyTrack.SimpleTrack.ExternalURLs["spotify"],
 		Artists:       spTrackContributors,
-		Duration:      util.GetFormattedDuration(spSingleTrack.Duration / 1000),
-		DurationMilli: spSingleTrack.Duration,
-		Explicit:      spSingleTrack.Explicit,
-		Title:         spSingleTrack.Name,
-		Preview:       spSingleTrack.PreviewURL,
-		Album:         spSingleTrack.Album.Name,
-		ID:            spSingleTrack.SimpleTrack.ID.String(),
+		Duration:      util.GetFormattedDuration(fullSpotifyTrack.Duration / 1000),
+		DurationMilli: fullSpotifyTrack.Duration,
+		Explicit:      fullSpotifyTrack.Explicit,
+		Title:         fullSpotifyTrack.Name,
+		Preview:       fullSpotifyTrack.PreviewURL,
+		Album:         fullSpotifyTrack.Album.Name,
+		ID:            fullSpotifyTrack.SimpleTrack.ID.String(),
 		Cover:         cover,
 	}
 
@@ -214,7 +218,7 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 	serializedTrack, err := json.Marshal(fetchedSpotifyTrack)
 	trackCacheKey := "spotify:track:" + fetchedSpotifyTrack.ID
 
-	if lo.Contains(fetchedSpotifyTrack.Artists, artiste) {
+	if lo.Contains(fetchedSpotifyTrack.Artists, searchData.Title) {
 		err = s.RedisClient.MSet(context.Background(), map[string]interface{}{
 			cleanedArtiste: string(serializedTrack),
 		}).Err()
@@ -224,8 +228,6 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 			log.Printf("\n[controllers][platforms][spotify][SearchTrackWithTitle] Track %s has been cached\n", fetchedSpotifyTrack.Title)
 		}
 	}
-
-	//newIdentifier := util.HashIdentifier(fmt.Sprintf("spotify-%s-%s", _artiste, fetchedSpotifyTrack.Title))
 
 	//if err != nil {
 	//	log.Printf("\n[services][spotify][base][SearchTrackWithTitle] error - could not marshal track: %v\n", err)
@@ -243,6 +245,17 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 		log.Printf("\n[services][spotify][base][SearchTrackWithTitle] success - cached track: %v\n", fetchedSpotifyTrack.Title)
 	}
 
+	// send webhook event here
+	svixInstance := svixwebhook.New(os.Getenv("SVIX_APP_ID"), false)
+	payload := &blueprint.PlaylistConversionEventTrack{
+		Track:    &fetchedSpotifyTrack,
+		Platform: IDENTIFIER,
+	}
+	ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, payload)
+	if !ok {
+		log.Printf("\n[services][spotify][base][SearchTrackWithTitle] error - Could not send webhook event\n")
+	}
+
 	return &fetchedSpotifyTrack, nil
 }
 
@@ -256,28 +269,14 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 	cacheKey := "spotify:track:" + info.EntityID
 	cachedTrack, err := s.RedisClient.Get(context.Background(), cacheKey).Result()
 
-	if err != nil && err != redis.Nil {
+	if err != nil && !errors.Is(err, redis.Nil) {
 		log.Printf("\n[services][SearchTrackWithID] error - Could not fetch record from cache. This is an unexpected error\n")
 		return nil, err
 	}
 
 	// we have not cached this track before
-	if err != nil && err == redis.Nil {
+	if err != nil && errors.Is(err, redis.Nil) {
 		log.Printf("\n[services][SearchTrackWithID] function track has not been cached")
-		//config := &clientcredentials.Config{
-		//	ClientID:     s.IntegrationAppID,
-		//	ClientSecret: s.IntegrationAppSecret,
-		//	TokenURL:     spotifyauth.TokenURL,
-		//}
-		//
-		//token, err := config.MusicToken(context.Background())
-		//if err != nil {
-		//	log.Printf("\n[services][spotify][base][SearchTrackWithID] error  - could not fetch spotify token: %v\n", err)
-		//	return nil, err
-		//}
-		//
-		//httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), token)
-		//client := spotify.New(httpClient)
 		token := s.NewAuthToken()
 		client := s.NewClient(context.Background(), token)
 		results, err := client.GetTrack(context.Background(), spotify.ID(info.EntityID))
@@ -344,12 +343,8 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 		log.Printf("\n[services][spotify][base][SearchPlaylistWithID] error - could not fetch token\n")
 		return nil, errors.New("could not fetch token")
 	}
-	ctx := context.Background()
-	if token == nil {
-		log.Printf("\n[services][spotify][base][SearchPlaylistWithID] error - could not fetch token\n")
-		return nil, errors.New("could not fetch token")
-	}
 
+	ctx := context.Background()
 	client := s.NewClient(ctx, token)
 	options := spotify.Fields("description,uri,external_urls,snapshot_id,name,images")
 
@@ -360,13 +355,13 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 	// then we want to return the cached data. however, if the snapshot id is different, we want to
 	// fetch the data from the spotify api and cache it.
 	cachedSnapshot, cacheErr := s.RedisClient.Get(context.Background(), "spotify:playlist:"+id).Result()
-	if cacheErr != nil && cacheErr != redis.Nil {
+	if cacheErr != nil && !errors.Is(cacheErr, redis.Nil) {
 		log.Printf("\n[services][SearchPlaylistWithID] error - Could not fetch snapshot id from cache\n")
 		return nil, cacheErr
 	}
 
 	cachedSnapshotID, snapshotErr := s.RedisClient.Get(context.Background(), "spotify:snapshot:"+id).Result()
-	if snapshotErr != nil && snapshotErr != redis.Nil {
+	if snapshotErr != nil && !errors.Is(snapshotErr, redis.Nil) {
 		log.Printf("\n[services][SearchPlaylistWithID] error - Could not fetch snapshot id from cache\n")
 		return nil, snapshotErr
 	}
@@ -375,7 +370,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 
 	// if we have not cached this playlist before or the snapshot id has changed (i.e. the playlist has been updated)
 	// then we want to fetch the tracks and cache them.
-	if cacheErr != nil && cacheErr == redis.Nil || cachedSnapshotID != info.SnapshotID {
+	if cacheErr != nil && errors.Is(cacheErr, redis.Nil) || cachedSnapshotID != info.SnapshotID {
 
 		playlist, cErr := client.GetPlaylistItems(ctx, spotify.ID(id))
 		if cErr != nil {
@@ -388,7 +383,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 		for page := 1; ; page++ {
 			out := &spotify.PlaylistItemPage{}
 			paginationErr := client.NextPage(ctx, out)
-			if paginationErr == spotify.ErrNoMorePages {
+			if errors.Is(paginationErr, spotify.ErrNoMorePages) {
 				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - No more pages for playlist\n")
 				break
 			}
@@ -429,6 +424,20 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 				ID:            track.Track.Track.ID.String(),
 				Cover:         cover,
 			}
+
+			// send webhook event to svix
+			// todo: implement this
+			svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
+			ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, &blueprint.PlaylistConversionEventTrack{
+				Track:    &trackCopy,
+				Platform: IDENTIFIER,
+			})
+
+			if !ok {
+				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - Could not send webhook event\n")
+			}
+
+			//whEvent, whErr := svixInstance.SendEvent()
 			tracks = append(tracks, trackCopy)
 			// cache the track. the scheme is: "spotify:track_id"
 			cacheKey := "spotify:track:" + track.Track.Track.ID.String()
@@ -494,8 +503,12 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack) (*[]bluepr
 	var omittedTracks []blueprint.OmittedTracks
 	var wg sync.WaitGroup
 	for _, t := range tracks {
+		searchData := &blueprint.TrackSearchData{
+			Artists: t.Artistes,
+			Title:   t.Title,
+		}
 		// FIXME: unhandled slice index
-		go s.SearchTrackWithTitleChan(t.Title, t.Artistes[0], ch, &wg)
+		go s.SearchTrackWithTitleChan(searchData, ch, &wg)
 		outputTrack := <-ch
 		// for some reason, there is no spotify url which means could not fetch track, we
 		// want to add to the list of "not found" tracks.

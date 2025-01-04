@@ -83,9 +83,9 @@ func (d *Deezer) CompleteUserAuth(token []byte) (*DeezerUser, error) {
 	// it seems the free service is closed to api calls too. so if say the (vpn) ip address of the server
 	// is in frankfurt, it'll work because free is still active in germany. but say nigeria or south africa, it doesnt work
 	// and returns "free service closed" error
-	if strings.Contains(string(resp.Data), "free service is closed") {
+	if strings.Contains(string(resp.Data), blueprint.ErrFreeServiceClosed) {
 		log.Printf("[services][deezer][auth][CompleteUserAuth][warning] - deezer access blocked due to free service shutdown")
-		return nil, blueprint.ESERVICECLOSED
+		return nil, blueprint.ErrServiceClosed
 	}
 
 	unmarshalErr := json.Unmarshal(resp.Data, &deezerUser)
@@ -96,10 +96,10 @@ func (d *Deezer) CompleteUserAuth(token []byte) (*DeezerUser, error) {
 
 	// if we get here and the user data returned is null, email would be empty. this is somewhat a hack
 	// but no way around it thanks to the deezer api response (ideally this should've thrown an error as this
-	// means its probably a permission issue i.e. the developer passed the wrong permissions).
+	// means it's probably a permission issue i.e. the developer passed the wrong permissions).
 	if deezerUser.Email == "" {
 		log.Printf("\n[services][deezer][auth][CompleteUserAuth][warning] - authenticated deezer user seems to be empty. Might to be a permission issue. %d\n", unmarshalErr)
-		return nil, blueprint.EINVALIDPERMISSIONS
+		return nil, blueprint.ErrInvalidPermissions
 	}
 
 	return &deezerUser, nil

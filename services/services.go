@@ -53,7 +53,7 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 	contains := strings.Contains(song, "https://")
 	if !contains {
 		log.Printf("[services][ExtractLinkInfo][warning] link doesnt seem to be https.")
-		return nil, blueprint.EINVALIDLINK
+		return nil, blueprint.ErrInvalidLink
 	}
 
 	if len([]byte(song)) > 200 {
@@ -176,7 +176,7 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 
 		if trackParam == "" && playlistParam == "" {
 			log.Printf("[services][ExtractLinkInfo][error] Youtube link does not contain a track or playlist ID.")
-			return nil, blueprint.EINVALIDLINK
+			return nil, blueprint.ErrInvalidLink
 		}
 
 		if playlistParam == "" && trackParam != "" {
@@ -213,7 +213,7 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 		log.Printf("[services][ExtractLinkInfo][info] AppleMusic trackID, playistID: %s %s", trackID, playlistID)
 		// strip away query params
 		if trackID == "" && playlistID == "" {
-			return nil, blueprint.EINVALIDLINK
+			return nil, blueprint.ErrInvalidLink
 		}
 
 		if trackID != "" {
@@ -267,7 +267,7 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 	default:
 		log.Printf("\n[servies][s: Track][error] URL info could not be processed. Might be an invalid link")
 		log.Printf(host)
-		return nil, blueprint.EHOSTUNSUPPORTED
+		return nil, blueprint.ErrHostUnsupported
 	}
 	return nil, nil
 }
@@ -286,12 +286,13 @@ func NewFollowTask(db *sqlx.DB, red *redis.Client) *SyncFollowTask {
 
 // HasPlaylistBeenUpdated checks if the playlist has been updated. However, there is more that it does and it returns quite
 // the number of information.
-//  - is the playlist updated? For tidal, this is done by checking the last time it was updated. For other platforms, we check the checksum.
+//   - is the playlist updated? For tidal, this is done by checking the last time it was updated. For other platforms, we check the checksum.
+//
 // It returns the following:
-//  - the latest hash of the playlist. It makes calls to the endpoints so we know we always get the latest hash.
-//  - a boolean indicating if the playlist has been updated.
-//  - a slice of byte representing the platform which we checked for the update.
-//  - an error, if any
+//   - the latest hash of the playlist. It makes calls to the endpoints so we know we always get the latest hash.
+//   - a boolean indicating if the playlist has been updated.
+//   - a slice of byte representing the platform which we checked for the update.
+//   - an error, if any
 func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId, appID string) ([]byte, bool, []byte, error) {
 	// first check the hash in redis
 	snapshotID := fmt.Sprintf("%s:snapshot:%s", platform, entityId)
@@ -346,7 +347,7 @@ func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId, appI
 		// TODO: implement other platforms
 		case "spotify":
 			log.Printf("[follow][FetchPlaylistHash] - checking if playlist has been updated")
-			spotifyService := spotify.NewService(&creds, s.DB, s.Red)
+			spotifyService := spotify.NewService(&creds, s.DB, s.Red, app)
 			// fixme: there is a bug here. we need to pass the user's auth token to the fetchplaylisthash function
 			// 		question is: how do we get the user's auth token in this case? unless whenever we run this function,
 			// 		we let it run in the context of an authed user request, so that way we can always get the user's auth token

@@ -155,11 +155,11 @@ func (u *UserController) CreateOrg(ctx *fiber.Ctx) error {
 		DeveloperID: userId,
 	})
 
-	res := map[string]string{
-		"org_id":      org.UID.String(),
-		"name":        org.Name,
-		"description": org.Description,
-		"token":       string(appToken),
+	res := &blueprint.OrchdioOrgCreateResponse{
+		OrgID:       org.UID.String(),
+		Name:        org.Name,
+		Description: org.Description,
+		Token:       string(appToken),
 	}
 
 	mailErr := u.SendAdminWelcomeEmail(body.OwnerEmail)
@@ -277,7 +277,6 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 		log.Printf("[controller][account][LoginUserToOrg] - error: password is empty")
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Password is empty. Please pass a valid password")
 	}
-	// todo: implement db method to login user login for user, returning the org id, name and description
 	database := db.NewDB{DB: u.DB}
 	scanRes := u.DB.QueryRowx(queries.FetchUserEmailAndPassword, body.Email)
 	var user blueprint.User
@@ -315,12 +314,12 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not get apps")
 	}
 
-	result := map[string]interface{}{
-		"org_id":      org.UID.String(),
-		"name":        org.Name,
-		"description": org.Description,
-		"token":       string(token),
-		"apps":        apps,
+	result := &blueprint.OrchdioLoginUserResponse{
+		OrgID:       org.UID.String(),
+		Name:        org.Name,
+		Description: org.Description,
+		Token:       string(token),
+		Apps:        apps,
 	}
 
 	// return a single org for now.
@@ -347,13 +346,13 @@ func (u *UserController) SendAdminWelcomeEmail(email string) error {
 		return sErr
 	}
 
-	sendMail, zErr := orchdioQueue.NewTask(fmt.Sprintf("send:welcome_email:%s", taskID), queue.EmailTask, 2, serializedEmailData)
+	sendMail, zErr := orchdioQueue.NewTask(fmt.Sprintf("%s:%s", blueprint.SendWelcomeEmailTaskPattern, taskID), blueprint.EmailQueueName, 2, serializedEmailData)
 	if zErr != nil {
 		log.Printf("[controller][account][CreateOrg] - error creating task: %v", zErr)
 		return zErr
 	}
 
-	err := orchdioQueue.EnqueueTask(sendMail, queue.EmailQueue, taskID, time.Second*2)
+	err := orchdioQueue.EnqueueTask(sendMail, blueprint.EmailQueueName, taskID, time.Second*2)
 	if err != nil {
 		log.Printf("[controller][account][CreateOrg] - error enqueuing task: %v", err)
 	}

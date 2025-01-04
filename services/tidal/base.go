@@ -3,13 +3,15 @@ package tidal
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/jmoiron/sqlx"
 	"log"
 	"net/url"
 	"orchdio/blueprint"
 	"orchdio/util"
+	svixwebhook "orchdio/webhooks/svix"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,14 +35,16 @@ type Service struct {
 	Redis                  *redis.Client
 	IntegrationCredentials *blueprint.IntegrationCredentials
 	Base                   string
+	App                    *blueprint.DeveloperApp
 }
 
-func NewService(credentials *blueprint.IntegrationCredentials, DB *sqlx.DB, red *redis.Client) *Service {
+func NewService(credentials *blueprint.IntegrationCredentials, DB *sqlx.DB, red *redis.Client, devApp *blueprint.DeveloperApp) *Service {
 	return &Service{
 		DB:                     DB,
 		Redis:                  red,
 		IntegrationCredentials: credentials,
 		Base:                   ApiUrl,
+		App:                    devApp,
 	}
 }
 
@@ -49,29 +53,25 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 	cacheKey := "tidal:track:" + info.EntityID
 	log.Println("\n[services][tidal][SearchWithID] - cacheKey - ", cacheKey)
 	cachedTrack, err := s.Redis.Get(context.Background(), cacheKey).Result()
-	if err != nil && err != redis.Nil {
+	if err != nil && !errors.Is(err, redis.Nil) {
 		log.Printf("\n[services][tidal][SearchWithID] - error - Could not fetch record from the cache. This is an unexpected error %v\n", err)
 		return nil, err
 	}
 
-	if err != nil && err == redis.Nil {
+	if err != nil && errors.Is(err, redis.Nil) {
 		log.Printf("\n[services][tidal][SearchWithID] - this track has not been cached before %v\n", err)
 
 		tracks, rErr := s.FetchTrackWithID(info.EntityID)
 
 		if rErr != nil {
-			if rErr == blueprint.EBADREQUEST {
+			if errors.Is(rErr, blueprint.ErrBadRequest) {
 				log.Printf("\n[services][tidal][SearchWithID] - Error fetching track conversion from TIDAL %v\n", rErr)
 			}
-
-			if rErr == blueprint.EBADCREDENTIALS {
+			if errors.Is(rErr, blueprint.ErrBadCredentials) {
 				log.Printf("\n[services][tidal][SearchWithID] - Error fetching track conversion from TIDAL %v\n", rErr)
 			}
 			return nil, rErr
 		}
-
-		log.Printf("\n[services][tidal][SearchWithID] - Track ID conversion (source conversion) - are here")
-		spew.Dump(tracks)
 
 		var artistes []string
 		for _, artist := range tracks.Artists {
@@ -91,12 +91,12 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 			ID:            strconv.Itoa(tracks.Album.ID),
 			Cover:         util.BuildTidalAssetURL(tracks.Album.Cover),
 		}
-
-		serialized, err := json.Marshal(searchResult)
-		if err != nil {
-			log.Printf("\n[services][tidal][SearchWithID] - could not serialize track result - %v\n", err)
-			return nil, err
+		serialized, sErr := json.Marshal(searchResult)
+		if sErr != nil {
+			log.Printf("\n[services][tidal][SearchWithID] - could not serialize track result - %v\n", sErr)
+			return nil, sErr
 		}
+
 		err = s.Redis.Set(context.Background(), cacheKey, serialized, time.Hour*24).Err()
 		if err != nil {
 			log.Printf("\n[services][tidal][SearchWithID] - could not cache track - %v\n", err)
@@ -104,8 +104,17 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 			log.Printf("\n[services][tidal][SearchWithID] - track cached successfully\n")
 		}
 
-		log.Printf("Foinal conversion result")
-		spew.Dump(&searchResult)
+		// send webhook event here. Event sent: blueprint.PlaylistConversionEventTrack
+		svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
+		payload := &blueprint.PlaylistConversionEventTrack{
+			Platform: IDENTIFIER,
+			Track:    &searchResult,
+		}
+
+		ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, payload)
+		if !ok {
+			log.Printf("\n[controllers][platforms][tidal][SearchTrackWithID] - could not send webhook event\n")
+		}
 		return &searchResult, nil
 	}
 
@@ -132,7 +141,7 @@ func (s *Service) FetchTrackWithID(id string) (*Track, error) {
 	log.Printf("\n[controllers][platforms][tidal][SearchTrackWithID] - access token - %v\n", accessToken)
 	if accessToken == "" {
 		log.Printf("\n[controllers][platforms][tidal][SearchTrackWithID] - error - could not fetch new TIDAL access token %v\n", err)
-		return nil, blueprint.EBADCREDENTIALS
+		return nil, blueprint.ErrBadCredentials
 	}
 	// first, fetch the access token hard coded in the config
 	instance := axios.NewInstance(&axios.InstanceConfig{
@@ -151,44 +160,24 @@ func (s *Service) FetchTrackWithID(id string) (*Track, error) {
 
 	if response.Status >= 400 {
 		log.Printf("\n[controllers][platforms][tidal][SearchTrackWithID] - TIDAL request failed with status: %v\n", response.Status)
-		return nil, blueprint.EBADREQUEST
+		return nil, blueprint.ErrBadRequest
 	}
 
 	singleTrack := &Track{}
 	err = json.Unmarshal(response.Data, singleTrack)
 	if err != nil {
 		log.Printf("\n[controllers][platforms][tidal][SearchTrackWithID] - error - %v\n", err)
-		return nil, blueprint.EBADCREDENTIALS
+		return nil, blueprint.ErrBadCredentials
 	}
 	return singleTrack, nil
 }
 
 // SearchTrackWithTitle will perform a search on tidal for the track we want
-func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackSearchResult, error) {
-	//identifierHash := util.HashIdentifier(fmt.Sprintf("tidal-%s-%s", title, artiste))
-
-	cleanedArtiste := strings.ToLower(fmt.Sprintf("tidal-%s-%s", util.NormalizeString(artiste), title))
-	log.Printf("Searching with stripped artiste: %s. Original artiste: %s", cleanedArtiste, artiste)
-
-	if s.Redis.Exists(context.Background(), cleanedArtiste).Val() == 1 {
-		log.Printf("\n[services][tidal][SearchTrackWithTitle] - track found in cache\n")
-		var result *blueprint.TrackSearchResult
-		cachedResult, err := s.Redis.Get(context.Background(), cleanedArtiste).Result()
-		if err != nil {
-			log.Printf("\n[services][tidal][SearchTrackWithTitle] - ⚠️ error fetching key from redis. - %v\n", err)
-			return nil, err
-		}
-		err = json.Unmarshal([]byte(cachedResult), &result)
-		if err != nil {
-			log.Printf("\n[services][tidal][SearchTrackWithTitle] - ⚠️ error deserializimng cache result - %v\n", err)
-			return nil, err
-		}
-		return result, nil
-	}
-
-	result, err := s.FetchSingleTrackByTitle(title, artiste)
+func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error) {
+	cleanedArtiste := strings.ToLower(fmt.Sprintf("tidal-%s-%s", util.NormalizeString(searchData.Artists[0]), searchData.Title))
+	result, err := s.FetchSingleTrackByTitle(searchData.Title, searchData.Artists[0])
 	if err != nil {
-		log.Printf("\n[controllers][platforms][tidal][SearchTrackWithTitle] - could not search track with title '%s' on tidal - %v\n", title, err)
+		log.Printf("\n[controllers][platforms][tidal][SearchTrackWithTitle] - could not search track with title '%s' on tidal - %v\n", searchData.Title, err)
 		return nil, err
 	}
 
@@ -207,7 +196,7 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 			Artists:  artistes,
 			Released: track.StreamStartDate,
 			Duration: util.GetFormattedDuration(track.Duration),
-			// format the duration in miliseconds. seems to be in seconds from TIDAL
+			// format the duration in milliseconds. seems to be in seconds from TIDAL
 			DurationMilli: track.Duration * 1000,
 			Explicit:      track.Explicit,
 			Title:         track.Title,
@@ -217,17 +206,19 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 			Cover:         util.BuildTidalAssetURL(track.Album.Cover),
 		}
 
-		serialized, err := json.Marshal(tidalTrack)
-		if err != nil {
-			log.Printf("\n[services][tidal][SearchTrackWithTitle] - could not serialize track result - %v\n", err)
-			return nil, err
+		serialized, mErr := json.Marshal(tidalTrack)
+		if mErr != nil {
+			log.Printf("\n[services][tidal][SearchTrackWithTitle] - could not serialize track result - %v\n", mErr)
+			return nil, mErr
 		}
 
-		if lo.Contains(tidalTrack.Artists, artiste) {
+		// cache the track. If the artiste is in the list of artistes, we cache the track
+		// we set the key to be the artiste name and the value to be the serialized track
+		// and set the cache to expire in 24 hours
+		if lo.Contains(tidalTrack.Artists, searchData.Artists[0]) {
 			keys := map[string]interface{}{
 				cleanedArtiste: string(serialized),
 			}
-
 			for cacheArtiste, cacheResult := range keys {
 				err = s.Redis.Set(context.Background(), cacheArtiste, cacheResult, time.Hour*24).Err()
 				if err != nil {
@@ -238,10 +229,20 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 			}
 		}
 
+		// send webhook event here. Event sent: blueprint.PlaylistConversionEventTrack
+		svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
+		payload := &blueprint.PlaylistConversionEventTrack{
+			Platform: IDENTIFIER,
+			Track:    tidalTrack,
+		}
+		ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, payload)
+		if !ok {
+			log.Printf("\n[controllers][platforms][tidal][SearchTrackWithTitle] - could not send webhook event\n")
+		}
 		return tidalTrack, nil
 	}
-	log.Printf("\n[controllers][platforms][tidal][SearchTrackWithTitle] - no track found for title '%s' on tidal\n", title)
-	return nil, blueprint.ENORESULT
+	log.Printf("\n[controllers][platforms][tidal][SearchTrackWithTitle] - no track found for title '%s' on tidal\n", searchData.Title)
+	return nil, blueprint.EnoResult
 
 }
 
@@ -489,8 +490,8 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 }
 
 // FetchTrackWithTitleChan fetches a track with the title from tidal but using a channel
-func (s *Service) FetchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
-	track, err := s.SearchTrackWithTitle(title, artiste)
+func (s *Service) FetchTrackWithTitleChan(searchData *blueprint.TrackSearchData, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
+	track, err := s.SearchTrackWithTitle(searchData)
 	if err != nil {
 		log.Printf("\n[controllers][platforms][tidal][FetchTrackWithTitleChan] - error fetching title - %v\n", err)
 		defer wg.Done()
@@ -512,7 +513,11 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack) (*[]bluepr
 	var wg sync.WaitGroup
 	for _, track := range tracks {
 		// WARNING: unhandled slice index
-		go s.FetchTrackWithTitleChan(track.Title, track.Artistes[0], c, &wg)
+		searchData := &blueprint.TrackSearchData{
+			Title:   track.Title,
+			Artists: track.Artistes,
+		}
+		go s.FetchTrackWithTitleChan(searchData, c, &wg)
 		outputTrack := <-c
 		if outputTrack == nil || outputTrack.URL == "" {
 			omittedTracks = append(omittedTracks, blueprint.OmittedTracks{
@@ -602,72 +607,10 @@ func (s *Service) MakeRequest(link string, response interface{}) error {
 	return nil
 }
 
-//func (t *TidalRequest) Axios() (*axios.Instance, error) {
-//	accessToken, err := NewAuthToken()
-//	if err != nil {
-//		log.Printf("\n[services][tidal][MakeRequest] - error fetching new auth token - %v\n", err)
-//		return nil, err
-//	}
+//⚠️ Legacy code: this function uses a reverse engineered API endpoint to create a playlist on TIDAL. In the future, we will
+// move to using the tidal official sdk to create playlists, if it is available. This still works and nothing is wrong with it other
+// than the fact that it is not official.
 //
-//	e := axios.NewInstance(&axios.InstanceConfig{
-//		BaseURL: t.Base,
-//		Headers: map[string][]string{
-//			"Content-Type":  t.Headers["Content-Type"],
-//			"Authorization": {"Bearer " + accessToken},
-//		},
-//	})
-//	return e, nil
-//}
-
-//func (t *TidalRequest) MakeRequestWithParams(link string, params map[string]string, response interface{}) error {
-//	accessToken, err := NewAuthToken()
-//	if err != nil {
-//		log.Printf("\n[services][tidal][MakeRequest] - error fetching new auth token - %v\n", err)
-//		return err
-//	}
-//
-//	instance := axios.NewInstance(&axios.InstanceConfig{
-//		BaseURL: t.Base,
-//		Headers: map[string][]string{
-//			"Content-Type":  t.Headers["Content-Type"],
-//			"Authorization": {"Bearer " + accessToken},
-//		},
-//	})
-//	p := url.Values{}
-//	if params != nil || len(params) > 0 {
-//		for k, v := range params {
-//			p.Add(k, v)
-//		}
-//	}
-//
-//	var resp *axios.Response
-//	if t.Method == "GET" {
-//		resp, err = instance.Put(link, p)
-//	}
-//
-//	if t.Method == "PUT" {
-//		resp, err = instance.Put(link, p)
-//	}
-//
-//	if t.Method == "POST" {
-//		resp, err = instance.Post(link, p)
-//	}
-//	if err != nil {
-//		log.Printf("\n[services][tidal][MakeRequest] - error making request - %v\n", err)
-//		return err
-//	}
-//	if resp.Status >= 400 {
-//		log.Printf("\n[services][tidal][MakeRequest] - error making request - %v\n", resp.Status)
-//	}
-//
-//	err = json.Unmarshal(resp.Data, response)
-//	if err != nil {
-//		log.Printf("\n[services][tidal][MakeRequest] - error parsing response - %v\n", err)
-//		return err
-//	}
-//	return nil
-//}
-
 // https://listen.tidal.com/v2/my-collection/playlists/folders/create-playlist?description=&folderId=root&isPublic=false&name=xxxxx&countryCode=US&locale=en_US&deviceType=BROWSER - create playlist PUT
 // https://listen.tidal.com/v2/my-collection/playlists/folders/remove?trns=trn:playlist:a4a41a8c-a14e-4e60-b671-5f23f07a8a7d&countryCode=US&locale=en_US&deviceType=BROWSER - delete playlist. params in the format, encoded: trns:playlist:playlist_id PUT
 

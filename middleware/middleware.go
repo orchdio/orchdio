@@ -71,11 +71,11 @@ func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 	linkInfo.Developer = app.Developer.String()
 
 	if err != nil {
-		if errors.Is(err, blueprint.EHOSTUNSUPPORTED) {
+		if errors.Is(err, blueprint.ErrHostUnsupported) {
 			return util.ErrorResponse(ctx, http.StatusNotImplemented, "not supported", "Not implemented.")
 		}
 
-		if errors.Is(err, blueprint.EINVALIDLINK) {
+		if errors.Is(err, blueprint.ErrInvalidLink) {
 			log.Printf("[middleware][ExtractLinkInfoFromBody][warning] invalid conversionBody. are you sure its a url? %s\n", conversionBody)
 			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Bad request body. Please make sure you pass a valid conversionBody")
 		}
@@ -161,11 +161,11 @@ func ExtractLinkInfo(ctx *fiber.Ctx) error {
 	}
 	linkInfo, err := services.ExtractLinkInfo(link)
 	if err != nil {
-		if err == blueprint.EHOSTUNSUPPORTED {
+		if err == blueprint.ErrHostUnsupported {
 			return util.ErrorResponse(ctx, http.StatusNotImplemented, "not supported", "Not implemented")
 		}
 
-		if err == blueprint.EINVALIDLINK {
+		if err == blueprint.ErrInvalidLink {
 			log.Printf("[middleware][ExtractLinkInfo][warning] invalid link. are you sure its a url? %s\n", link)
 			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid request body. The link is invalid")
 		}

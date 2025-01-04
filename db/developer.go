@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"log"
@@ -20,30 +19,6 @@ import (
 
 // CreateNewApp creates a new app for the developer and returns a uuid of the newly created app
 func (d *NewDB) CreateNewApp(name, description, redirectURL, webhookURL, publicKey, developerId, secretKey, verifySecret, orgID, deezerState string) ([]byte, error) {
-	log.Printf("Webhook URL is")
-	spew.Dump(struct {
-		Name         string
-		Description  string
-		RedirectURL  string
-		WebhookURL   string
-		PublicKey    string
-		DeveloperID  string
-		SecretKey    string
-		VerifySecret string
-		OrgID        string
-		DeezerState  string
-	}{
-		Name:         name,
-		Description:  description,
-		RedirectURL:  redirectURL,
-		WebhookURL:   webhookURL,
-		PublicKey:    publicKey,
-		DeveloperID:  developerId,
-		SecretKey:    secretKey,
-		VerifySecret: verifySecret,
-		OrgID:        orgID,
-		DeezerState:  deezerState,
-	})
 	log.Printf("[db][CreateNewApp] developer -  creating new app: %s\n", name)
 	// create a new app
 	uid := uuid.NewString()
@@ -54,14 +29,6 @@ func (d *NewDB) CreateNewApp(name, description, redirectURL, webhookURL, publicK
 		log.Printf("[db][CreateNewApp] developer -  error: could not create new developer app: %v\n", err)
 		return nil, err
 	}
-	//
-	//// update the app redirect
-	//_, err = d.DB.Exec(queries.UpdateAppRedirect, redirectURL, uid)
-	//if err != nil {
-	//	log.Printf("[db][CreateNewApp] developer -  error: could not update app redirect url with integrattion URL: %v\n", err)
-	//	return nil, err
-	//}
-	log.Printf("[db][CreateNewApp] developer -  new app created: %s\n", name)
 	return []byte(uid), nil
 }
 
@@ -96,14 +63,11 @@ func (d *NewDB) FetchAppByAppId(appId string) (*blueprint.DeveloperApp, error) {
 func (d *NewDB) FetchAppByAppIdWithoutDevId(appId string) (*blueprint.DeveloperApp, error) {
 	log.Printf("[db][FetchAppByAppIdWithoutDevId] developer -  fetching app by app id: %s\n", appId)
 	var app blueprint.DeveloperApp
-	log.Printf("running query: %s", queries.FetchAppByAppIDWithoutDev)
 	err := d.DB.QueryRowx(queries.FetchAppByAppIDWithoutDev, appId).StructScan(&app)
 	if err != nil {
 		log.Printf("[db][FetchAppByAppIdWithoutDevId] developer -  error: could not fetch app by app id: %v\n", err)
 		return nil, err
 	}
-
-	log.Printf("[db][FetchAppByAppId] developer -  app fetched: %s\n", app.Name)
 	return &app, nil
 }
 
@@ -214,7 +178,7 @@ func (d *NewDB) UpdateApp(appId, platform, developer string, app blueprint.Updat
 	if !lo.Contains([]string{applemusic.IDENTIFIER, tidal.IDENTIFIER}, platform) {
 		if app.IntegrationRefreshToken != "" {
 			log.Printf("[db][UpdateApp] warning - App has refreshtoken credentials but is not a platform that requires it. Only TIDAL and Apple Music do.")
-			return nil, blueprint.EBADCREDENTIALS
+			return nil, blueprint.ErrBadCredentials
 		}
 	}
 
@@ -237,7 +201,6 @@ func (d *NewDB) UpdateApp(appId, platform, developer string, app blueprint.Updat
 		log.Printf("[db][UpdateApp] developer -  error: could not update app: could not encrypt the credentials %v\n", err)
 		return nil, encryptErr
 	}
-	log.Printf("Running update query: %s for app: %s", queries.UpdateApp, appId)
 	row := d.DB.QueryRowx(queries.UpdateApp,
 		app.Description,
 		app.Name,
@@ -256,7 +219,6 @@ func (d *NewDB) UpdateApp(appId, platform, developer string, app blueprint.Updat
 		return nil, updatedErr
 	}
 
-	log.Printf("[db][UpdateApp] developer -  app updated: %s\n", appId)
 	return updatedApp, nil
 }
 
@@ -464,7 +426,6 @@ func (d *NewDB) UpdateUserAppScopes(userAppID, userID, platform, app string, sco
 
 func (d *NewDB) DeletePlatformIntegrationCredentials(appId, platform, developerId string) error {
 	log.Printf("[db][DeletePlatformIntegrationCredentials] developer - deleting platform integration credentials: %s\n", appId)
-	log.Printf("Running with appId: %s, platform: %s, developerId: %s", appId, platform, developerId)
 	_, err := d.DB.Exec(queries.DeletePlatformIntegrationCredentials, appId, platform, developerId)
 	if err != nil {
 		log.Printf("[db][DeletePlatformIntegrationCredentials] developer - error: could not delete platform integration credentials: %v\n", err)

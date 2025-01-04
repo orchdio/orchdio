@@ -70,14 +70,12 @@ func (d *NewDB) FindUserByUUID(id string) (*blueprint.User, error) {
 
 // FetchUserApikey fetches the user api key
 func (d *NewDB) FetchUserApikey(email string) (*blueprint.ApiKey, error) {
-	log.Printf("[db][FetchUserApikey] Running query %s with '%s'\n", queries.FetchUserApiKey, email)
 	result := d.DB.QueryRowx(queries.FetchUserApiKey, email)
 	apiKey := &blueprint.ApiKey{}
 
 	err := result.StructScan(apiKey)
-
 	if err != nil {
-		if err != sql.ErrNoRows {
+		if !errors.Is(err, sql.ErrNoRows) {
 			log.Printf("[controller][user][FetchUserApiKey] error - error scanning row. Something went wrong and this is not an expected error. %v\n", err)
 			return nil, err
 		}
@@ -88,25 +86,21 @@ func (d *NewDB) FetchUserApikey(email string) (*blueprint.ApiKey, error) {
 
 // RevokeApiKey sets the revoked column to true
 func (d *NewDB) RevokeApiKey(key string) error {
-	log.Printf("[db][RevokeApiKey] Running query %s %s\n", queries.RevokeApiKey, key)
 	_, err := d.DB.Exec(queries.RevokeApiKey, key)
 	if err != nil {
 		log.Printf("[db][RevokeApiKey] error executing query %s.\n %v\n %s\n", queries.RevokeApiKey, err, key)
 		return err
 	}
-	log.Printf("[db][RevokeApiKey] Ran query %s\n", queries.RevokeApiKey)
 	return nil
 }
 
 // UnRevokeApiKey sets the revoked column to true
 func (d *NewDB) UnRevokeApiKey(key string) error {
-	log.Printf("[db][UnRevokeApiKey] Running query %s %s\n", queries.UnRevokeApiKey, key)
 	_, err := d.DB.Exec(queries.UnRevokeApiKey, key)
 	if err != nil {
-		log.Printf("[db][UnRevokeApiKey] error executing query %s.\n %v\n\n", queries.RevokeApiKey, err)
+		log.Printf("[db][UnRevokeApiKey] error executing query %s.\n %v\n\n", queries.UnRevokeApiKey, err)
 		return err
 	}
-	log.Printf("[db][UnRevokeApiKey] Ran query %s\n", queries.UnRevokeApiKey)
 	return nil
 }
 
@@ -144,7 +138,6 @@ func (d *NewDB) FetchWebhook(user string) (*blueprint.Webhook, error) {
 	}
 
 	webhook := blueprint.Webhook{}
-
 	scanErr := result.StructScan(&webhook)
 	if scanErr != nil {
 		if errors.Is(scanErr, sql.ErrNoRows) {
@@ -165,15 +158,12 @@ func (d *NewDB) CreateUserWebhook(user, url, verifyToken string) error {
 	_, err := d.FetchWebhook(user)
 	uniqueID, _ := uuid.NewUUID()
 
+	// TODO: handle more errors FetchWebhook can return
 	if err == nil {
 		log.Printf("[db][CreateUserWebhook] user %s already has a webhook.\n", user)
-		return blueprint.EALREADY_EXISTS
+		return blueprint.EalreadyExists
 	}
-	// TODO: handle more errors FetchWebhook can return
-
-	log.Printf("[db][CreateUserWebhook] creating webhook for user %s\n. Running query: %s\n", user, queries.CreateWebhook)
 	_, execErr := d.DB.Exec(queries.CreateWebhook, url, user, verifyToken, uniqueID.String())
-
 	if execErr != nil {
 		log.Printf("[db][CreateUserWebhook] error creating webhook for user %s. %v\n", user, execErr)
 		return execErr
@@ -204,7 +194,6 @@ func (d *NewDB) FetchUserWithApiKey(key string) (*blueprint.User, error) {
 
 // UpdateUserWebhook updates a user's webhook
 func (d *NewDB) UpdateUserWebhook(user, url, verifyToken string) error {
-	log.Printf("[db][UpdateUserWebhook] Running query %s with '%s', '%s' \n", queries.UpdateUserWebhook, user, url)
 	// temporary struct to deserialize the record update into.
 	// not creating inside blueprint because its small and used here alone. if this changes, move to blueprint
 	webhookUpdate := &struct {
@@ -230,7 +219,6 @@ func (d *NewDB) UpdateUserWebhook(user, url, verifyToken string) error {
 
 // DeleteUserWebhook deletes a user's webhook
 func (d *NewDB) DeleteUserWebhook(user string) error {
-	log.Printf("[db][DeleteUserWebhook] Running query %s with '%s'\n", queries.DeleteUserWebhook, user)
 	_, execErr := d.DB.Exec(queries.DeleteUserWebhook, user)
 	if execErr != nil {
 		log.Printf("[db][DeleteUserWebhook] error deleting user webhook. %v\n", execErr)
@@ -292,17 +280,17 @@ func (d *NewDB) FetchTask(uid string) (*blueprint.TaskRecord, error) {
 	// so we check if the taskId is a valid uuid, if it is, we fetch by taskid, if not, we fetch by shortid
 	_, err := uuid.Parse(uid)
 	if err != nil {
+
 		// shortid parsing/fetching logic
 		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - not a valid uuid, fetching by shortid")
-		log.Printf("[db][FetchTask] Running query %s with '%s'\n", queries.FetchTaskByShortID, uid)
 		//var res blueprint.PlaylistConversion
 		r := d.DB.QueryRowx(queries.FetchTaskByShortID, uid)
 
 		var res blueprint.TaskRecord
-		err := r.StructScan(&res)
+		sErr := r.StructScan(&res)
 		// deserialize into a playlist conversion
-		if err != nil {
-			if err == sql.ErrNoRows {
+		if sErr != nil {
+			if errors.Is(err, sql.ErrNoRows) {
 				log.Printf("[db][FetchTask] no task found with uid %s\n", uid)
 				return nil, sql.ErrNoRows
 			}
@@ -313,13 +301,12 @@ func (d *NewDB) FetchTask(uid string) (*blueprint.TaskRecord, error) {
 	}
 
 	r := d.DB.QueryRowx(queries.FetchTask, uid)
-	//var res blueprint.PlaylistConversion
 	var res blueprint.TaskRecord
 	err = r.StructScan(&res)
 
 	// deserialize into a playlist conversion
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			log.Printf("[db][FetchTask] no task found with uid %s\n", uid)
 			return nil, sql.ErrNoRows
 		}
@@ -349,7 +336,7 @@ func (d *NewDB) FetchFollowTask(entityId string) (*blueprint.FollowTask, error) 
 	var res blueprint.FollowTask
 	err := rows.StructScan(&res)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			log.Printf("[db][FetchUserFollowedTasks] no follow found for entity %s\n", entityId)
 			return nil, sql.ErrNoRows
 		}
