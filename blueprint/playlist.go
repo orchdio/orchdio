@@ -31,16 +31,28 @@ type PlaylistConversion struct {
 		Tidal      *PlatformPlaylistTrackResult `json:"tidal,omitempty"`
 		AppleMusic *PlatformPlaylistTrackResult `json:"applemusic,omitempty"`
 	} `json:"platforms,omitempty"`
-	Meta struct {
-		Length   string `json:"length"`
-		Title    string `json:"title"`
-		Preview  string `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
-		Owner    string `json:"owner"`
-		Cover    string `json:"cover"`
-		Entity   string `json:"entity"`
-		URL      string `json:"url"`
-		ShortURL string `json:"short_url,omitempty"`
-	} `json:"meta,omitempty"`
+	Meta PlaylistMetadata `json:"meta,omitempty"`
+}
+
+type PlaylistMetadata struct {
+	Length   string `json:"length"`
+	Title    string `json:"title"`
+	Preview  string `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
+	Owner    string `json:"owner"`
+	Cover    string `json:"cover"`
+	Entity   string `json:"entity"`
+	URL      string `json:"url"`
+	ShortURL string `json:"short_url,omitempty"`
+}
+
+type PlaylistConversionEventMetadata struct {
+	Platform string            `json:"platform"`
+	Meta     *PlaylistMetadata `json:"meta"`
+}
+
+type PlaylistConversionEventTrack struct {
+	Platform string             `json:"platform"`
+	Track    *TrackSearchResult `json:"track"`
 }
 
 type PlaylistFollow struct {

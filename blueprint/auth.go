@@ -51,3 +51,18 @@ type OrchdioUserToken struct {
 	UUID     uuid.UUID `json:"uuid"`
 	Platform string    `json:"platform"`
 }
+
+type OrchdioOrgCreateResponse struct {
+	OrgID       string `json:"org_id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Token       string `json:"token"`
+}
+
+type OrchdioLoginUserResponse struct {
+	OrgID       string     `json:"org_id"`
+	Name        string     `json:"name"`
+	Description string     `json:"description"`
+	Token       string     `json:"token"`
+	Apps        *[]AppInfo `json:"apps"`
+}

@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"orchdio/blueprint"
 	"orchdio/util"
+	svixwebhook "orchdio/webhooks/svix"
 	"os"
 	"strings"
 	"sync"
@@ -24,11 +25,12 @@ type Service struct {
 	IntegrationTeamID string
 	IntegrationKeyID  string
 	IntegrationAPIKey string
+	App               *blueprint.DeveloperApp
 	RedisClient       *redis.Client
 	PgClient          *sqlx.DB
 }
 
-func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client) *Service {
+func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client, devApp *blueprint.DeveloperApp) *Service {
 	return &Service{
 		// this is the equivalent of the team id
 		IntegrationTeamID: credentials.AppID,
@@ -38,6 +40,7 @@ func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB
 		IntegrationAPIKey: credentials.AppRefreshToken,
 		RedisClient:       redisClient,
 		PgClient:          pgClient,
+		App:               devApp,
 	}
 }
 
@@ -73,7 +76,7 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 
 	if len(tracks.Data) == 0 {
 		log.Printf("[services][applemusic][SearchTrackWithLink] Error fetching track from Apple Music: %v\n", err)
-		return nil, blueprint.ENORESULT
+		return nil, blueprint.EnoResult
 	}
 
 	previewURL := ""
@@ -125,13 +128,13 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 }
 
 // SearchTrackWithTitle searches for a track using the query.
-func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackSearchResult, error) {
-	strippedTitleInfo := util.ExtractTitle(title)
+func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error) {
+	strippedTitleInfo := util.ExtractTitle(searchData.Title)
 	// if the title is in the format of "title (feat. artiste)" then we search for the title without the feat. artiste
-	log.Printf("Apple music: Searching with stripped artiste: %s. Original artiste: %s", strippedTitleInfo.Title, artiste)
-	if s.RedisClient.Exists(context.Background(), artiste).Val() == 1 {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] Track found in cache: %v\n", artiste)
-		track, err := s.RedisClient.Get(context.Background(), util.NormalizeString(artiste)).Result()
+	log.Printf("Apple music: Searching with stripped artiste: %s. Original artiste: %s", strippedTitleInfo.Title, searchData.Artists)
+	if s.RedisClient.Exists(context.Background(), searchData.Artists[0]).Val() == 1 {
+		log.Printf("[services][applemusic][SearchTrackWithTitle] Track found in cache: %v\n", searchData.Artists[0])
+		track, err := s.RedisClient.Get(context.Background(), util.NormalizeString(searchData.Artists[0])).Result()
 		if err != nil {
 			log.Printf("[services][applemusic][SearchTrackWithTitle] Error fetching track from cache: %v\n", err)
 			return nil, err
@@ -145,7 +148,7 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 		return result, nil
 	}
 
-	log.Printf("[services][applemusic][SearchTrackWithTitle] Track not found in cache, fetching track %s from Apple Music with artist %s\n", strippedTitleInfo.Title, util.NormalizeString(artiste))
+	log.Printf("[services][applemusic][SearchTrackWithTitle] Track not found in cache, fetching track %s from Apple Music with artist %s\n", strippedTitleInfo.Title, util.NormalizeString(searchData.Artists[0]))
 
 	if s.IntegrationAPIKey != "" {
 		log.Printf("[services][applemusic][SearchTrackWithTitle] Apple music API key is empty on decoded credentials\n")
@@ -156,7 +159,7 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 	tp := applemusic.Transport{Token: s.IntegrationAPIKey}
 	client := applemusic.NewClient(tp.Client())
 	results, response, err := client.Catalog.Search(context.Background(), "us", &applemusic.SearchOptions{
-		Term: fmt.Sprintf("%s+%s", artiste, strippedTitleInfo.Title),
+		Term: fmt.Sprintf("%s+%s", searchData.Artists[0], strippedTitleInfo.Title),
 	})
 
 	if err != nil {
@@ -170,13 +173,13 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 	}
 
 	if results.Results.Songs == nil {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] No result found for track %s by %s. \n", strippedTitleInfo.Title, artiste)
-		return nil, blueprint.ENORESULT
+		log.Printf("[services][applemusic][SearchTrackWithTitle] No result found for track %s by %s. \n", strippedTitleInfo.Title, searchData.Artists)
+		return nil, blueprint.EnoResult
 	}
 
 	if len(results.Results.Songs.Data) == 0 {
 		log.Printf("[services][applemusic][SearchTrackWithTitle] Error fetching track from Apple Music: %v\n", err)
-		return nil, blueprint.ENORESULT
+		return nil, blueprint.EnoResult
 	}
 
 	t := results.Results.Songs.Data[0]
@@ -211,9 +214,9 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 		return nil, err
 	}
 
-	if lo.Contains(track.Artists, artiste) {
+	if lo.Contains(track.Artists, searchData.Artists[0]) {
 		err = s.RedisClient.MSet(context.Background(), map[string]interface{}{
-			util.NormalizeString(artiste): string(serializedTrack),
+			util.NormalizeString(searchData.Artists[0]): string(serializedTrack),
 		}).Err()
 		if err != nil {
 			log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error caching track - %v\n", err)
@@ -222,12 +225,22 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 		}
 	}
 
+	// send webhook event
+	svixInstance := svixwebhook.New(os.Getenv("SVIX_WEBHOOK_SECRET"), false)
+	payload := &blueprint.PlaylistConversionEventTrack{
+		Platform: IDENTIFIER,
+		Track:    track,
+	}
+	ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, payload)
+	if !ok {
+		log.Printf("[services][applemusic][SearchTrackWithTitle] Could not send webhook event\n")
+	}
 	return track, nil
 }
 
 // SearchTrackWithTitleChan searches for tracks using title and artistes but do so asynchronously.
-func (s *Service) SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
-	track, err := s.SearchTrackWithTitle(title, artiste)
+func (s *Service) SearchTrackWithTitleChan(searchData *blueprint.TrackSearchData, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
+	track, err := s.SearchTrackWithTitle(searchData)
 	if err != nil {
 		log.Printf("[services][applemusic][SearchTrackWithTitleChan] Error fetching track: %v\n", err)
 		defer wg.Done()
@@ -265,7 +278,11 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 			continue
 		}
 		// async goes brrrr
-		go s.SearchTrackWithTitleChan(track.Title, track.Artistes[0], ch, &wg)
+		searchData := &blueprint.TrackSearchData{
+			Title:   track.Title,
+			Artists: track.Artistes,
+		}
+		go s.SearchTrackWithTitleChan(searchData, ch, &wg)
 		chTracks := <-ch
 		if chTracks == nil {
 			omittedTracks = append(omittedTracks, blueprint.OmittedTracks{
@@ -274,6 +291,7 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 			})
 			continue
 		}
+
 		results = append(results, *chTracks)
 	}
 	wg.Wait()
@@ -301,7 +319,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 
 	if response.StatusCode != 200 {
 		log.Printf("[services][applemusic][SearchPlaylistWithID][GetPlaylist] Status - %v could not fetch playlist tracks: %v\n", response.StatusCode, err)
-		return nil, blueprint.EUNKNOWN
+		return nil, blueprint.ErrUnknown
 	}
 
 	if len(results.Data) == 0 {
@@ -395,7 +413,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 	if _allTracksRes.Status == 404 {
 		if len(tracks) == 0 {
 			log.Printf("[services][applemusic][SearchPlaylistWithID] Could not fetch playlist tracks: %v\n", err)
-			return nil, blueprint.EUNKNOWN
+			return nil, blueprint.ErrUnknown
 		}
 		result := blueprint.PlaylistSearchResult{
 			Title:   playlistData.Attributes.Name,
@@ -524,17 +542,17 @@ func (s *Service) CreateNewPlaylist(title, description, musicToken string, track
 
 	if response.Response.StatusCode == 403 {
 		log.Printf("[services][applemusic][CreateNewPlaylist][error] - unauthorized: %v\n", err)
-		return nil, blueprint.EFORBIDDEN
+		return nil, blueprint.ErrForbidden
 	}
 
 	if response.Response.StatusCode == 401 {
 		log.Printf("[services][applemusic][CreateNewPlaylist][error] - unauthorized: %v\n", err)
-		return nil, blueprint.EUNAUTHORIZED
+		return nil, blueprint.ErrUnAuthorized
 	}
 
 	if response.Response.StatusCode == 400 {
 		log.Printf("[services][applemusic][CreateNewPlaylist][error] - bad request: %v\n", err)
-		return nil, blueprint.EBADREQUEST
+		return nil, blueprint.ErrBadRequest
 	}
 
 	// add the tracks to the playlist

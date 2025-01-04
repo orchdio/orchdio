@@ -35,6 +35,12 @@ type TrackSearchResult struct {
 	Cover         string   `json:"cover"`
 }
 
+type TrackSearchData struct {
+	Title   string   `json:"title"`
+	Artists []string `json:"artists"`
+	Album   string   `json:"album"`
+}
+
 // PlatformSearchTrack represents the key-value parameter passed
 // when trying to convert playlist from spotify
 type PlatformSearchTrack struct {

@@ -8,6 +8,26 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/vmihailenco/taskq/v3"
+	"log"
+	"net/http"
+	"orchdio/blueprint"
+	"orchdio/controllers"
+	"orchdio/controllers/account"
+	"orchdio/controllers/auth"
+	"orchdio/controllers/conversion"
+	"orchdio/controllers/developer"
+	"orchdio/controllers/platforms"
+	"orchdio/middleware"
+	"orchdio/queue"
+	follow2 "orchdio/services/follow"
+	"orchdio/util"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
 	"github.com/antoniodipinto/ikisocket"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
@@ -27,26 +47,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/joho/godotenv"
 	"github.com/robfig/cron/v3"
-	"github.com/vmihailenco/taskq/v3"
 	"github.com/vmihailenco/taskq/v3/redisq"
-	"log"
-	"net/http"
-	"orchdio/blueprint"
-	"orchdio/controllers"
-	"orchdio/controllers/account"
-	"orchdio/controllers/auth"
-	"orchdio/controllers/conversion"
-	"orchdio/controllers/developer"
-	"orchdio/controllers/platforms"
-	"orchdio/controllers/webhook"
-	"orchdio/middleware"
-	"orchdio/queue"
-	follow2 "orchdio/services/follow"
-	"orchdio/util"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 )
 
 /**
@@ -54,34 +55,39 @@ import (
   + Redis connections here
 */
 
+// Extracted constant for default port
+const defaultPort = "52800"
+
+// Extracted function to handle environment setup
+func setupDatabaseURL(env string) string {
+	if env != "production" {
+		err := godotenv.Load(".env." + env)
+		if err != nil {
+			log.Fatalf("Failed to load .env file for environment: %s, error: %v", env, err)
+		}
+		log.Printf("Loaded .env file for environment: %s", env)
+		return os.Getenv("DATABASE_URL") + "?sslmode=disable"
+	}
+	return os.Getenv("DATABASE_URL")
+}
+
 func main() {
 	// Database and cache setup things
-	envr := os.Getenv("ORCHDIO_ENV")
+	env := os.Getenv("ORCHDIO_ENV")
+	log.Printf("Environment: %s", env)
 
-	if envr == "" {
-		log.Fatal("No env variable ORCHDIO_ENV found")
+	// Call the extracted utility function
+	dbURL := setupDatabaseURL(env)
+	// Handle port with trimming and default fallback
+	port := strings.TrimSpace(os.Getenv("PORT"))
+	if port == "" {
+		port = defaultPort
 	}
 
-	if envr != "production" {
-		dbErr := godotenv.Load(".env." + envr)
-		if dbErr != nil {
-			log.Fatalf("⛔ Error loading .env.%s file", envr)
-		}
-	}
-
-	dbURL := os.Getenv("DATABASE_URL")
-	if envr != "production" {
-		dbURL = dbURL + "?sslmode=disable"
-	}
-
-	port := os.Getenv("PORT")
-	if port == " " {
-		port = "52800"
-	}
+	log.Printf("Application Port: %s", port)
 
 	log.Printf("✅🔱 Port: %v", port)
 	port = fmt.Sprintf(":%s", port)
-
 	db, err := sqlx.Open("postgres", dbURL)
 	if err != nil {
 		log.Printf("⛔ Error connecting to postgresql db")
@@ -116,26 +122,26 @@ func main() {
 
 	var QueueFactory = redisq.NewFactory()
 	var playlistQueue = QueueFactory.RegisterQueue(&taskq.QueueOptions{
-		Name:  "orchdio-playlist-queue",
+		Name:  blueprint.PlaylistConversionQueueName,
 		Redis: redisClient,
 	})
 	asynqMux := asynq.NewServeMux()
 
-	if envr == "production" {
+	if env == "production" {
 		log.Printf("\n[main] [info] - Running in production mode. Connecting to authenticated redis")
 	}
 
-	drver, err := postgres.WithInstance(db.DB, &postgres.Config{})
-	if err != nil {
+	drver, iErr := postgres.WithInstance(db.DB, &postgres.Config{})
+	if iErr != nil {
 		log.Printf("Error instantiating db driver")
-		panic(err)
+		panic(iErr)
 	}
 
 	// Migrate
-	dbDriver, err := migrate.NewWithDatabaseInstance("file://./db/migration", "postgres", drver)
-	if err != nil {
+	dbDriver, dErr := migrate.NewWithDatabaseInstance("file://./db/migration", "postgres", drver)
+	if dErr != nil {
 		log.Printf("Error instantiating db driver")
-		panic(err)
+		panic(dErr)
 	}
 
 	err = dbDriver.Up()
@@ -161,12 +167,12 @@ func main() {
 		asynq.Config{Concurrency: 10,
 			ShutdownTimeout: 3 * time.Second,
 			Queues: map[string]int{
-				"playlist-conversion": 5,
-				"email":               2,
-				"default":             1,
+				blueprint.PlaylistConversionQueueName: 5,
+				blueprint.EmailQueueName:              2,
+				blueprint.DefaultQueueName:            1,
 			},
-			// NB: from the queue CheckForOrphanedTasksMiddleware, when we handle orphaned task and we return a blueprint.ENORESULT error, the execution
-			// jumps here, so when the middleware runs and we return a blueprint.ENORESULT error, it'll run this block and reprocess the task
+			// NB: from the queue CheckForOrphanedTasksMiddleware, when we handle orphaned task and we return a blueprint.EnoResult error, the execution
+			// jumps here, so when the middleware runs and we return a blueprint.EnoResult error, it'll run this block and reprocess the task
 			// if the handler has successfully been attached or do nothing (and let the queue retry later) if there was an error
 			ErrorHandler: asynq.ErrorHandlerFunc(func(ctx context.Context, task *asynq.Task, err error) {
 				log.Printf("[main][QueueErrorHandler] Running queue server error handler...")
@@ -175,14 +181,14 @@ func main() {
 				// check if the task is an email task
 				isEmailQueue := util.IsTaskType(task.Type(), "send:appauth")
 				if isEmailQueue {
-					queueInfo, qErr := inspector.GetQueueInfo(queue.EmailQueue)
+					queueInfo, qErr := inspector.GetQueueInfo(blueprint.EmailQueueName)
 					if qErr != nil {
 						log.Printf("[main] [QueueErrorHandler] Error getting queue info %v", qErr)
 						return
 					}
 					if queueInfo.Paused {
 						log.Printf("[main] [QueueErrorHandler] Email queue is paused.. Unpausing")
-						err = inspector.UnpauseQueue(queue.EmailQueue)
+						err = inspector.UnpauseQueue(blueprint.EmailQueueName)
 						return
 					}
 					notFound := asynq.NotFound(context.Background(), task)
@@ -211,10 +217,10 @@ func main() {
 				}
 
 				// conversion queue
-				isConversionQueue := util.IsTaskType(task.Type(), "playlist:conversion")
+				isConversionQueue := util.IsTaskType(task.Type(), blueprint.PlaylistConversionTaskTypePattern)
 				if isConversionQueue {
 					// check that the queue isnt paused
-					queueInfo, qErr := inspector.GetQueueInfo(queue.PlaylistConversionQueue)
+					queueInfo, qErr := inspector.GetQueueInfo(blueprint.PlaylistConversionQueueName)
 					if qErr != nil {
 						log.Printf("[main] [QueueErrorHandler] Error getting queue info %v", qErr)
 						return
@@ -229,7 +235,7 @@ func main() {
 					log.Printf("[main] [QueueErrorHandler] Queue info %v", queueInfo)
 					if queueInfo.Paused {
 						log.Printf("[main][QueueErrorHandler] Queue is paused")
-						err = inspector.UnpauseQueue(queue.PlaylistConversionQueue)
+						err = inspector.UnpauseQueue(blueprint.PlaylistConversionQueueName)
 						return
 					}
 
@@ -266,10 +272,10 @@ func main() {
 
 	asynqMux.Use(queue.CheckForOrphanedTasksMiddleware)
 	orchdioQueue := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
-	asynqMux.HandleFunc(blueprint.EMAIL_QUEUE_PATTERN, orchdioQueue.SendEmailHandler)
-	asynqMux.HandleFunc(blueprint.PLAYLIST_CONVERSION_QUEUE_PATTERN, orchdioQueue.PlaylistTaskHandler)
-	asynqMux.HandleFunc(blueprint.SEND_RESET_PASSWIRD_QUEUE_PATTERN, orchdioQueue.SendEmailHandler)
-	asynqMux.HandleFunc(blueprint.SEND_WELCOME_EMAIL_QUEUE_PATTER, orchdioQueue.SendEmailHandler)
+	asynqMux.HandleFunc(blueprint.EmailQueueTaskTypePattern, orchdioQueue.SendEmailHandler)
+	asynqMux.HandleFunc(blueprint.PlaylistConversionTaskTypePattern, orchdioQueue.PlaylistTaskHandler)
+	asynqMux.HandleFunc(blueprint.SendResetPasswordTaskPattern, orchdioQueue.SendEmailHandler)
+	asynqMux.HandleFunc(blueprint.SendWelcomeEmailTaskPattern, orchdioQueue.SendEmailHandler)
 
 	err = asynqServer.Start(asynqMux)
 	if err != nil {
@@ -373,7 +379,6 @@ func main() {
 	devAppController := developer.NewDeveloperController(db)
 
 	platformsControllers := platforms.NewPlatform(redisClient, db, asyncClient, asynqMux)
-	whController := webhook.NewWebhookController(db, redisClient)
 	/**
 	 ==================================================================
 	+
@@ -386,6 +391,7 @@ func main() {
 
 	app.Use(cors.New(cors.Config{
 		AllowMethods: "GET,POST,HEAD,PUT,DELETE,PATCH",
+		AllowOrigins: "*",
 	}), authMiddleware.LogIncomingRequest, authMiddleware.HandleTrolls)
 	app.Use(compress.New(compress.Config{
 		Level: compress.LevelBestSpeed,
@@ -495,9 +501,6 @@ func main() {
 
 	appRouter.Post("/:appId/keys/revoke", devAppController.RevokeAppKeys)
 
-	orchRouter.Post("/white-tiger", authMiddleware.AddReadWriteDeveloperToContext, whController.Handle)
-	orchRouter.Get("/white-tiger", whController.AuthenticateWebhook)
-
 	// ==========================================
 	// NEXT ROUTES
 	nextRouter := baseRouter.Group("/next", authMiddleware.ValidateKey)
@@ -554,7 +557,7 @@ func main() {
 		log.Printf("[main] [info] - ❗🚂 Shutting down server")
 		// inspector
 		// get all active tasks
-		inspErr := inspector.PauseQueue(queue.PlaylistConversionQueue)
+		inspErr := inspector.PauseQueue(blueprint.PlaylistConversionQueueName)
 		if inspErr != nil {
 			log.Printf("Error pausing queue %v", inspErr)
 			_ = app.Shutdown()
@@ -564,7 +567,7 @@ func main() {
 		log.Printf("[main] [info] - ⏸️ 🏭 Paused queue...")
 		_ = app.Shutdown()
 		serverShutdown <- struct{}{}
-		log.Printf("[main] [info] - ✅ 🏭 Queue pause successful. Server shutdown complete")
+		log.Printf("[main] [info] - ✅ 🏭 Queue pause successful. Shutting down server...")
 	}()
 
 	log.Printf("\n[main] [info] - ✅ ⏲️ CRONJOB Entry ID is: %v", entryId)
@@ -577,5 +580,5 @@ func main() {
 		os.Exit(1)
 	}
 	<-serverShutdown
-	log.Printf("[main] [info] - 🚧 🧹 Cleaning up tasks: %s", port)
+	log.Printf("[main] [info] - 🚧 🧹 Cleaned up server resources and server shut down.")
 }
