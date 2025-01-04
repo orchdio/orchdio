@@ -39,7 +39,7 @@ func (u *UserDevApp) CreateOrUpdateUserApp(body *blueprint.CreateNewUserAppData)
 	// check if the platform is valid
 	if !lo.Contains(platforms, body.Platform) {
 		log.Printf("[controllers][developer][user_app] - invalid platform: %v", body.Platform)
-		return nil, blueprint.EINVALIDPLATFORM
+		return nil, blueprint.ErrInvalidPlatform
 	}
 
 	// fetch the user app with the platform. if it exists, we do not want to create. we are checking

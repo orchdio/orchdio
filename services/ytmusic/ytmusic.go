@@ -3,12 +3,15 @@ package ytmusic
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/go-redis/redis/v8"
 	"github.com/raitonoberu/ytmusic"
 	"log"
 	"orchdio/blueprint"
 	"orchdio/util"
+	svixwebhook "orchdio/webhooks/svix"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -31,9 +34,10 @@ type Service struct {
 	RedisClient          *redis.Client
 	IntegrationAppSecret string
 	IntegrationAppID     string
+	App                  *blueprint.DeveloperApp
 }
 
-func NewService(redisClient *redis.Client) *Service {
+func NewService(redisClient *redis.Client, devApp *blueprint.DeveloperApp) *Service {
 	return &Service{
 		RedisClient: redisClient,
 		//IntegrationAppID:     integrationAppID,
@@ -45,20 +49,14 @@ func NewService(redisClient *redis.Client) *Service {
 func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackSearchResult, error) {
 	cacheKey := "ytmusic:track:" + info.EntityID
 	cachedTrack, err := s.RedisClient.Get(context.Background(), cacheKey).Result()
-	if err != nil && err != redis.Nil {
-		log.Printf("[services][ytmusic][SearchTrackWithLink] Error fetching track from cache: %v\n", err)
-		return nil, err
-	}
 
-	if err != nil && err == redis.Nil {
+	if err != nil && errors.Is(err, redis.Nil) {
 		log.Printf("[services][ytmusic][SearchTrackWithLink] Track not found in cache, fetching from YT Music: %v\n", info.EntityID)
-		track, err := FetchSingleTrack(info.EntityID)
-		if err != nil {
-			log.Printf("[services][ytmusic][SearchTrackWithLink] Error fetching track from YT Music: %v\n", err)
-			return nil, err
+		track, fErr := FetchSingleTrack(info.EntityID)
+		if fErr != nil {
+			log.Printf("[services][ytmusic][SearchTrackWithLink] Error fetching track from YT Music: %v\n", fErr)
+			return nil, fErr
 		}
-
-		log.Printf("[services][ytmusic][SearchTrackWithLink] Track fetched from YT Music: %v\n", track)
 
 		if track == nil {
 			log.Printf("[services][ytmusic][SearchTrackWithLink] Track is nil: %v\n", info.EntityID)
@@ -99,14 +97,11 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 		log.Printf("[services][ytmusic][SearchTrackWithLink] Error unmarshalling cached track: %v\n", err)
 		return nil, err
 	}
-
-	return nil, nil
+	return &result, nil
 }
 
-func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackSearchResult, error) {
-	cleanedArtiste := fmt.Sprintf("ytmusic-%s-%s", util.NormalizeString(artiste), title)
-
-	log.Printf("Searching with stripped artiste: %s. Original artiste: %s", cleanedArtiste, artiste)
+func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error) {
+	cleanedArtiste := fmt.Sprintf("ytmusic-%s-%s", util.NormalizeString(searchData.Artists[0]), searchData.Title)
 
 	if s.RedisClient.Exists(context.Background(), cleanedArtiste).Val() == 1 {
 		log.Printf("[services][ytmusic][SearchTrackWithTitle] Track found in cache: %v\n", cleanedArtiste)
@@ -121,10 +116,22 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 			log.Printf("[services][ytmusic][SearchTrackWithTitle] Error unmarshalling cached track: %v\n", err)
 			return nil, err
 		}
+
+		// send webhook event here
+		svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
+		payload := &blueprint.PlaylistConversionEventTrack{
+			Platform: IDENTIFIER,
+			Track:    &result,
+		}
+		ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, payload)
+		if !ok {
+			log.Printf("[services][ytmusic][SearchTrackWithTitle] Error sending webhook event: %v\n", err)
+		}
 		return &result, nil
 	}
+
 	log.Printf("[services][ytmusic][SearchTrackWithTitle] Track not found in cache, fetching from YT Music: %v\n", cleanedArtiste)
-	search := ytmusic.Search(fmt.Sprintf("%s %s", artiste, title))
+	search := ytmusic.Search(fmt.Sprintf("%s %s", searchData.Artists[0], searchData.Title))
 	r, err := search.Next()
 	if err != nil {
 		log.Printf("[services][ytmusic][SearchTrackWithTitle] Error fetching track from YT Music: %v\n", err)
@@ -138,9 +145,8 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 	}
 
 	var track *ytmusic.TrackItem
-
 	for _, t := range tracks {
-		if strings.Contains(t.Title, title) || strings.Contains(t.Artists[0].Name, artiste) {
+		if strings.Contains(t.Title, searchData.Title) || strings.Contains(t.Artists[0].Name, searchData.Artists[0]) {
 			track = t
 			break
 		}
@@ -204,11 +210,22 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 		}
 	}
 
+	// send webhook event here
+	svixInstance := svixwebhook.New(os.Getenv("SVIX_APP_ID"), false)
+	payload := &blueprint.PlaylistConversionEventTrack{
+		Platform: IDENTIFIER,
+		Track:    result,
+	}
+	ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, payload)
+	if !ok {
+		log.Printf("[services][ytmusic][SearchTrackWithTitle] Error sending webhook event: %v\n", err)
+	}
+
 	return result, nil
 }
 
-func (s *Service) SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
-	track, err := s.SearchTrackWithTitle(title, artiste)
+func (s *Service) SearchTrackWithTitleChan(searchData *blueprint.TrackSearchData, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
+	track, err := s.SearchTrackWithTitle(searchData)
 	if err != nil {
 		log.Printf("[services][ytmusic][SearchTrackWithTitleChan] Error searching track: %v\n", err)
 		defer wg.Done()
@@ -246,9 +263,15 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 			fetchedTracks = append(fetchedTracks, deserializedTrack)
 			continue
 		}
-		go s.SearchTrackWithTitleChan(track.Title, track.Artistes[0], c, &wg)
+
+		searchData := &blueprint.TrackSearchData{
+			Title:   track.Title,
+			Artists: track.Artistes,
+		}
+
+		go s.SearchTrackWithTitleChan(searchData, c, &wg)
 		outputTracks := <-c
-		if outputTracks != nil {
+		if outputTracks == nil {
 			log.Printf("[services][ytmusic][FetchTracks] no track found for title : %v\n", track.Title)
 			omittedTracks = append(omittedTracks, blueprint.OmittedTracks{
 				Title:    track.Title,
@@ -257,6 +280,7 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 			})
 			continue
 		}
+
 		fetchedTracks = append(fetchedTracks, *outputTracks)
 	}
 	wg.Wait()

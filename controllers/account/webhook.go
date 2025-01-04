@@ -3,6 +3,7 @@ package account
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"github.com/gofiber/fiber/v2"
 	"github.com/jmoiron/sqlx"
 	"github.com/vicanso/go-axios"
@@ -17,10 +18,6 @@ type WebhookController struct {
 	DB *sqlx.DB
 }
 
-func NewAccountWebhookController(db *sqlx.DB) *WebhookController {
-	return &WebhookController{DB: db}
-}
-
 func (w *WebhookController) FetchWebhookUrl(c *fiber.Ctx) error {
 	log.Printf("[controller][user][FetchWebhookUrl] - fetching webhook url")
 	user := c.Locals("user").(*blueprint.User)
@@ -28,7 +25,7 @@ func (w *WebhookController) FetchWebhookUrl(c *fiber.Ctx) error {
 	database := db.NewDB{DB: w.DB}
 	webhook, err := database.FetchWebhook(user.UUID.String())
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			log.Printf("[controller][user][FetchWebhookUrl] - error - no webhook url found for user %v\n", user.UUID)
 			return util.ErrorResponse(c, http.StatusNotFound, "not found", "No webhook information found for user")
 		}
@@ -46,7 +43,6 @@ func (w *WebhookController) FetchWebhookUrl(c *fiber.Ctx) error {
 func (w *WebhookController) CreateWebhookUrl(ctx *fiber.Ctx) error {
 	log.Printf("[controller][user][CreateWebhookUrl] - creating webhook url")
 	user := ctx.Locals("user").(*blueprint.User)
-	//database := c.DB
 	bod := ctx.Body()
 
 	/**
@@ -97,7 +93,7 @@ func (w *WebhookController) CreateWebhookUrl(ctx *fiber.Ctx) error {
 
 	log.Printf("\n[controller][user][CreateWebhookUrl] - webhook err: '%s' \n", whErr)
 
-	if whErr != nil && whErr != sql.ErrNoRows {
+	if whErr != nil && !errors.Is(whErr, sql.ErrNoRows) {
 		// TODO: handle other possible fetch webhook errors. for now just say "error fetching webhook"
 		log.Printf("[controller][user][CreateWebhookUrl][error] - could not fetch webhook url. Something unexpected happened : %v \n", whErr)
 		return util.ErrorResponse(ctx, http.StatusConflict, whErr.Error(), "An unexpected error")
@@ -122,7 +118,7 @@ func (w *WebhookController) CreateWebhookUrl(ctx *fiber.Ctx) error {
 
 	err = database.CreateUserWebhook(user.UUID.String(), webhookUrl, webhoookBody.VerifyToken)
 	if err != nil {
-		if err == blueprint.EALREADY_EXISTS {
+		if errors.Is(err, blueprint.EalreadyExists) {
 			log.Printf("[controller][user][CreateWebhookUrl] - error - user already has a webhook url")
 			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "App already has a webhook url")
 		}
@@ -197,10 +193,11 @@ func (w *WebhookController) DeleteUserWebhookUrl(ctx *fiber.Ctx) error {
 	user := ctx.Locals("user").(*blueprint.User)
 
 	database := db.NewDB{DB: w.DB}
+	// todo: implement delete user webhoook on svix
 	upErr := database.DeleteUserWebhook(user.UUID.String())
 
 	if upErr != nil {
-		if upErr == sql.ErrNoRows {
+		if errors.Is(upErr, sql.ErrNoRows) {
 			log.Printf("[controller][user][DeleteUserWebhookUrl] - error - user does not have a webhook url")
 			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "Webhook not found")
 		}
@@ -222,7 +219,7 @@ func (w *WebhookController) Verify(ctx *fiber.Ctx) error {
 	database := db.NewDB{DB: w.DB}
 	webhook, err := database.FetchWebhook(user.UUID.String())
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			log.Printf("[controller][user][Verify] - error - user does not have a webhook url")
 			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "Webhook not found")
 		}

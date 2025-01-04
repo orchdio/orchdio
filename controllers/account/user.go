@@ -192,7 +192,7 @@ func (u *UserController) FollowPlaylist(ctx *fiber.Ctx) error {
 
 	// if the error returned is sql.ErrNoRows, it means that the playlist is already followed
 	//and the length of subscribers passed in the request body is 1
-	if errors.Is(err, blueprint.EALREADY_EXISTS) {
+	if errors.Is(err, blueprint.EalreadyExists) {
 		log.Printf("[controller][follow][FollowPlaylist] - playlist already followed")
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Already followed", "playlist already followed")
 	}
@@ -270,7 +270,7 @@ func (u *UserController) FetchUserInfoByIdentifier(ctx *fiber.Ctx) error {
 			}
 			log.Printf("[controller][user][FetchUserInfoByIdentifier] - User's access token is %s", string(accessToken))
 
-			spotifyService := spotify.NewService(&cred, u.DB, u.Redis)
+			spotifyService := spotify.NewService(&cred, u.DB, u.Redis, app)
 			spotifyInfo, serviceErr := spotifyService.FetchUserInfo(string(accessToken))
 			if serviceErr != nil {
 				log.Printf("[controller][user][FetchUserInfoByIdentifier	] - error fetching spotify user info: %v", serviceErr)
@@ -300,7 +300,7 @@ func (u *UserController) FetchUserInfoByIdentifier(ctx *fiber.Ctx) error {
 				return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not decrypt deezer access token")
 			}
 
-			deezerService := deezer.NewService(&cred, u.DB, u.Redis)
+			deezerService := deezer.NewService(&cred, u.DB, u.Redis, app)
 
 			deezerInfo, err := deezerService.FetchUserInfo(string(accessToken))
 			if err != nil {
@@ -403,13 +403,13 @@ func (u *UserController) ResetPassword(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not serialize email data")
 	}
 
-	sendMail, err := orchdioQueue.NewTask(fmt.Sprintf("send:reset_password_email:%s", taskID), queue.EmailTask, 2, serializedEmailData)
-	if err != nil {
-		log.Printf("[controller][user][ResetPassword] - error creating send email task: %v", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not create send email task")
+	sendMail, qErr := orchdioQueue.NewTask(fmt.Sprintf("%s_%s", blueprint.SendResetPasswordTaskPattern, taskID), blueprint.SendResetPasswordTaskPattern, 2, serializedEmailData)
+	if qErr != nil {
+		log.Printf("[controller][user][ResetPassword] - error creating send email task: %v", qErr)
+		return util.ErrorResponse(ctx, http.StatusInternalServerError, qErr, "Could not create send email task")
 	}
 
-	err = orchdioQueue.EnqueueTask(sendMail, queue.EmailQueue, taskID, time.Second*2)
+	err = orchdioQueue.EnqueueTask(sendMail, blueprint.EmailQueueName, taskID, time.Second*2)
 	if err != nil {
 		log.Printf("[controller][user][ResetPassword] - error enqueuing send email task: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not enqueue send email task")

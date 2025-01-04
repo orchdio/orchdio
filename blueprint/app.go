@@ -32,8 +32,7 @@ type OrganizationResponse struct {
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
 	CreatedAt   string    `json:"created_at"`
-	// TODO: i may need to JOIN the users table to get the owner name and other stuff
-	Owner uuid.UUID `json:"owner"`
+	Owner       uuid.UUID `json:"owner"`
 }
 
 type UserApp struct {
@@ -108,9 +107,7 @@ type UserAppAndPlatformInfo struct {
 }
 
 type User struct {
-	Email string `json:"email" db:"email"`
-	//Usernames interface{} `json:"usernames" db:"usernames"`
-	//Username     string      `json:"username,omitempty" db:"username"`
+	Email               string    `json:"email" db:"email"`
 	ID                  int       `json:"id,omitempty" db:"id"`
 	UUID                uuid.UUID `json:"uuid" db:"uuid"`
 	CreatedAt           string    `json:"created_at" db:"created_at"`
@@ -119,10 +116,6 @@ type User struct {
 	ResetToken          string    `json:"reset_token,omitempty" db:"reset_token,omitempty"`
 	ResetTokenExpiry    string    `json:"reset_token_expiry,omitempty" db:"reset_token_expiry,omitempty"`
 	ResetTokenCreatedAt string    `json:"reset_token_created_at,omitempty" db:"reset_token_created_at,omitempty"`
-	//RefreshToken []byte      `json:"refresh_token" db:"refresh_token,omitempty"`
-	//PlatformID  string      `json:"platform_id" db:"platform_id"`
-	//Authorized  bool        `json:"authorized,omitempty" db:"authorized,omitempty"`
-	//PlatformIDs interface{} `json:"platform_ids,omitempty" db:"platform_ids,omitempty"`
 }
 
 type CreateOrganizationData struct {
@@ -133,7 +126,6 @@ type CreateOrganizationData struct {
 }
 
 type CreateNewUserAppData struct {
-	//AccessToken  []byte      `json:"accessToken"`
 	RefreshToken []byte    `json:"refreshToken"`
 	Scopes       []string  `json:"scopes"`
 	User         uuid.UUID `json:"user"`
@@ -164,7 +156,7 @@ type AppInfo struct {
 	PublicKey   string                   `json:"public_key"`
 	Authorized  bool                     `json:"authorized"`
 	Credentials []IntegrationCredentials `json:"credentials"`
-	// due to the weird nature of deezer auth, we add the deezerstate for the app here
+	// due to the weird nature of deezer auth, we add the deezer state for the app here
 	// to be visible to the developer
 	DeezerState string `json:"deezer_state,omitempty"`
 }
@@ -173,8 +165,6 @@ type AppTaskData struct {
 	Name string `json:"name"`
 	UUID string `json:"uuid"`
 }
-
-// todo: properly name this.
 
 type Action struct {
 	Payload interface{} `json:"payload"`
@@ -205,6 +195,7 @@ type DeveloperApp struct {
 	DeezerCredentials     []byte    `json:"deezer_credentials,omitempty" db:"deezer_credentials"`
 	TidalCredentials      []byte    `json:"tidal_credentials,omitempty" db:"tidal_credentials"`
 	DeezerState           string    `json:"deezer_state,omitempty" db:"deezer_state,omitempty"`
+	WebhookAppID          string    `json:"webhook_app_id,omitempty" db:"webhook_app_id,omitempty"`
 }
 
 type UpdateDeveloperAppData struct {
@@ -223,9 +214,8 @@ type UpdateDeveloperAppData struct {
 }
 
 type CreateNewDeveloperAppData struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	//RedirectURL            string `json:"redirect_url"`
+	Name                 string `json:"name"`
+	Description          string `json:"description"`
 	WebhookURL           string `json:"webhook_url"`
 	Organization         string `json:"organization_id"`
 	IntegrationAppSecret string `json:"integration_app_secret"`

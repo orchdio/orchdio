@@ -485,7 +485,7 @@ func FetchMethodFromInterface(service interface{}, method string) (reflect.Value
 
 func DecryptIntegrationCredentials(encryptedCredentials []byte) (*blueprint.IntegrationCredentials, error) {
 	if len(encryptedCredentials) == 0 {
-		return nil, blueprint.ENOCREDENTIALS
+		return nil, blueprint.ErrNoCredentials
 	}
 	decrypted, err := Decrypt(encryptedCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
 	if err != nil {

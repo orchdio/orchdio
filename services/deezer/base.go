@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"orchdio/blueprint"
 	"orchdio/util"
+	svixwebhook "orchdio/webhooks/svix"
 	"os"
 	"strconv"
 	"strings"
@@ -40,14 +41,16 @@ type Service struct {
 	IntegrationID     string
 	IntegrationSecret string
 	RedisClient       *redis.Client
+	App               *blueprint.DeveloperApp
 }
 
-//NewService creates a new deezer service
-func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client) *Service {
+// NewService creates a new deezer service
+func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client, devApp *blueprint.DeveloperApp) *Service {
 	return &Service{
 		IntegrationID:     credentials.AppID,
 		IntegrationSecret: credentials.AppSecret,
 		RedisClient:       redisClient,
+		App:               devApp,
 	}
 }
 
@@ -75,13 +78,13 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 	cachedKey := "deezer:track:" + info.EntityID
 	log.Printf("\n[services][deezer][SearchTrackWithID] cachedKey %v\n", cachedKey)
 	cachedTrack, err := s.RedisClient.Get(context.Background(), cachedKey).Result()
-	if err != nil && err != redis.Nil {
+	if err != nil && !errors.Is(err, redis.Nil) {
 		log.Printf("\n[services][deezer][SearchTrackWithID][SearchTrackWithID] error - Could not get cached track %v\n", err)
 		return nil, err
 	}
 
 	// if we have not cached this track before
-	if err != nil && err == redis.Nil {
+	if err != nil && errors.Is(err, redis.Nil) {
 		log.Printf("\n[deezer][base][SearchTrackWithID] - warning Track has not been cached\n")
 		dzSingleTrack, err := s.FetchSingleTrack(info.TargetLink)
 		var dzTrackContributors []string
@@ -129,9 +132,8 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 // SearchTrackWithTitle searches for a track using the title (and artiste) on deezer
 // This is typically expected to be used when the track we want to fetch is the one we just
 // want to search on. That is, the other platforms that the user is trying to convert to.
-func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackSearchResult, error) {
-	//searchKey := fmt.Sprintf("deezer-%s-%s", artiste, title)
-	cacheKey := fmt.Sprintf("deezer:%s:%s", util.NormalizeString(artiste), title)
+func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error) {
+	cacheKey := fmt.Sprintf("deezer:%s:%s", util.NormalizeString(searchData.Artists[0]), searchData.Title)
 	// get the cached track
 	if s.RedisClient.Exists(context.Background(), cacheKey).Val() == 1 {
 		log.Printf("\n[services][deezer][playlist][SearchTrackWithTitle] Track has been cached\n")
@@ -147,32 +149,37 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 			log.Printf("\n[platforms][base][SearchTrackWithTitle] Could not deserialize cached track. err %v\n", err)
 			return nil, err
 		}
+
+		svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
+		ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, &blueprint.PlaylistConversionEventTrack{
+			Platform: IDENTIFIER,
+			Track:    deserializedTrack,
+		})
+		if !ok {
+			log.Printf("\n[services][deezer][SearchTrackWithTitle] error - Could not send webhook event:\n%v", err)
+		}
 		return deserializedTrack, nil
 	}
 
-	log.Printf("\n[services][deezer][SearchTrackWithTitle][SearchTrackWithTitle] Track has not been cached\n")
+	/* track has not been cached. we need to search for it */
 
-	strippedTrackTitle := util.ExtractTitle(title)
+	strippedTrackTitle := util.ExtractTitle(searchData.Title)
 	searchTitle := strippedTrackTitle.Title
 	// for deezer we'll not trim the artiste name. this is because it becomes way less accurate.
 	// deezer has second to the lowest accuracy in terms of search results (youtube being the lowest)
 	// however, just like others, we're caching the result under the normalized string, which contains trimmed artiste name
 	// like so: "deezer-artistename-title". For example: "deezer-flatbushzombies-reelgirls
-	_link := fmt.Sprintf("track:\"%s\" artist:\"%s\"", strings.Trim(searchTitle, " "), artiste)
-	link := fmt.Sprintf("%s/search?q=%s", os.Getenv("DEEZER_API_BASE"), url.QueryEscape(_link))
+	link := fmt.Sprintf("%s/search?q=%s", os.Getenv("DEEZER_API_BASE"), url.QueryEscape(fmt.Sprintf("track:\"%s\" artist:\"%s\"", strings.Trim(searchTitle, " "), searchData.Artists[0])))
 
 	response, err := axios.Get(link)
 	if err != nil {
 		log.Printf("\n[services][deezer][base][SearchTrackWithTitle] error - Could not search the track on deezer: %v\n", err)
 		return nil, err
 	}
-
-	log.Printf("\n[services][deezer][SearchTrackWithTitle][SearchTrackWithTitle] Searched deezer for track...")
 	fullTrack := FullTrack{}
 	err = json.Unmarshal(response.Data, &fullTrack)
 	if err != nil {
-		log.Printf("\n[services][deezer][base][SearchTrackWithTitle] error - Could not deserialize the body into the out response: %v\n", err)
-		log.Printf("\n[services][deezer][base][SearchTrackWithTitle] error - Could not deserialize the body into the out response, body is: %v\n", string(response.Data))
+		log.Printf("\n[services][deezer][base][SearchTrackWithTitle] error - Could not deserialize the body into the out response, Error: \n%v, Body is: %v\n", err, string(response.Data))
 		return nil, err
 	}
 
@@ -200,9 +207,9 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 		}
 
 		// serialize the result
-		serializedTrack, err := json.Marshal(out)
-		if err != nil {
-			log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error serializing track - %v\n", err)
+		serializedTrack, mErr := json.Marshal(out)
+		if mErr != nil {
+			log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error serializing track - %v\n", mErr)
 		}
 		//newHashIdentifier := util.HashIdentifier("deezer-" + out.Artistes[0] + "-" + out.Title)
 		// if the artistes are the same, the track result is most likely the same (except remixes, an artiste doesnt have two tracks with the same name)
@@ -211,7 +218,7 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 		// this is because in some cases, we need to fetch by ID and not by title
 		// cache track but with identifier. this is for when we're searching by title again and its the same
 		// track as this
-		if lo.Contains(out.Artists, artiste) {
+		if lo.Contains(out.Artists, searchData.Artists[0]) {
 			log.Printf("\n[services][deezer][SearchTrackWithTitle][SearchTrackWithTitle][debug] - the result seems to not be exact same track but same track.\n")
 			cacheErr := s.RedisClient.Set(context.Background(), cacheKey, string(serializedTrack), time.Hour*24).Err()
 			if cacheErr != nil {
@@ -219,16 +226,25 @@ func (s *Service) SearchTrackWithTitle(title, artiste string) (*blueprint.TrackS
 			}
 			log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] Track %s has been cached\n", out.Title)
 		}
+		svixInstance := svixwebhook.New(os.Getenv("SVIX_APP_ID"), false)
+		ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, &blueprint.PlaylistConversionEventTrack{
+			Platform: IDENTIFIER,
+			Track:    &out,
+		})
+
+		if !ok {
+			log.Printf("\n[services][deezer][SearchTrackWithTitle] error - Could not send webhook event:\n%v", err)
+		}
 		return &out, nil
 	}
 
-	log.Printf("\n[services][deezer][base][SearchTrackWithTitle] Deezer search for track done but no results. Searched with %s \n", _link)
+	log.Printf("\n[services][deezer][base][SearchTrackWithTitle] Deezer search for track done but no results. Searched with %s \n", link)
 	return nil, nil
 }
 
 // SearchTrackWithTitleChan searches for a track similar to `SearchTrackWithTitle` but uses a channel
-func (s *Service) SearchTrackWithTitleChan(title, artiste string, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup, red *redis.Client) {
-	result, err := s.SearchTrackWithTitle(title, artiste)
+func (s *Service) SearchTrackWithTitleChan(searchData *blueprint.TrackSearchData, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup, red *redis.Client) {
+	result, err := s.SearchTrackWithTitle(searchData)
 	if err != nil {
 		defer wg.Done()
 		c <- nil
@@ -253,10 +269,8 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 		// name. but the thing is that an artiste can have spaces in their name, etc. this is definitely going to not go as we expect
 		// so we need to remove spaces and weird characters from the artiste name
 		// this is the same for the title of the track
-
-		//cleanedArtiste := util.NormalizeString("deezer-" + track.Artistes[0] + "-" + track.Title)
 		cleanedArtiste := fmt.Sprintf("deezer-%s-%s", util.NormalizeString(track.Artistes[0]), track.Title)
-		// WARNING: unhandled slice index
+
 		// check if its been cached. if so, we grab and return it. if not, we let it search
 		if s.RedisClient.Exists(context.Background(), cleanedArtiste).Val() == 1 {
 			// deserialize the result from redis
@@ -271,7 +285,11 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 			continue
 		}
 		// WARNING: unhandled slice index
-		go s.SearchTrackWithTitleChan(track.Title, track.Artistes[0], ch, &wg, red)
+		searchData := &blueprint.TrackSearchData{
+			Title:   track.Title,
+			Artists: track.Artistes,
+		}
+		go s.SearchTrackWithTitleChan(searchData, ch, &wg, red)
 
 		outputTracks := <-ch
 		if outputTracks == nil {
@@ -293,15 +311,10 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResult, error) {
 	log.Printf("\n[services][deezer][SearchPlaylistWithID] Fetching playlist %v\n", id)
 	infoLink := "https://api.deezer.com/playlist/" + id + "?limit=1"
-	info, err := axios.Get(infoLink)
+	var playlistInfo PlaylistTracksSearch
+	err := s.MakeRequest(infoLink, &playlistInfo)
 	if err != nil {
 		log.Printf("\n[services][deezer][SearchPlaylistWithID] error - Could not fetch playlist info: %v\n", err)
-		return nil, err
-	}
-	var playlistInfo PlaylistTracksSearch
-	err = json.Unmarshal(info.Data, &playlistInfo)
-	if err != nil {
-		log.Printf("\n[services][deezer][SearchPlaylistWithID] error - Could not deserialize the body into the out response: %v\n", err)
 		return nil, err
 	}
 
@@ -414,6 +427,19 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 		log.Printf("\n[services][deezer][SearchPlaylistWithID] error - Could not deserialize the body into the out response: %v\n", err)
 		return nil, err
 	}
+
+	// send webhook event here
+	svixInstance := svixwebhook.New(os.Getenv("SVIX_APP_ID"), false)
+	whResponse, whErr := svixInstance.SendEvent(s.App.WebhookAppID, blueprint.PlaylistConversionTrackEvent, playlistResult)
+
+	if whErr != nil {
+		log.Printf("\n[services][deezer][SearchPlaylistWithID] error - Could not send webhook event: %v\n", whErr)
+	}
+
+	if whResponse != nil && whErr == nil {
+		// for debugging only for now
+		log.Printf("[services][applemusic][SearchTrackWithTitle] Webhook response: %v\n", whResponse)
+	}
 	return playlistResult, nil
 }
 
@@ -517,30 +543,11 @@ func (s *Service) FetchUserPlaylists(token string) (*UserPlaylistsResponse, erro
 	// 1. TO EASE IMPLEMENTATION
 	// 2. TO MAKE IT "PREMIUM" IN THE FUTURE  (i.e. if we want to charge for more playlists), makes it easier to enforce/assimilate from now
 	reqURL := fmt.Sprintf("%s/user/me/playlists?access_token=%s&limit=250", deezerAPIBase, token)
-	axios.NewInstance(&axios.InstanceConfig{
-		Headers: map[string][]string{
-			"Content-Type": {"application/json"},
-		},
-	})
 
-	log.Printf("\n[services][deezer][FetchUserPlaylists] request url: %v\n", reqURL)
-
-	resp, err := axios.Get(reqURL, nil)
+	out := &UserPlaylistsResponse{}
+	err := s.MakeRequest(reqURL, out)
 	if err != nil {
 		log.Printf("\n[services][deezer][FetchUserPlaylists] error - Could not fetch user playlists: %v\n", err)
-		return nil, err
-	}
-
-	if resp.Status == http.StatusBadRequest {
-		log.Printf("\n[services][deezer][FetchUserPlaylists] error - Could not fetch user playlists. Bad request: %v\n", err)
-		return nil, errors.New("bad request")
-	}
-
-	// deserialize the response body into the out response
-	out := &UserPlaylistsResponse{}
-	err = json.Unmarshal(resp.Data, out)
-	if err != nil {
-		log.Printf("\n[services][deezer][FetchUserPlaylists] error - Could not deserialize the body into the out response: %v\n", err)
 		return nil, err
 	}
 
@@ -553,33 +560,11 @@ func (s *Service) FetchUserArtists(token string) (*blueprint.UserLibraryArtists,
 	// plus not as much deezer users and even so, we could make it premium in the future
 	deezerApiBase := os.Getenv("DEEZER_API_BASE")
 	reqURL := fmt.Sprintf("%s/user/me/artists?access_token=%s", deezerApiBase, token)
-	instance := axios.NewInstance(&axios.InstanceConfig{
-		BaseURL: deezerApiBase,
-		Headers: map[string][]string{
-			"Content-Type": {"application/json"},
-		},
-	})
+	var artistsResponse UserArtistsResponse
+	err := s.MakeRequest(reqURL, &artistsResponse)
 
-	resp, err := instance.Get(reqURL, nil)
 	if err != nil {
 		log.Printf("\n[services][deezer][FetchUserArtists] error - Could not fetch user artists: %v\n", err)
-		return nil, err
-	}
-
-	if resp.Status == http.StatusBadRequest {
-		log.Printf("\n[services][deezer][FetchUserArtists] error - Could not fetch user artists. Bad request: %v\n", err)
-		return nil, err
-	}
-
-	if resp.Status >= 400 {
-		log.Printf("\n[services][deezer][FetchUserArtists] error - Could not fetch user artists. Bad request: %v\n", err)
-		return nil, err
-	}
-
-	var artistsResponse UserArtistsResponse
-	err = json.Unmarshal(resp.Data, &artistsResponse)
-	if err != nil {
-		log.Printf("\n[services][deezer][FetchUserArtists] error - Could not deserialize the body into the out response: %v\n", err)
 		return nil, err
 	}
 
@@ -597,7 +582,6 @@ func (s *Service) FetchUserArtists(token string) (*blueprint.UserLibraryArtists,
 		Payload: artists,
 		Total:   artistsResponse.Total,
 	}
-	log.Printf("\n[services][deezer][FetchUserArtists] Fetched user deezer artists: %v\n", response)
 	return &response, nil
 }
 
@@ -606,31 +590,12 @@ func (s *Service) FetchLibraryAlbums(token string) ([]blueprint.LibraryAlbum, er
 	log.Printf("\n[services][deezer][FetchLibraryAlbums] Fetching user deezer albums\n")
 	deezerApiBase := os.Getenv("DEEZER_API_BASE")
 	reqURL := fmt.Sprintf("%s/user/me/albums?access_token=%s", deezerApiBase, token)
-	instance := axios.NewInstance(&axios.InstanceConfig{
-		BaseURL: deezerApiBase,
-		Headers: map[string][]string{
-			"Content-Type": {"application/json"},
-		},
-	})
+	var albumsResponse UserLibraryAlbumResponse
 
-	resp, err := instance.Get(reqURL, nil)
+	err := s.MakeRequest(reqURL, &albumsResponse)
 	if err != nil {
 		log.Printf("\n[services][deezer][FetchLibraryAlbums] error - Could not fetch user albums: %v\n", err)
-		return nil, err
 	}
-
-	if resp.Status >= 201 {
-		log.Printf("\n[services][deezer][FetchLibraryAlbums] error - Could not fetch user albums. Bad request: %v\n", err)
-		return nil, err
-	}
-
-	var albumsResponse UserLibraryAlbumResponse
-	err = json.Unmarshal(resp.Data, &albumsResponse)
-	if err != nil {
-		log.Printf("\n[services][deezer][FetchLibraryAlbums] error - Could not deserialize the body into the out response: %v\n", err)
-		return nil, err
-	}
-
 	var albums []blueprint.LibraryAlbum
 	for _, album := range albumsResponse.Data {
 		albums = append(albums, blueprint.LibraryAlbum{
@@ -688,7 +653,6 @@ func (s *Service) FetchTracksListeningHistory(token string) ([]blueprint.TrackSe
 
 	var tracks []blueprint.TrackSearchResult
 	for _, track := range history.Data {
-
 		tracks = append(tracks, blueprint.TrackSearchResult{
 			URL:           track.Link,
 			Artists:       []string{track.Artist.Name},
@@ -731,7 +695,7 @@ func (s *Service) FetchUserInfo(token string) (*blueprint.UserPlatformInfo, erro
 	}
 
 	userInfo := blueprint.UserPlatformInfo{
-		Platform:        "deezer",
+		Platform:        IDENTIFIER,
 		Username:        info.Name,
 		ProfilePicture:  info.Picture,
 		ExplicitContent: util.DeezerIsExplicitContent(info.ExplicitContentLevel),

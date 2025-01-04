@@ -45,7 +45,7 @@ func CompleteUserAuth(ctx context.Context, request *http.Request, redirectURL st
 		if strings.Include([]string{err.Error()}, "invalid_client") {
 			return nil, nil, errors.New("invalid client")
 		}
-		return nil, nil, blueprint.EINVALIDAUTHCODE
+		return nil, nil, blueprint.ErrInvalidAuthCode
 	}
 
 	client := spotify.New(auth.Client(request.Context(), token))

@@ -42,7 +42,7 @@ func (f *Follow) FollowPlaylist(developer, app, originalURL string, info *bluepr
 	log.Printf("[follow][FollowPlaylist] - Running follow playlist")
 	if len(subscribers) > 20 {
 		log.Printf("[follow][FollowPlaylist] - too many subscribers. Max is 20")
-		return nil, blueprint.ERRTOOMANY
+		return nil, blueprint.ErrTooMany
 	}
 	// this function takes the playlist id and the user id and checks if  the user has
 	// already been subscribed to the playlist. if they have, we don't need to do anything.
@@ -94,7 +94,7 @@ func (f *Follow) FollowPlaylist(developer, app, originalURL string, info *bluepr
 	// TODO: emphasis in docs that if a user already follows a playlist and they follow it again, it will
 	// simply not do anything and return an ok.
 	if len(updateFollowByte) == 0 {
-		return nil, blueprint.EALREADY_EXISTS
+		return nil, blueprint.EalreadyExists
 	}
 
 	log.Printf("[follow][FollowPlaylist] - updated follow subscriber: %v", updateFollowByte)

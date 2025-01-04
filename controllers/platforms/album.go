@@ -25,7 +25,7 @@ func (p *Platforms) FetchPlatformAlbums(ctx *fiber.Ctx) error {
 	case applemusic.IDENTIFIER:
 		decryptedCredentials, err := util.DecryptIntegrationCredentials(app.AppleMusicCredentials)
 		if err != nil {
-			if err == blueprint.ENOCREDENTIALS {
+			if err == blueprint.ErrNoCredentials {
 				log.Printf("[platforms][FetchPlatformAlbums] error - Apple Music credentials are nil")
 				return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "authorization error", "The developer has not provided Apple Music credentials for this app and cannot access this resource.")
 			}
@@ -63,7 +63,7 @@ func (p *Platforms) FetchPlatformAlbums(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to decrypt Deezer credentials")
 		}
 
-		deezerService := deezer.NewService(&deezerCredentials, p.DB, p.Redis)
+		deezerService := deezer.NewService(&deezerCredentials, p.DB, p.Redis, app)
 		albums, err := deezerService.FetchLibraryAlbums(appCtx.RefreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformAlbums] error - %s", err.Error())
@@ -91,7 +91,7 @@ func (p *Platforms) FetchPlatformAlbums(ctx *fiber.Ctx) error {
 			log.Printf("[platforms][FetchPlatformAlbums] error - could not unmarshal app's spotify credentials while fetching user library albums%s", err.Error())
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to decrypt Spotify credentials")
 		}
-		spotifyService := spotify.NewService(&credentials, p.DB, p.Redis)
+		spotifyService := spotify.NewService(&credentials, p.DB, p.Redis, app)
 		albums, err := spotifyService.FetchLibraryAlbums(appCtx.RefreshToken)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformAlbums] error - %s", err.Error())
@@ -123,7 +123,7 @@ func (p *Platforms) FetchPlatformAlbums(ctx *fiber.Ctx) error {
 			log.Printf("[platforms][FetchPlatformAlbums] error - could not unmarshal app's tidal credentials while fetching user library albums%s", err.Error())
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Failed to decrypt Tidal credentials")
 		}
-		tidalService := tidal.NewService(&tidalCredentials, p.DB, p.Redis)
+		tidalService := tidal.NewService(&tidalCredentials, p.DB, p.Redis, app)
 		albums, err := tidalService.FetchLibraryAlbums(appCtx.PlatformID)
 		if err != nil {
 			log.Printf("[platforms][FetchPlatformAlbums] error - %s", err.Error())
