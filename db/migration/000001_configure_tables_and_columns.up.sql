@@ -421,3 +421,11 @@ alter table user_apps
 alter table user_apps
     alter column last_authed_at type timestamptz using last_authed_at::timestamptz;
 
+
+-- Migration 11
+alter table follows
+    alter column updated_at type timestamptz using updated_at::timestamptz;
+
+alter table follows
+    alter column updated_at set default '2022-09-08'::timestamptz;
+

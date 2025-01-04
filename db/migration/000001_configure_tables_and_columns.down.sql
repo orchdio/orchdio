@@ -159,3 +159,9 @@ alter table user_apps
 
 alter table user_apps
     alter column last_authed_at type timestamp using last_authed_at::timestamp;
+
+alter table follows
+    alter column updated_at type date using updated_at::date;
+
+alter table follows
+    alter column updated_at set default '2022-09-08'::date;
