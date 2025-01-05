@@ -335,7 +335,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 
 	// if we have not cached this track or the snapshot has changed (that is, the playlist has been updated), then
 	// we need to fetch the tracks and cache them
-	if cacheErr != nil && cacheErr == redis.Nil || cachedSnapshotID != playlistInfo.Checksum {
+	if cacheErr != nil || cachedSnapshotID != playlistInfo.Checksum {
 		var trackList PlaylistTracksSearch
 		err = json.Unmarshal(tracks.Data, &trackList)
 		if err != nil {

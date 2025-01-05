@@ -103,18 +103,6 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 		} else {
 			log.Printf("\n[services][tidal][SearchWithID] - track cached successfully\n")
 		}
-
-		// send webhook event here. Event sent: blueprint.PlaylistConversionEventTrack
-		svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
-		payload := &blueprint.PlaylistConversionEventTrack{
-			Platform: IDENTIFIER,
-			Track:    &searchResult,
-		}
-
-		ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, payload)
-		if !ok {
-			log.Printf("\n[controllers][platforms][tidal][SearchTrackWithID] - could not send webhook event\n")
-		}
 		return &searchResult, nil
 	}
 
