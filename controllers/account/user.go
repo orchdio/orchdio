@@ -15,15 +15,12 @@ import (
 	"log"
 	"net/http"
 	"net/mail"
-	"net/url"
 	"orchdio/blueprint"
 	"orchdio/db"
 	"orchdio/db/queries"
 	"orchdio/queue"
 	"orchdio/services"
-	"orchdio/services/deezer"
 	orchdioFollow "orchdio/services/follow"
-	"orchdio/services/spotify"
 	"orchdio/util"
 	"os"
 	"strings"
@@ -202,117 +199,122 @@ func (u *UserController) FollowPlaylist(ctx *fiber.Ctx) error {
 }
 
 func (u *UserController) FetchUserInfoByIdentifier(ctx *fiber.Ctx) error {
-	app := ctx.Locals("app").(*blueprint.DeveloperApp)
-	i := ctx.Query("identifier")
-	if i == "" {
-		log.Printf("[controller][user][FetchUserInfoByIdentifier] - identifier not passed. Please pass a valid Orchdio ID or email")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Identifier not passed")
-	}
-	log.Printf("[controller][user][FetchUserInfoByIdentifier] - fetching user info with identifier %s", i)
+	//app := ctx.Locals("app").(*blueprint.DeveloperApp)
+	//i := ctx.Query("identifier")
+	//
+	//webhookSender := svixwebhook.New(os.Getenv("SVIX_API_KEY"), true)
+	//
+	//if i == "" {
+	//	log.Printf("[controller][user][FetchUserInfoByIdentifier] - identifier not passed. Please pass a valid Orchdio ID or email")
+	//	return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Identifier not passed")
+	//}
+	//log.Printf("[controller][user][FetchUserInfoByIdentifier] - fetching user info with identifier %s", i)
+	//
+	//// decode the identifier
+	//identifier, err := url.QueryUnescape(i)
+	//if err != nil {
+	//	log.Printf("[controller][user][FetchUserInfoByIdentifier] - error decoding identifier: might be not be url encoded. %v", err)
+	//	return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid identifier")
+	//}
+	//
+	//// check if the identifier is a valid uuid
+	//isUUID := util.IsValidUUID(identifier)
+	//parsedEmail, err := mail.ParseAddress(identifier)
+	//if err != nil {
+	//	log.Printf("[controller][user][FetchUserInfoByIdentifier][warning] could not parse identifier as email. might be uuid identifier instead: %v", err)
+	//}
+	//
+	//isValidEmail := parsedEmail != nil
+	//if !isUUID && !isValidEmail {
+	//	log.Printf("[controller][user][FetchUserInfoByIdentifier] - invalid identifier. Please pass a valid Orchdio ID or email")
+	//	return util.ErrorResponse(ctx, http.StatusBadRequest, "invalid identifier", "Please pass a valid Orchdio ID or email")
+	//}
+	//
+	//database := db.NewDB{DB: u.DB}
+	//userProfile, err := database.FetchUserByIdentifier(identifier, app.UID.String())
+	//if err != nil {
+	//	log.Printf("[controller][user][FetchUserInfoByIdentifier] - error fetching user info: %v", err)
+	//	return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not fetch user info")
+	//}
+	//
+	//// for each of the response, depending on the platform, we want to make a request to the endpoint of the platform
+	//// to get the user info
+	//// this is why we return an array of blueprint.UserInfo. This is because we can get the platforms the users have authorized
+	//// for this application and then perform the action we want. if the user does not have this, we can return a good error response, for example.
+	//var userInfo blueprint.UserInfo
+	//for _, user := range *userProfile {
+	//	userInfo.Email = user.Email
+	//	userInfo.ID = user.UserID
+	//	switch user.Platform {
+	//	case spotify.IDENTIFIER:
+	//		// decrypt the spotify credentials for this app
+	//		log.Printf("decrypting %s's spotify refresh token", user.Username)
+	//		credBytes, err := util.Decrypt(app.SpotifyCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
+	//		if err != nil {
+	//			log.Printf("[controller][user][FetchUserInfoByIdentifier] - error decrypting spotify credentials: %v", err)
+	//			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not decrypt spotify credentials")
+	//		}
+	//
+	//		var cred blueprint.IntegrationCredentials
+	//		err = json.Unmarshal(credBytes, &cred)
+	//		if err != nil {
+	//			log.Printf("[controller][user][FetchUserInfoByIdentifier] - error unmarshalling spotify credentials: %v", err)
+	//			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not unmarshal spotify credentials")
+	//		}
+	//
+	//		// decrypt the user access token
+	//		accessToken, err := util.Decrypt(user.RefreshToken, []byte(os.Getenv("ENCRYPTION_SECRET")))
+	//		if err != nil {
+	//			log.Printf("[controller][user][FetchUserInfoByIdentifier] - error decrypting spotify access token: %v", err)
+	//			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not decrypt spotify access token")
+	//		}
+	//		log.Printf("[controller][user][FetchUserInfoByIdentifier] - User's access token is %s", string(accessToken))
+	//
+	//		spotifyService := spotify.NewService(&cred, u.DB, u.Redis, app)
+	//		spotifyInfo, serviceErr := spotifyService.FetchUserInfo(string(accessToken))
+	//		if serviceErr != nil {
+	//			log.Printf("[controller][user][FetchUserInfoByIdentifier	] - error fetching spotify user info: %v", serviceErr)
+	//			continue
+	//		}
+	//		userInfo.Spotify = spotifyInfo
+	//
+	//	case deezer.IDENTIFIER:
+	//		// decrypt the deezer credentials for this app
+	//		log.Printf("decrypting %s's deezer refresh token", user.Username)
+	//		credBytes, decErr := util.Decrypt(app.DeezerCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
+	//		if decErr != nil {
+	//			log.Printf("[controller][user][FetchUserInfoByIdentifier] - error decrypting deezer credentials: %v", err)
+	//			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not decrypt deezer credentials")
+	//		}
+	//
+	//		var cred blueprint.IntegrationCredentials
+	//		cErr := json.Unmarshal(credBytes, &cred)
+	//		if cErr != nil {
+	//			log.Printf("[controller][user][FetchUserInfoByIdentifier] - error unmarshalling deezer credentials: %v", err)
+	//			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not unmarshal deezer credentials")
+	//		}
+	//
+	//		accessToken, err := util.Decrypt(user.RefreshToken, []byte(os.Getenv("ENCRYPTION_SECRET")))
+	//		if err != nil {
+	//			log.Printf("[controller][user][FetchUserInfoByIdentifier] - error decrypting deezer access token: %v", err)
+	//			return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not decrypt deezer access token")
+	//		}
+	//
+	//		deezerService := deezer.NewService(&cred, u.DB, u.Redis, app, webhookSender)
+	//
+	//		deezerInfo, err := deezerService.FetchUserInfo(string(accessToken))
+	//		if err != nil {
+	//			log.Printf("[controller][user][FetchUserInfoByIdentifier] - error fetching deezer user info: %v", err)
+	//			continue
+	//		}
+	//		userInfo.Deezer = deezerInfo
+	//	}
+	//}
+	//
+	//log.Printf("[controller][user][FetchUserInfoByIdentifier] - user info fetched successfully")
+	//return util.SuccessResponse(ctx, http.StatusOK, userInfo)
 
-	// decode the identifier
-	identifier, err := url.QueryUnescape(i)
-	if err != nil {
-		log.Printf("[controller][user][FetchUserInfoByIdentifier] - error decoding identifier: might be not be url encoded. %v", err)
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid identifier")
-	}
-
-	// check if the identifier is a valid uuid
-	isUUID := util.IsValidUUID(identifier)
-	parsedEmail, err := mail.ParseAddress(identifier)
-	if err != nil {
-		log.Printf("[controller][user][FetchUserInfoByIdentifier][warning] could not parse identifier as email. might be uuid identifier instead: %v", err)
-	}
-
-	isValidEmail := parsedEmail != nil
-	if !isUUID && !isValidEmail {
-		log.Printf("[controller][user][FetchUserInfoByIdentifier] - invalid identifier. Please pass a valid Orchdio ID or email")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "invalid identifier", "Please pass a valid Orchdio ID or email")
-	}
-
-	database := db.NewDB{DB: u.DB}
-	userProfile, err := database.FetchUserByIdentifier(identifier, app.UID.String())
-	if err != nil {
-		log.Printf("[controller][user][FetchUserInfoByIdentifier] - error fetching user info: %v", err)
-		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not fetch user info")
-	}
-
-	// for each of the response, depending on the platform, we want to make a request to the endpoint of the platform
-	// to get the user info
-	// this is why we return an array of blueprint.UserInfo. This is because we can get the platforms the users have authorized
-	// for this application and then perform the action we want. if the user does not have this, we can return a good error response, for example.
-	var userInfo blueprint.UserInfo
-	for _, user := range *userProfile {
-		userInfo.Email = user.Email
-		userInfo.ID = user.UserID
-		switch user.Platform {
-		case spotify.IDENTIFIER:
-			// decrypt the spotify credentials for this app
-			log.Printf("decrypting %s's spotify refresh token", user.Username)
-			credBytes, err := util.Decrypt(app.SpotifyCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
-			if err != nil {
-				log.Printf("[controller][user][FetchUserInfoByIdentifier] - error decrypting spotify credentials: %v", err)
-				return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not decrypt spotify credentials")
-			}
-
-			var cred blueprint.IntegrationCredentials
-			err = json.Unmarshal(credBytes, &cred)
-			if err != nil {
-				log.Printf("[controller][user][FetchUserInfoByIdentifier] - error unmarshalling spotify credentials: %v", err)
-				return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not unmarshal spotify credentials")
-			}
-
-			// decrypt the user access token
-			accessToken, err := util.Decrypt(user.RefreshToken, []byte(os.Getenv("ENCRYPTION_SECRET")))
-			if err != nil {
-				log.Printf("[controller][user][FetchUserInfoByIdentifier] - error decrypting spotify access token: %v", err)
-				return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not decrypt spotify access token")
-			}
-			log.Printf("[controller][user][FetchUserInfoByIdentifier] - User's access token is %s", string(accessToken))
-
-			spotifyService := spotify.NewService(&cred, u.DB, u.Redis, app)
-			spotifyInfo, serviceErr := spotifyService.FetchUserInfo(string(accessToken))
-			if serviceErr != nil {
-				log.Printf("[controller][user][FetchUserInfoByIdentifier	] - error fetching spotify user info: %v", serviceErr)
-				continue
-			}
-			userInfo.Spotify = spotifyInfo
-
-		case deezer.IDENTIFIER:
-			// decrypt the deezer credentials for this app
-			log.Printf("decrypting %s's deezer refresh token", user.Username)
-			credBytes, decErr := util.Decrypt(app.DeezerCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
-			if decErr != nil {
-				log.Printf("[controller][user][FetchUserInfoByIdentifier] - error decrypting deezer credentials: %v", err)
-				return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not decrypt deezer credentials")
-			}
-
-			var cred blueprint.IntegrationCredentials
-			cErr := json.Unmarshal(credBytes, &cred)
-			if cErr != nil {
-				log.Printf("[controller][user][FetchUserInfoByIdentifier] - error unmarshalling deezer credentials: %v", err)
-				return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not unmarshal deezer credentials")
-			}
-
-			accessToken, err := util.Decrypt(user.RefreshToken, []byte(os.Getenv("ENCRYPTION_SECRET")))
-			if err != nil {
-				log.Printf("[controller][user][FetchUserInfoByIdentifier] - error decrypting deezer access token: %v", err)
-				return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not decrypt deezer access token")
-			}
-
-			deezerService := deezer.NewService(&cred, u.DB, u.Redis, app)
-
-			deezerInfo, err := deezerService.FetchUserInfo(string(accessToken))
-			if err != nil {
-				log.Printf("[controller][user][FetchUserInfoByIdentifier] - error fetching deezer user info: %v", err)
-				continue
-			}
-			userInfo.Deezer = deezerInfo
-		}
-	}
-
-	log.Printf("[controller][user][FetchUserInfoByIdentifier] - user info fetched successfully")
-	return util.SuccessResponse(ctx, http.StatusOK, userInfo)
+	return util.ErrorResponse(ctx, http.StatusNotImplemented, "not implemented", "not implemented")
 }
 
 func (u *UserController) ResetPassword(ctx *fiber.Ctx) error {

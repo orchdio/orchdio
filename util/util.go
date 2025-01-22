@@ -3,6 +3,7 @@ package util
 // THIS CODE IS JUST A MODIFIED COPY/PASTE VERSION OF THIS:
 // https://github.com/gtank/cryptopasta/blob/master/encrypt.go
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
@@ -13,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
@@ -419,7 +421,6 @@ func ExtractTitle(text string) blueprint.ExtractedTitleInfo {
 
 	// Check if the title was matched
 	if len(matches) < 2 {
-		fmt.Printf("Error: Could not extract title from track title string: %v\n", text)
 		// Return a fallback to the original title and an empty array of artists
 		res := blueprint.ExtractedTitleInfo{
 			Title:   strings.Trim(text, "[] "),
@@ -525,4 +526,69 @@ func FetchIdentifierOption(identifier string) (bool, []byte) {
 		opt = "email"
 	}
 	return true, []byte(opt)
+}
+
+// SumUpResultLength sums up the length of all the tracks in a slice of TrackSearchResult
+func SumUpResultLength(tracks *[]blueprint.TrackSearchResult) int {
+	if tracks == nil {
+		return 0
+	}
+
+	var length int
+	for _, track := range *tracks {
+		length += track.DurationMilli
+	}
+	return length
+}
+
+func FormatPlaylistTrackByCacheKeyID(platform, trackID string) string {
+	return fmt.Sprintf("%s:track:%s", platform, trackID)
+}
+
+// fixme: perhaps pass "artists" and join
+
+func FormatTargetPlaylistTrackByCacheKeyTitle(platform, artist string, title string) string {
+	return fmt.Sprintf("%s:track:titleartist%s:%s", platform, artist, title)
+}
+
+func FormatPlatformConversionCacheKey(playlistID, platform string) string {
+	return fmt.Sprintf("%s:playlist:%s", platform, playlistID)
+}
+
+func FormatPlatformPlaylistSnapshotID(platform, playlistID string) string {
+	return fmt.Sprintf("%s:snapshot:%s", platform, playlistID)
+}
+
+func CacheTrackByID(track *blueprint.TrackSearchResult, red *redis.Client, identifier string) bool {
+	key := FormatPlaylistTrackByCacheKeyID(identifier, track.ID)
+	value, err := json.Marshal(track)
+	if err != nil {
+		log.Printf("ERROR [services][spotify][CachePlaylistTracksWithID] json.Marshal error: %v\n", err)
+		return false
+	}
+
+	// fixme(note): setting without expiry
+	mErr := red.Set(context.Background(), key, value, 0).Err()
+	if mErr != nil {
+		log.Printf("ERROR [services][spotify][CachePlaylistTracksWithID] Set error: %v\n", mErr)
+		return false
+	}
+	return true
+}
+
+func CacheTrackByArtistTitle(track *blueprint.TrackSearchResult, red *redis.Client, identifier string) bool {
+	key := FormatTargetPlaylistTrackByCacheKeyTitle(identifier, track.Artists[0], track.Title)
+	value, err := json.Marshal(track)
+	if err != nil {
+		log.Printf("ERROR [services][spotify][CachePlaylistTracksWithID] json.Marshal error: %v\n", err)
+		return false
+	}
+
+	// fixme(note): setting without expiry
+	mErr := red.Set(context.Background(), key, value, 0).Err()
+	if mErr != nil {
+		log.Printf("ERROR [services][spotify][CachePlaylistTracksWithID] Set error: %v\n", err)
+		return false
+	}
+	return true
 }

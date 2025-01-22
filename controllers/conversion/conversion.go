@@ -81,7 +81,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not deserialize task result")
 		}
 
-		result := &blueprint.TaskResponse{
+		result := &blueprint.PlaylistTaskResponse{
 			ID:      taskId,
 			Status:  taskRecord.Status,
 			Payload: res,
@@ -100,7 +100,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		}
 
 		// create a new task response
-		result := &blueprint.TaskResponse{
+		result := &blueprint.PlaylistTaskResponse{
 			ID:      taskId,
 			Status:  taskRecord.Status,
 			Payload: res,
@@ -118,7 +118,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		}
 
 		if res.Meta.URL == "" {
-			taskResponse := &blueprint.TaskResponse{
+			taskResponse := &blueprint.PlaylistTaskResponse{
 				ID:      taskId,
 				Payload: nil,
 				Status:  "pending",
@@ -127,7 +127,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		}
 
 		res.Meta.Entity = "playlist"
-		taskResponse := &blueprint.TaskResponse{
+		taskResponse := &blueprint.PlaylistTaskResponse{
 			ID:      taskUUID.String(),
 			Payload: res,
 			Status:  taskRecord.Status,
@@ -137,7 +137,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 	}
 
 	if taskRecord.Status == "pending" {
-		taskResponse := &blueprint.TaskResponse{
+		taskResponse := &blueprint.PlaylistTaskResponse{
 			ID:      taskId,
 			Payload: nil,
 			Status:  "pending",

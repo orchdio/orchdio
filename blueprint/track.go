@@ -5,17 +5,24 @@ type OmittedTracks struct {
 	Title    string   `json:"title"`
 	URL      string   `json:"url"`
 	Artistes []string `json:"artistes"`
+	Platform string   `json:"platform,omitempty"`
+	Index    int      `json:"index,omitempty"`
 }
 
+// TrackConversion represents the final response for a typical track conversion
 type TrackConversion struct {
 	Entity    string `json:"entity"`
 	Platforms struct {
-		Deezer     TrackSearchResult `json:"deezer"`
-		Spotify    TrackSearchResult `json:"spotify"`
-		Tidal      TrackSearchResult `json:"tidal"`
-		Ytmusic    TrackSearchResult `json:"ytmusic"`
-		Applemusic TrackSearchResult `json:"applemusic"`
+		Deezer     *TrackSearchResult `json:"deezer,omitempty"`
+		Spotify    *TrackSearchResult `json:"spotify,omitempty"`
+		Tidal      *TrackSearchResult `json:"tidal,omitempty"`
+		YTMusic    *TrackSearchResult `json:"ytmusic,omitempty"`
+		AppleMusic *TrackSearchResult `json:"applemusic,omitempty"`
 	} `json:"platforms"`
+	// shortURL is the same as taskId. also adding shortURL here because it's easier
+	// and (probably) makes more sense for the track conversion payload to carry it itself
+	// for easier integration.
+	UniqueID string `json:"unique_id,omitempty"`
 }
 
 // TrackSearchResult represents a single search result for a platform.
@@ -39,6 +46,10 @@ type TrackSearchData struct {
 	Title   string   `json:"title"`
 	Artists []string `json:"artists"`
 	Album   string   `json:"album"`
+	Meta    struct {
+		HasPlaylist bool   `json:"has_playlist"`
+		PlaylistID  string `json:"playlist_id"`
+	}
 }
 
 // PlatformSearchTrack represents the key-value parameter passed

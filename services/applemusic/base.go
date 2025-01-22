@@ -30,6 +30,12 @@ type Service struct {
 	PgClient          *sqlx.DB
 }
 
+type PlatformService interface {
+	SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResult, error)
+	SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error)
+	//SearchPlaylistWithTracks(searchResult *blueprint.PlaylistSearchResult) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks, error)
+}
+
 func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client, devApp *blueprint.DeveloperApp) *Service {
 	return &Service{
 		// this is the equivalent of the team id
@@ -226,11 +232,14 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*
 	}
 
 	// send webhook event
-	svixInstance := svixwebhook.New(os.Getenv("SVIX_WEBHOOK_SECRET"), false)
+	svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
 	payload := &blueprint.PlaylistConversionEventTrack{
-		Platform: IDENTIFIER,
-		Track:    track,
+		EventType: blueprint.PlaylistConversionTrackEvent,
+		Platform:  IDENTIFIER,
+		TaskId:    searchData.Meta.PlaylistID,
+		Track:     track,
 	}
+
 	ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, payload)
 	if !ok {
 		log.Printf("[services][applemusic][SearchTrackWithTitle] Could not send webhook event\n")
@@ -302,7 +311,6 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResult, error) {
 	tp := applemusic.Transport{Token: s.IntegrationAPIKey}
 	client := applemusic.NewClient(tp.Client())
-	playlist := &blueprint.PlaylistSearchResult{}
 	duration := 0
 
 	var tracks []blueprint.TrackSearchResult
@@ -423,6 +431,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 			Preview: "",
 			Owner:   playlistData.Attributes.CuratorName,
 			Cover:   playlistCover,
+			ID:      playlistData.Id,
 		}
 		return &result, nil
 	}
@@ -478,7 +487,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 		return nil, err
 	}
 
-	playlist = &blueprint.PlaylistSearchResult{
+	playlist := &blueprint.PlaylistSearchResult{
 		Title:   playlistData.Attributes.Name,
 		Tracks:  tracks,
 		URL:     playlistData.Attributes.URL,
@@ -486,6 +495,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 		Preview: "",
 		Owner:   playlistData.Attributes.CuratorName,
 		Cover:   playlistCover,
+		ID:      playlistData.Id,
 	}
 
 	log.Printf("[services][applemusic][SearchPlaylistWithID] Done fetching playlist tracks: %v\n", playlist)

@@ -15,12 +15,12 @@ type PlaylistSearchResult struct {
 	Preview string              `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
 	Owner   string              `json:"owner,omitempty"`
 	Cover   string              `json:"cover"`
+	ID      string              `json:"id"`
 }
 
 type PlatformPlaylistTrackResult struct {
-	Tracks        *[]TrackSearchResult `json:"tracks"`
-	Length        int                  `json:"length"`
-	OmittedTracks *[]OmittedTracks     `json:"empty_tracks,omitempty"`
+	Tracks *[]TrackSearchResult `json:"tracks"`
+	Length int                  `json:"length"`
 }
 
 // PlaylistConversion represents the final response for a typical playlist conversion
@@ -31,7 +31,8 @@ type PlaylistConversion struct {
 		Tidal      *PlatformPlaylistTrackResult `json:"tidal,omitempty"`
 		AppleMusic *PlatformPlaylistTrackResult `json:"applemusic,omitempty"`
 	} `json:"platforms,omitempty"`
-	Meta PlaylistMetadata `json:"meta,omitempty"`
+	OmittedTracks *[]OmittedTracks `json:"empty_tracks,omitempty"`
+	Meta          PlaylistMetadata `json:"meta,omitempty"`
 }
 
 type PlaylistMetadata struct {
@@ -46,13 +47,17 @@ type PlaylistMetadata struct {
 }
 
 type PlaylistConversionEventMetadata struct {
-	Platform string            `json:"platform"`
-	Meta     *PlaylistMetadata `json:"meta"`
+	EventType string            `json:"event_type" default:"playlist_conversion_metadata"`
+	Platform  string            `json:"platform"`
+	TaskId    string            `json:"task_id"`
+	Meta      *PlaylistMetadata `json:"meta"`
 }
 
 type PlaylistConversionEventTrack struct {
-	Platform string             `json:"platform"`
-	Track    *TrackSearchResult `json:"track"`
+	EventType string             `json:"event_type" default:"playlist_conversion_track"`
+	Platform  string             `json:"platform"`
+	TaskId    string             `json:"task_id"`
+	Track     *TrackSearchResult `json:"track"`
 }
 
 type PlaylistFollow struct {

@@ -304,10 +304,10 @@ func main() {
 			//r
 			// get the PID of the asynq server and send it a kill signal to OS
 			// this is a hacky way to kill the asynq server
-			queueServer, err := inspector.Servers()
-			if err != nil {
-				log.Printf("Error getting queue server %v", err)
-				return err
+			queueServer, insErr := inspector.Servers()
+			if insErr != nil {
+				log.Printf("Error getting queue server %v", insErr)
+				return iErr
 			}
 
 			// make sure we have a queue server
@@ -429,8 +429,12 @@ func main() {
 
 	// entity and task related controllers.
 	// entity is the type of action the user is trying to do. for example. converting a deezer link to tidal
-	orchRouter.Post("/entity/convert", authMiddleware.AddReadOnlyDeveloperToContext,
-		middleware.ExtractLinkInfoFromBody, platformsControllers.ConvertEntity)
+	orchRouter.Post("/playlist/convert", authMiddleware.AddReadOnlyDeveloperToContext,
+		middleware.ExtractLinkInfoFromBody, platformsControllers.ConvertPlaylist)
+
+	/// handler for track conversions.
+	// todo: move implementation of track only related code to the controller attached to this.
+	orchRouter.Post("/track/convert", authMiddleware.AddReadOnlyDeveloperToContext, middleware.ExtractLinkInfoFromBody, platformsControllers.ConvertTrack)
 	// a task is a single conversion job or a "self-contained instance" of a typical conversion.
 	// it includes information on what platform the user is converting from, to, and other necessary info.
 	orchRouter.Get("/task/:taskId", authMiddleware.AddReadOnlyDeveloperToContext, conversionController.GetPlaylistTask)

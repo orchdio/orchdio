@@ -179,7 +179,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 	// but for now, if a playlist conversion fails, it fails. In the frontend, the user will most likely retry anyway and that means
 	// calling the endpoint again, which will create a new task.
 	if cErr != nil {
-		log.Printf("[queue][EnqueueTask] - error converting playlist: %v", err)
+		log.Printf("[queue][EnqueueTask] - error converting playlist: %v", cErr)
 		status = blueprint.TaskStatusFailed
 		// this is for when for example, apple music returns Not Found for a playlist thats visible but not public. (needs citation)
 		if errors.Is(cErr, blueprint.EnoResult) {
@@ -224,7 +224,7 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 		payload := blueprint.TaskErrorPayload{
 			Platform: info.Platform,
 			Status:   blueprint.TaskStatusFailed,
-			Error:    err.Error(),
+			Error:    cErr.Error(),
 			Message:  "An error occurred while converting the playlist",
 		}
 

@@ -19,6 +19,7 @@ import (
 	"orchdio/services/tidal"
 	"orchdio/services/ytmusic"
 	"orchdio/util"
+	svixwebhook "orchdio/webhooks/svix"
 	"os"
 	"strings"
 )
@@ -342,12 +343,14 @@ func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId, appI
 	// to the platform's api
 	var entitySnapshot string
 	var platformBytes []byte
+
+	webhookSender := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
 	if lo.Contains(supportedEntities, entity) {
 		switch platform {
 		// TODO: implement other platforms
 		case "spotify":
 			log.Printf("[follow][FetchPlaylistHash] - checking if playlist has been updated")
-			spotifyService := spotify.NewService(&creds, s.DB, s.Red, app)
+			spotifyService := spotify.NewService(&creds, s.DB, s.Red, app, webhookSender)
 			// fixme: there is a bug here. we need to pass the user's auth token to the fetchplaylisthash function
 			// 		question is: how do we get the user's auth token in this case? unless whenever we run this function,
 			// 		we let it run in the context of an authed user request, so that way we can always get the user's auth token

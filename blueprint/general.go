@@ -150,25 +150,14 @@ type Pagination struct {
 	Platform string `json:"platform"`
 }
 
-// Conversion represents the final response for a typical track conversion
-type Conversion struct {
-	Entity    string `json:"entity"`
-	Platforms struct {
-		Deezer     *TrackSearchResult `json:"deezer,omitempty"`
-		Spotify    *TrackSearchResult `json:"spotify,omitempty"`
-		Tidal      *TrackSearchResult `json:"tidal,omitempty"`
-		YTMusic    *TrackSearchResult `json:"ytmusic,omitempty"`
-		AppleMusic *TrackSearchResult `json:"applemusic,omitempty"`
-	} `json:"platforms"`
-	ShortURL string `json:"short_url,omitempty"`
-}
-
 type NewTask struct {
 	ID string `json:"task_id"`
 }
 
-type TaskResponse struct {
-	ID      string      `json:"task_id,omitempty"`
+type PlaylistTaskResponse struct {
+	ID string `json:"task_id,omitempty"`
+	// payload would be the main payload of whatever entity is returning this
+	// for now, we have playlist and tracks.
 	Payload interface{} `json:"payload"`
 	Status  string      `json:"status,omitempty"`
 }

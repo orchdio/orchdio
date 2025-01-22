@@ -14,6 +14,10 @@ type SvixWebhook struct {
 	Client    *svix.Svix
 }
 
+//type WebhookProvider interface {
+//	SendTrackEvent(appId string, payload *blueprint.PlaylistConversionEventTrack) bool
+//}
+
 func New(authToken string, debug bool) *SvixWebhook {
 	c := svix.New(authToken, &svix.SvixOptions{
 		Debug: debug,
@@ -25,13 +29,14 @@ func New(authToken string, debug bool) *SvixWebhook {
 	}
 }
 
-func (s *SvixWebhook) CreateApp(name string) (*svix.ApplicationOut, error) {
+func (s *SvixWebhook) CreateApp(name, uid string) (*svix.ApplicationOut, error) {
 	loggerOpts := &blueprint.OrchdioLoggerOptions{}
 	logger := xlogger.NewZapSentryLogger(loggerOpts)
 
 	// todo: configure application options, including context argument (and other places using ctx)
 	whApp, err := s.Client.Application.Create(context.TODO(), &svix.ApplicationIn{
 		Name: name,
+		Uid:  &uid,
 	})
 
 	if err != nil {
@@ -42,11 +47,11 @@ func (s *SvixWebhook) CreateApp(name string) (*svix.ApplicationOut, error) {
 	return whApp, err
 }
 
-func (s *SvixWebhook) GetApp(name string) (*svix.ApplicationOut, error) {
+func (s *SvixWebhook) GetApp(appId string) (*svix.ApplicationOut, error) {
 	loggerOpts := &blueprint.OrchdioLoggerOptions{}
 	logger := xlogger.NewZapSentryLogger(loggerOpts)
 
-	whApp, err := s.Client.Application.Get(context.TODO(), name)
+	whApp, err := s.Client.Application.Get(context.TODO(), appId)
 	if err != nil {
 		logger.Error("[webhooks][svix-webhook] error - could not get svix app.")
 		return nil, err
@@ -185,13 +190,15 @@ func FormatSvixEndpointUID(devAppId string) string {
 	return fmt.Sprintf("endpoint_%s", devAppId)
 }
 
+func FormatSvixAppUID(devAppId string) string {
+	return fmt.Sprintf("orch_app_%s", devAppId)
+}
+
 func (s *SvixWebhook) SendTrackEvent(appId string, out *blueprint.PlaylistConversionEventTrack) bool {
-	whResponse, whErr := s.SendEvent(appId, blueprint.PlaylistConversionTrackEvent, out)
+	_, whErr := s.SendEvent(appId, blueprint.PlaylistConversionTrackEvent, out)
 	if whErr != nil {
 		log.Printf("\n[services] error - Could not send webhook event: %v\n", whErr)
 		return false
 	}
-	// for debugging only for now
-	log.Printf("[services][applemusic][SearchTrackWithTitle] Webhook response: %v\n", whResponse)
 	return true
 }
