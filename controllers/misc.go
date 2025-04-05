@@ -1,10 +1,11 @@
 package controllers
 
 import (
-	"github.com/gofiber/fiber/v2"
 	"net/http"
 	"orchdio/blueprint"
 	"orchdio/util"
+
+	"github.com/gofiber/fiber/v2"
 )
 
 // TODO: Deprecated remove this

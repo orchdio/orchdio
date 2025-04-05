@@ -3,10 +3,11 @@ package svixwebhook
 import (
 	"context"
 	"fmt"
-	svix "github.com/svix/svix-webhooks/go"
 	"log"
 	"orchdio/blueprint"
 	xlogger "orchdio/logger"
+
+	svix "github.com/svix/svix-webhooks/go"
 )
 
 type SvixWebhook struct {
@@ -111,6 +112,7 @@ func (s *SvixWebhook) UpdateEndpoint(appId, endpointId, endpoint string) (*svix.
 
 	whResponse, err := s.Client.Endpoint.Update(context.TODO(), appId, endpointId, &svix.EndpointUpdate{
 		Url: endpoint,
+		Uid: &endpointId,
 	})
 
 	if err != nil {
@@ -198,6 +200,16 @@ func (s *SvixWebhook) SendTrackEvent(appId string, out *blueprint.PlaylistConver
 	_, whErr := s.SendEvent(appId, blueprint.PlaylistConversionTrackEvent, out)
 	if whErr != nil {
 		log.Printf("\n[services] error - Could not send webhook event: %v\n", whErr)
+		return false
+	}
+	return true
+}
+
+func (s *SvixWebhook) SendPlaylistMetadataEvent(info *blueprint.LinkInfo, result *blueprint.PlaylistConversionEventMetadata) bool {
+	// todo: send playlist conversion metadata event here
+	_, whEventErr := s.SendEvent(info.App, blueprint.PlaylistConversionMetadataEvent, &result)
+	if whEventErr != nil {
+		log.Printf("[internal][platforms][platform_factory]: Could not send playlist conversion metadata event %v", whEventErr)
 		return false
 	}
 	return true

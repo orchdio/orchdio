@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-var DeezerHost = []string{"deezer.page.link", "www.deezer.com"}
+var DeezerHost = []string{"deezer.page.link", "www.deezer.com", "dzr.page.link"}
 
 const (
 	SpotifyHost    = "open.spotify.com"
@@ -136,6 +136,7 @@ type LinkInfo struct {
 	TargetPlatform string `json:"target_platform,omitempty"`
 	App            string `json:"app,omitempty"`
 	Developer      string `json:"developer,omitempty"`
+	TaskID         string `json:"task_id,omitempty"`
 }
 
 type ConversionBody struct {
@@ -259,4 +260,24 @@ type OrchdioLoggerOptions struct {
 	Error                interface{} `json:"error"`
 	Message              string      `json:"message"`
 	AddTrace             bool        `json:"add_trace"`
+}
+
+type PlaylistConversionDoneEventMetadata struct {
+	EventType string `json:"event_type" default:"playlist_conversion_done"`
+	// the unique (orchdio internal) task id for this conversion
+	TaskID string `json:"task_id,omitempty"`
+	// the PlaylistID of the playlist that was converted
+	PlaylistID string `json:"playlist_id"`
+	// the platform that the playlist was converted from
+	SourcePlatform string `json:"source_platform,omitempty"`
+	TargetPlatform string `json:"target_platform,omitempty"`
+}
+
+type PlaylistConversionTrackItem struct {
+	Platform string            `json:"platform"`
+	Item     TrackSearchResult `json:"item"`
+}
+
+type PlaylistTrackConversionResult struct {
+	Items []PlaylistConversionTrackItem `json:"items"`
 }

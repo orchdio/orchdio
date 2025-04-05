@@ -3,7 +3,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"github.com/samber/lo"
 	"log"
 	"orchdio/blueprint"
 	platforminternal "orchdio/internal/platform"
@@ -17,6 +16,9 @@ import (
 	"os"
 	"sort"
 	"sync"
+
+	"github.com/davecgh/go-spew/spew"
+	"github.com/samber/lo"
 )
 
 type Service struct {
@@ -30,10 +32,14 @@ func NewServiceFactory(factory *platforminternal.PlatformServiceFactory) *Servic
 }
 
 type trackJob struct {
-	track  *blueprint.PlatformSearchTrack
-	result *blueprint.TrackSearchResult
-	err    error
-	index  int
+	track          *blueprint.PlatformSearchTrack
+	result         *blueprint.TrackSearchResult
+	err            error
+	index          int
+	platform       string
+	targetPlatform string
+	// original link info. contains entity id and things like that.
+	info *blueprint.LinkInfo
 }
 
 func (pc *Service) ConvertTrack(info *blueprint.LinkInfo) (*blueprint.TrackConversion, error) {
@@ -62,6 +68,9 @@ func (pc *Service) ConvertTrack(info *blueprint.LinkInfo) (*blueprint.TrackConve
 	searchData := &blueprint.TrackSearchData{
 		Title:   srcTrackResult.Title,
 		Artists: srcTrackResult.Artists,
+		Meta: &blueprint.TrackSearchMeta{
+			TaskID: info.EntityID,
+		},
 	}
 
 	if info.TargetPlatform == "all" {
@@ -80,6 +89,7 @@ func (pc *Service) ConvertTrack(info *blueprint.LinkInfo) (*blueprint.TrackConve
 		}
 
 		var toResult []blueprint.TrackSearchResult
+
 		// todo: run this concurrently.
 		for i := range targetPlats {
 			instance := allTargetPlatformServiceFactories[i]
@@ -120,8 +130,96 @@ func (pc *Service) ConvertTrack(info *blueprint.LinkInfo) (*blueprint.TrackConve
 		log.Println(ppErr)
 		return nil, ppErr
 	}
-
 	return trackConversion, nil
+}
+
+// this is a method similar to AsynqConvertPlaylist except this moves some of the individually implemented
+// playlist conversion flow into the common factory interface. e.g. this method will ensure that when webhook
+// events for track conversions are sent, they are sent as pair of "source" and "target" tracks, to make it easier to
+// implement for clients.
+//
+// AsynqConvertPlaylist
+func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.PlaylistConversion, error) {
+	if info.TargetPlatform == "" {
+		return nil, errors.New("target platform is required")
+	}
+
+	fromService, fErr := pc.factory.GetPlatformService(info.Platform)
+	if fErr != nil {
+		log.Printf("DEBUG: error getting platform service: %v", fErr)
+		return nil, fErr
+	}
+
+	_, tErr := pc.factory.GetPlatformService(info.TargetPlatform)
+	if tErr != nil {
+		log.Printf("DEBUG: error getting platform service: %v", tErr)
+	}
+
+	// idSearchResult, sErr := fromService.SearchPlaylistWithID(info)
+	playlistMeta, sErr := fromService.FetchPlaylistMetaInfo(info)
+	if sErr != nil {
+		log.Printf("[internal][platforms][platform_factory]: %v", sErr)
+		return nil, fmt.Errorf("error searching playlist: %v", sErr)
+	}
+
+	log.Printf("Fetched playlist information, will then do the rest later on for tracks...")
+	spew.Dump(playlistMeta)
+
+	// todo: send meta webhook event here, instead of inside each platform implementation methods.
+	//
+	//
+	// fetch tracks for source platform here.
+	/**
+	Reasoning through the flow:
+		- first, we want to fetch the tracks for the source platform. When fetching each track,
+		the platform will return a track object that is different for each platform. then we convert
+		to a common track object that can be used across platforms.
+
+		so lets say here we want to fetch a spotify playlist,
+		we first get the playlist id, then we fetch the tracks for that playlist.
+
+		We can pass a channel to the method for the spotify platform that returns each of the tracks
+		when we get these track here at this specific point, we can loop through and then
+		search on target platform
+	*/
+
+	resultChan := make(chan blueprint.TrackSearchResult)
+
+	var srcPlaylistTracks []blueprint.TrackSearchResult
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		defer close(resultChan)
+
+		fErr := fromService.FetchTracksForSourcePlatform(info, playlistMeta, resultChan)
+		if fErr != nil {
+			log.Printf("Error fetching tracks... %v\n\n", fErr)
+		}
+	}()
+
+	go func() {
+		for result := range resultChan {
+			log.Println("Here we deal with other track searching and network calls...")
+			srcPlaylistTracks = append(srcPlaylistTracks, result)
+		}
+		wg.Done()
+	}()
+
+	wg.Add(1)
+
+	wg.Wait()
+
+	log.Printf("Finished fetching all tracks...")
+	spew.Dump(srcPlaylistTracks)
+
+	log.Println("Length of tracks from converted playlist is", len(srcPlaylistTracks))
+
+	// todo: cache playlist info in this section...
+
+	return nil, nil
 }
 
 func (pc *Service) AsyncConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.PlaylistConversion, error) {
@@ -140,7 +238,7 @@ func (pc *Service) AsyncConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 		log.Printf("DEBUG: error getting platform service: %v", tErr)
 	}
 
-	idSearchResult, sErr := fromService.SearchPlaylistWithID(info.EntityID)
+	idSearchResult, sErr := fromService.SearchPlaylistWithID(info)
 	if sErr != nil {
 		log.Printf("[internal][platforms][platform_factory]: %v", sErr)
 		return nil, fmt.Errorf("error searching playlist: %v", sErr)
@@ -155,16 +253,23 @@ func (pc *Service) AsyncConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 	// todo: check this, dynamically set it perhaps or remove if negligible advantage
 	result := &blueprint.PlaylistConversion{
 		Meta: blueprint.PlaylistMetadata{
-			Entity: "playlist",
-			URL:    idSearchResult.URL,
-			Title:  idSearchResult.Title,
-			Length: idSearchResult.Length,
-			Owner:  idSearchResult.Owner,
-			Cover:  idSearchResult.Cover,
+			Entity:   "playlist",
+			URL:      idSearchResult.URL,
+			Title:    idSearchResult.Title,
+			Length:   idSearchResult.Length,
+			Owner:    idSearchResult.Owner,
+			Cover:    idSearchResult.Cover,
+			NBTracks: len(idSearchResult.Tracks),
 		},
 	}
 
-	// todo: send playlist conversion metadata event here
+	// var trackItems []*blueprint.PlaylistConversionTrackItem
+	// we can send the track result webhook event here, it contains the source and target platform results
+	// trackItem := &blueprint.PlaylistConversionTrackItem{
+	// 	Item: blueprint.TrackSearchResult{
+	// 		URL:,
+	// 	},
+	// }
 
 	workerCount := 10
 	jobs := make(chan trackJob, workerCount)
@@ -185,7 +290,7 @@ func (pc *Service) AsyncConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 				Artistes: track.Artists,
 				URL:      track.URL,
 				ID:       track.ID,
-			}, index: i}
+			}, index: i, platform: info.Platform, targetPlatform: info.TargetPlatform, info: info}
 		}
 		close(jobs)
 	}()
@@ -222,6 +327,10 @@ func (pc *Service) AsyncConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 			continue
 		}
 
+		// webhookTrackEvent := &blueprint.PlaylistTrackConversionResult{
+		// 	// Items: []blueprint.PlaylistConversionTrackItem,
+		// }
+
 		fetchedResults = append(fetchedResults, *resultByIndex.result)
 	}
 
@@ -246,6 +355,18 @@ func (pc *Service) AsyncConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 	}
 
 	result.OmittedTracks = &omittedResults
+
+	// send conversion event done here.
+	//
+	playlistDoneEventMeta := &blueprint.PlaylistConversionDoneEventMetadata{
+		EventType:      blueprint.PlaylistConversionDoneEvent,
+		TaskID:         info.EntityID,
+		PlaylistID:     info.EntityID,
+		SourcePlatform: info.Platform,
+		TargetPlatform: info.TargetPlatform,
+	}
+
+	pc.factory.WebhookSender.SendEvent(pc.factory.App.WebhookAppID, blueprint.PlaylistConversionDoneEvent, playlistDoneEventMeta)
 	return result, nil
 }
 
@@ -258,18 +379,22 @@ func (pc *Service) asyncPlaylistConversionWorker(sv *platforminternal.PlatformSe
 		result := trackJob{
 			track: job.track,
 			index: job.index,
+			info:  job.info,
 		}
 
 		searchData := blueprint.TrackSearchData{
-			Title:   job.track.Title,
-			Artists: job.track.Artistes,
+			Title:    job.track.Title,
+			Artists:  job.track.Artistes,
+			Platform: job.platform,
+			Meta: &blueprint.TrackSearchMeta{
+				TaskID: job.info.TaskID,
+			},
 		}
 
-		vrr := *sv
-
-		trackR, sErr := vrr.SearchTrackWithTitle(&searchData)
+		platformService := *sv
+		trackR, sErr := platformService.SearchTrackWithTitle(&searchData)
 		if sErr != nil {
-			log.Printf("[internal][platforms][platform_factory]: could not call 'SearchTrackWithTitle' method on target platform service:, %v", sErr)
+			log.Printf("[internal][platforms][platform_factory]: could not convert track data: %s, Platform: %s, Target Platform: %s, Error: %v", spew.Sdump(&searchData), job.platform, job.targetPlatform, sErr)
 			result.err = sErr
 			results <- result
 			continue

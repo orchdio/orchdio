@@ -1,9 +1,10 @@
 package blueprint
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx/types"
-	"time"
 )
 
 // PlaylistSearchResult represents a single playlist result for a platform.
@@ -23,6 +24,12 @@ type PlatformPlaylistTrackResult struct {
 	Length int                  `json:"length"`
 }
 
+// PlaylistMetadataReponse represents the response for a playlist meta info. when a new playlist is being converted
+// this result will be first returned while the conversion is done in background.
+// todo: might need to rename this or consolidate other similar naming to prevent confusion.
+type PlaylistMetadataReponse struct {
+}
+
 // PlaylistConversion represents the final response for a typical playlist conversion
 type PlaylistConversion struct {
 	Platforms struct {
@@ -33,17 +40,22 @@ type PlaylistConversion struct {
 	} `json:"platforms,omitempty"`
 	OmittedTracks *[]OmittedTracks `json:"empty_tracks,omitempty"`
 	Meta          PlaylistMetadata `json:"meta,omitempty"`
+	Status        string           `json:"status,omitempty" default:"pending"`
 }
 
 type PlaylistMetadata struct {
-	Length   string `json:"length"`
-	Title    string `json:"title"`
-	Preview  string `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
-	Owner    string `json:"owner"`
-	Cover    string `json:"cover"`
-	Entity   string `json:"entity"`
-	URL      string `json:"url"`
-	ShortURL string `json:"short_url,omitempty"`
+	Length      string `json:"length"`
+	Title       string `json:"title"`
+	Preview     string `json:"preview,omitempty"` // if no preview, not important to be bothered for now, API doesn't have to show it
+	Owner       string `json:"owner"`
+	Cover       string `json:"cover"`
+	Entity      string `json:"entity"`
+	URL         string `json:"url"`
+	ShortURL    string `json:"short_url,omitempty"`
+	NBTracks    int    `json:"nb_tracks,omitempty"`
+	Description string `json:"description,omitempty"`
+	LastUpdated string `json:"last_updated,omitempty"`
+	Checksum    string `json:"checksum,omitempty"`
 }
 
 type PlaylistConversionEventMetadata struct {

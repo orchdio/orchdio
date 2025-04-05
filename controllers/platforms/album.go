@@ -1,9 +1,10 @@
 package platforms
 
 import (
-	"github.com/gofiber/fiber/v2"
 	"log"
 	"orchdio/util"
+
+	"github.com/gofiber/fiber/v2"
 )
 
 // FetchPlatformAlbums fetches the user's library albums from the specified platform

@@ -1,9 +1,10 @@
 package platforms
 
 import (
-	"github.com/gofiber/fiber/v2"
 	"log"
 	"orchdio/util"
+
+	"github.com/gofiber/fiber/v2"
 )
 
 // FetchTrackListeningHistory fetches the recently played tracks for a user

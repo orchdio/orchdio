@@ -3,12 +3,13 @@ package spotify
 import (
 	"context"
 	"errors"
-	"github.com/savsgio/gotils/strings"
-	"github.com/zmb3/spotify/v2"
-	spotifyauth "github.com/zmb3/spotify/v2/auth"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
+
+	"github.com/orchdio/spotify/v2"
+	spotifyauth "github.com/orchdio/spotify/v2/auth"
+	"github.com/savsgio/gotils/strings"
 )
 
 // FetchAuthURL fetches the auth url

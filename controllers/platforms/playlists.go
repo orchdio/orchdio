@@ -1,10 +1,11 @@
 package platforms
 
 import (
-	"github.com/gofiber/fiber/v2"
 	"log"
 	"net/http"
 	"orchdio/util"
+
+	"github.com/gofiber/fiber/v2"
 )
 
 // AddPlaylistToAccount adds a playlist to a user's account

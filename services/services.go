@@ -5,11 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/badoux/goscraper"
-	"github.com/go-redis/redis/v8"
-	"github.com/jmoiron/sqlx"
-	"github.com/samber/lo"
-	spotifyauth "github.com/zmb3/spotify/v2/auth"
 	"log"
 	"net/url"
 	"orchdio/blueprint"
@@ -22,6 +17,12 @@ import (
 	svixwebhook "orchdio/webhooks/svix"
 	"os"
 	"strings"
+
+	"github.com/badoux/goscraper"
+	"github.com/go-redis/redis/v8"
+	"github.com/jmoiron/sqlx"
+	"github.com/samber/lo"
+	spotifyauth "github.com/zmb3/spotify/v2/auth"
 )
 
 // ExtractLinkInfo extracts a URL from a URL.
@@ -69,15 +70,38 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 	}
 
 	log.Printf("[services][ExtractLinkInfo][info] Parsed URL: %v\n", parsedURL)
+
+	// new parsing logic:
+	// 1. check if its a shortlink. if so, preview and get original link
+	//
+	magicLinkHosts := []string{
+		"deezer.page.link",
+		"link.tospotify.com",
+		"spotify.link",
+		"dzr.page.link",
+	}
+
 	// index of the beginning of useless params/query (aka tracking links) in our link
 	// if there are, then we want to remove them.
 	// however for ytmusic music, the link is actually part of a query param, so we need to
 	// make an exception for that. the link is in the form of: https://music.youtube.com/watch?v=2I3dW2dCBZAJGj5X21E53k&feature=share
 	trailingCharIndex := strings.Index(song, "?")
+
 	// HACK: check if the link is a ytmusic music link
 	isYT := strings.Contains(song, "music.ytmusic.com")
 	if trailingCharIndex != -1 && !isYT {
 		song = song[:trailingCharIndex]
+	}
+
+	isMagicLink := util.ContainsElement(magicLinkHosts, song)
+	if isMagicLink {
+		previewLinkResult, err := goscraper.Scrape(song, 10)
+		if err != nil {
+			log.Printf("Could not scrape shortlink preview: %v", err)
+		}
+
+		parsedURL, _ = url.Parse(previewLinkResult.Preview.Link)
+		song = previewLinkResult.Preview.Link
 	}
 
 	host := parsedURL.Host
@@ -91,31 +115,32 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 	switch host {
 	case util.Find(blueprint.DeezerHost, host):
 		// first, check the type of URL it is. for now, only track.
-		if strings.Contains(song, "deezer.page.link") {
-			// it contains a shortlink.
-			previewResult, err := goscraper.Scrape(song, 10)
-			if err != nil {
-				log.Printf("\n[services][ExtractLinkInfo][error] could not retrieve preview of link: %v", previewResult)
-				return nil, err
-			}
+		// if lo.Contains([]string{"deezer.page.link", "dzr.page.link"}, song) {
+		// 	log.Print("Previewing shortlink detected")
+		// 	// it contains a shortlink.
+		// 	previewResult, err := goscraper.Scrape(song, 10)
+		// 	if err != nil {
+		// 		log.Printf("\n[services][ExtractLinkInfo][error] could not retrieve preview of link: %v", previewResult)
+		// 		return nil, err
+		// 	}
 
-			playlistIndex = strings.Index(previewResult.Preview.Link, "playlist")
-			if playlistIndex != -1 {
-				entityID = previewResult.Preview.Link[playlistIndex+9:]
-				entity = "playlist"
-			} else {
-				trackIndex = strings.Index(previewResult.Preview.Link, "track")
-				entityID = previewResult.Preview.Link[trackIndex+6:]
-			}
+		// 	playlistIndex = strings.Index(previewResult.Preview.Link, "playlist")
+		// 	if playlistIndex != -1 {
+		// 		entityID = previewResult.Preview.Link[playlistIndex+9:]
+		// 		entity = "playlist"
+		// 	} else {
+		// 		trackIndex = strings.Index(previewResult.Preview.Link, "track")
+		// 		entityID = previewResult.Preview.Link[trackIndex+6:]
+		// 	}
+		// } else {
+		// it doesnt contain a preview URL and its a deezer track
+		if playlistIndex != -1 {
+			entityID = song[playlistIndex+9:]
+			entity = "playlist"
 		} else {
-			// it doesnt contain a preview URL and its a deezer track
-			if playlistIndex != -1 {
-				entityID = song[playlistIndex+9:]
-				entity = "playlist"
-			} else {
-				entityID = song[trackIndex+6:]
-			}
+			entityID = song[trackIndex+6:]
 		}
+		// }
 
 		// then we want to return the real URL.
 		linkInfo := &blueprint.LinkInfo{
@@ -147,14 +172,11 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 		return linkInfo, nil
 
 	case blueprint.TidalHost:
-		playlistIndex = strings.Index(song, "playlist")
 		if playlistIndex != -1 {
 			entityID = song[playlistIndex+9:]
-			entity = "playlists"
+			entity = "playlist"
 		} else {
-			trackIndex = strings.Index(song, "track")
 			entityID = song[trackIndex+6:]
-			entity = "tracks"
 		}
 
 		linkInfo := blueprint.LinkInfo{
@@ -243,28 +265,28 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 		// :⚠️ DOES NOT SEEM TO BE IN USE. KEEP AROUND FOR FUTURE REFERENCE.
 		// PAGINATION SUPPORT.
 
-	case "api.spotify.com":
-		log.Printf("\n[servies][s: Track] URL info looks like a playlist pagination.")
-		linkInfo := blueprint.LinkInfo{
-			Platform:   spotify.IDENTIFIER,
-			TargetLink: t,
-			Entity:     "playlists",
-			EntityID:   util.ExtractSpotifyID(t),
-		}
-		log.Printf("\n[debug][🔔] linkfo is: %v\n", linkInfo)
-		return &linkInfo, nil
+	// case "api.spotify.com":
+	// 	log.Printf("\n[servies][s: Track] URL info looks like a playlist pagination.")
+	// 	linkInfo := blueprint.LinkInfo{
+	// 		Platform:   spotify.IDENTIFIER,
+	// 		TargetLink: t,
+	// 		Entity:     "playlists",
+	// 		EntityID:   util.ExtractSpotifyID(t),
+	// 	}
+	// 	log.Printf("\n[debug][🔔] linkfo is: %v\n", linkInfo)
+	// 	return &linkInfo, nil
 
-	case "api.deezer.com":
-		log.Printf("\n[services][Playlists] URL info looks like a deezer playlist pagination")
-		eID := util.ExtractDeezerID(t)
-		log.Printf("\nExtractedID for deezer is: %v\n", eID)
-		linkInfo := blueprint.LinkInfo{
-			Platform:   deezer.IDENTIFIER,
-			TargetLink: t,
-			Entity:     "playlists",
-			EntityID:   eID,
-		}
-		return &linkInfo, nil
+	// case "api.deezer.com":
+	// 	log.Printf("\n[services][Playlists] URL info looks like a deezer playlist pagination")
+	// 	eID := util.ExtractDeezerID(t)
+	// 	log.Printf("\nExtractedID for deezer is: %v\n", eID)
+	// 	linkInfo := blueprint.LinkInfo{
+	// 		Platform:   deezer.IDENTIFIER,
+	// 		TargetLink: t,
+	// 		Entity:     "playlists",
+	// 		EntityID:   eID,
+	// 	}
+	// 	return &linkInfo, nil
 	default:
 		log.Printf("\n[servies][s: Track][error] URL info could not be processed. Might be an invalid link")
 		log.Printf(host)
@@ -401,7 +423,7 @@ func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId, appI
 // BuildScopesExplanation builds a string that explains the scopes that the user is granting access to
 func BuildScopesExplanation(scopes []string, platform string) string {
 	var spotifyScopes = map[string]string{
-		spotifyauth.ScopeUserLibraryRead:           "Access your saved content",
+		spotifyauth.ScopeUserReadPrivate:           "Access your saved content",
 		spotifyauth.ScopePlaylistReadPrivate:       "Access your private playlists",
 		spotifyauth.ScopePlaylistReadCollaborative: "Access your collaborative playlists",
 		spotifyauth.ScopeUserFollowRead:            "Access your followers and who you follow",

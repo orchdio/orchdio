@@ -4,11 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/go-redis/redis/v8"
-	"github.com/jmoiron/sqlx"
-	"github.com/minchao/go-apple-music"
-	"github.com/samber/lo"
-	"github.com/vicanso/go-axios"
 	"log"
 	"net/http"
 	"net/url"
@@ -19,6 +14,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/go-redis/redis/v8"
+	"github.com/jmoiron/sqlx"
+	applemusic "github.com/minchao/go-apple-music"
+	"github.com/samber/lo"
+	"github.com/vicanso/go-axios"
 )
 
 type Service struct {
@@ -28,12 +29,6 @@ type Service struct {
 	App               *blueprint.DeveloperApp
 	RedisClient       *redis.Client
 	PgClient          *sqlx.DB
-}
-
-type PlatformService interface {
-	SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResult, error)
-	SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error)
-	//SearchPlaylistWithTracks(searchResult *blueprint.PlaylistSearchResult) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks, error)
 }
 
 func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client, devApp *blueprint.DeveloperApp) *Service {
@@ -307,17 +302,40 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 	return &results, &omittedTracks, nil
 }
 
+func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlistMeta *blueprint.PlaylistMetadata, result chan blueprint.TrackSearchResult) error {
+	log.Println("Apple music not yet implemented...")
+	return blueprint.ErrNotImplemented
+}
+
+func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.PlaylistMetadata, error) {
+
+	log.Print("Apple music support is disabled for now..")
+	return nil, blueprint.EnoResult
+	// tp := applemusic.Transport{Token: s.IntegrationAPIKey}
+	// client := applemusic.NewClient(tp.Client())
+
+	// log.Printf("[services][applemusic][SearchPlaylistWithID] Fetching playlist tracks: %v\n", info)
+	// playlistId := strings.ReplaceAll(info.EntityID, "/", "")
+	// log.Printf("[services][applemusic][SearchPlaylistWithID] Playlist info: %v\n", playlistId)
+
+	// results, response, err := client.Catalog.GetPlaylist(context.Background(), "us", playlistId, nil)
+	// if err != nil {
+	// 	log.Printf("Error fetching playlist info: %v", err)
+	// 	return nil, err
+	// }
+}
+
 // SearchPlaylistWithID fetches a list of tracks for a playlist and saves the last modified date to redis
-func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResult, error) {
+func (s *Service) SearchPlaylistWithID(info *blueprint.LinkInfo) (*blueprint.PlaylistSearchResult, error) {
 	tp := applemusic.Transport{Token: s.IntegrationAPIKey}
 	client := applemusic.NewClient(tp.Client())
 	duration := 0
 
 	var tracks []blueprint.TrackSearchResult
 
-	log.Printf("[services][applemusic][SearchPlaylistWithID] Fetching playlist tracks: %v\n", id)
-	playlistId := strings.ReplaceAll(id, "/", "")
-	log.Printf("[services][applemusic][SearchPlaylistWithID] Playlist id: %v\n", playlistId)
+	log.Printf("[services][applemusic][SearchPlaylistWithID] Fetching playlist tracks: %v\n", info)
+	playlistId := strings.ReplaceAll(info.EntityID, "/", "")
+	log.Printf("[services][applemusic][SearchPlaylistWithID] Playlist info: %v\n", playlistId)
 	results, response, err := client.Catalog.GetPlaylist(context.Background(), "us", playlistId, nil)
 
 	if err != nil {
@@ -450,6 +468,40 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 		return nil, err
 	}
 
+	svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
+	playlistMeta := &blueprint.PlaylistMetadata{
+		// no length yet. its calculated by adding up all the track lengths in the playlist
+		Length: "",
+		Title:  playlistData.Attributes.Name,
+		// no preview. might be an abstracted implementation in the future.
+		Preview: "",
+
+		// todo: fetch user's orchdio @ and/or id and enrich. might need a specific owner object
+		Owner: playlistData.Attributes.CuratorName,
+		// fixme: possible nil pointer
+		Cover:  playlistData.Attributes.Artwork.URL,
+		Entity: "playlist",
+		URL:    playlistData.Attributes.URL,
+		// no short url here.
+		// todo: try to pass the entity id here
+		ShortURL: info.TaskID,
+		// fixme: this is possibly not the right number of tracks
+		NBTracks: len(playlistData.Relationships.Tracks.Data),
+		// todo: add playlist description. audit the apple music playlist object for this and for the length & other fields
+	}
+
+	ok := svixInstance.SendPlaylistMetadataEvent(info, &blueprint.PlaylistConversionEventMetadata{
+		Platform:  IDENTIFIER,
+		Meta:      playlistMeta,
+		EventType: blueprint.PlaylistConversionMetadataEvent,
+	})
+
+	if !ok {
+		log.Printf("Could not send playlist conversion event")
+	} else {
+		log.Printf("Successfully sent playlist conversion metadata event for applemusic")
+	}
+
 	for _, d := range allTracksRes.Data {
 		singleTrack := d
 		previewURL := ""
@@ -480,8 +532,8 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 		tracks = append(tracks, *track)
 	}
 
-	// save the last updated at to redis under the key "applemusic:playlist:<id>"
-	err = s.RedisClient.Set(context.Background(), fmt.Sprintf("applemusic:playlist:%s", id), playlistData.Attributes.LastModifiedDate, 0).Err()
+	// save the last updated at to redis under the key "applemusic:playlist:<info>"
+	err = s.RedisClient.Set(context.Background(), fmt.Sprintf("applemusic:playlist:%s", info), playlistData.Attributes.LastModifiedDate, 0).Err()
 	if err != nil {
 		log.Printf("[services][applemusic][SearchPlaylistWithID] Error setting last updated at: %v\n", err)
 		return nil, err

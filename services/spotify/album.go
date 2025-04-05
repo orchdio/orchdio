@@ -2,13 +2,14 @@ package spotify
 
 import (
 	"context"
+	"log"
+	"net/url"
+	"orchdio/blueprint"
+
 	"github.com/samber/lo"
 	"github.com/zmb3/spotify/v2"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
 	"golang.org/x/oauth2"
-	"log"
-	"net/url"
-	"orchdio/blueprint"
 )
 
 func (s *Service) FetchLibraryAlbums(refreshToken string) ([]blueprint.LibraryAlbum, error) {
@@ -53,7 +54,7 @@ func (s *Service) FetchLibraryAlbums(refreshToken string) ([]blueprint.LibraryAl
 			Title:       album.Name,
 			URL:         album.ExternalURLs["spotify"],
 			ReleaseDate: album.ReleaseDate,
-			TrackCount:  album.FullAlbum.Tracks.Total,
+			TrackCount:  int(album.FullAlbum.Tracks.Total),
 			Artists: lo.Map(album.Artists, func(artist spotify.SimpleArtist, _ int) string {
 				return artist.Name
 			}),

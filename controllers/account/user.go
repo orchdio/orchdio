@@ -5,13 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-redis/redis/v8"
-	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
-	"github.com/hibiken/asynq"
-	"github.com/jmoiron/sqlx"
-	"github.com/samber/lo"
-	"golang.org/x/crypto/bcrypt"
 	"log"
 	"net/http"
 	"net/mail"
@@ -25,6 +18,14 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/go-redis/redis/v8"
+	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
+	"github.com/jmoiron/sqlx"
+	"github.com/samber/lo"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type UserController struct {

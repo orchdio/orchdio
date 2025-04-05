@@ -19,10 +19,29 @@ type TrackConversion struct {
 		YTMusic    *TrackSearchResult `json:"ytmusic,omitempty"`
 		AppleMusic *TrackSearchResult `json:"applemusic,omitempty"`
 	} `json:"platforms"`
-	// shortURL is the same as taskId. also adding shortURL here because it's easier
+	// UniqueID is the same as taskId. also adding shortURL here because it's easier
 	// and (probably) makes more sense for the track conversion payload to carry it itself
 	// for easier integration.
 	UniqueID string `json:"unique_id,omitempty"`
+}
+
+type TrackPlatform struct {
+	URL string `json:"url"`
+	ID  string `json:"id"`
+}
+
+type TrackMeta struct {
+	URL           string   `json:"url"`
+	Artists       []string `json:"artists"`
+	Released      string   `json:"release_date,omitempty"`
+	Duration      string   `json:"duration"`
+	DurationMilli int      `json:"duration_milli,omitempty"`
+	Explicit      bool     `json:"explicit"`
+	Title         string   `json:"title"`
+	Preview       string   `json:"preview"`
+	Album         string   `json:"album,omitempty"`
+	ID            string   `json:"id"`
+	Cover         string   `json:"cover"`
 }
 
 // TrackSearchResult represents a single search result for a platform.
@@ -42,14 +61,20 @@ type TrackSearchResult struct {
 	Cover         string   `json:"cover"`
 }
 
+type TrackSearchMeta struct {
+	HasPlaylist bool   `json:"has_playlist"`
+	PlaylistID  string `json:"playlist_id"`
+	TaskID      string `json:"task_id,omitempty"`
+}
+
 type TrackSearchData struct {
-	Title   string   `json:"title"`
-	Artists []string `json:"artists"`
-	Album   string   `json:"album"`
-	Meta    struct {
-		HasPlaylist bool   `json:"has_playlist"`
-		PlaylistID  string `json:"playlist_id"`
-	}
+	Title   string           `json:"title"`
+	Artists []string         `json:"artists"`
+	Album   string           `json:"album"`
+	Meta    *TrackSearchMeta `json:"meta"`
+	// the platform we are searching "on".
+	Platform       string `json:"platform,omitempty"`
+	TargetPlatform string `json:"target_platform,omitempty"`
 }
 
 // PlatformSearchTrack represents the key-value parameter passed

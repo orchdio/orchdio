@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-redis/redis/v8"
-	"github.com/raitonoberu/ytmusic"
 	"log"
 	"orchdio/blueprint"
 	"orchdio/util"
 	"strings"
 	"time"
+
+	"github.com/go-redis/redis/v8"
+	"github.com/raitonoberu/ytmusic"
 )
 
 const IDENTIFIER = "ytmusic"
@@ -49,7 +50,17 @@ func NewService(redisClient *redis.Client, devApp *blueprint.DeveloperApp) *Serv
 	}
 }
 
-func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResult, error) {
+func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlistMeta *blueprint.PlaylistMetadata, result chan blueprint.TrackSearchResult) error {
+	log.Println("YTmusic not implemented yet...")
+	return blueprint.ErrNotImplemented
+}
+
+func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.PlaylistMetadata, error) {
+	// todo: implement playlist meta info fetching
+	return nil, nil
+}
+
+func (s *Service) SearchPlaylistWithID(info *blueprint.LinkInfo) (*blueprint.PlaylistSearchResult, error) {
 	// todo: implement playlist searching with id
 	return nil, nil
 }

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/vmihailenco/taskq/v3"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
@@ -27,6 +26,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/vmihailenco/taskq/v3"
 
 	"github.com/antoniodipinto/ikisocket"
 	"github.com/go-redis/redis/v8"
@@ -232,6 +233,9 @@ func main() {
 						log.Printf("[main] [QueueErrorHandler] Error unmarshalling task payload %v", err)
 						return
 					}
+
+					taskData.LinkInfo.TaskID = taskData.TaskID
+
 					log.Printf("[main] [QueueErrorHandler] Queue info %v", queueInfo)
 					if queueInfo.Paused {
 						log.Printf("[main][QueueErrorHandler] Queue is paused")
@@ -251,6 +255,7 @@ func main() {
 							log.Printf("[main][QueueErrorHandler] error - could not unmarshal playlist task data %v", err)
 							return
 						}
+						playlistData.LinkInfo.TaskID = playlistData.TaskID
 						err = playlistQueue.PlaylistHandler(playlistData.TaskID, playlistData.ShortURL, playlistData.LinkInfo, playlistData.App.UID.String())
 						if err != nil {
 							log.Printf("[main][QueueErrorHandler] error - could not retry playlist conversion.. %v", err)

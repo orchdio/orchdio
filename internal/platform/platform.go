@@ -3,8 +3,6 @@ package platform_internal
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/go-redis/redis/v8"
-	"github.com/jmoiron/sqlx"
 	"log"
 	"orchdio/blueprint"
 	"orchdio/services/applemusic"
@@ -15,12 +13,17 @@ import (
 	"orchdio/util"
 	svixwebhook "orchdio/webhooks/svix"
 	"os"
+
+	"github.com/go-redis/redis/v8"
+	"github.com/jmoiron/sqlx"
 )
 
 type PlatformService interface {
-	SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResult, error)
+	SearchPlaylistWithID(info *blueprint.LinkInfo) (*blueprint.PlaylistSearchResult, error)
 	SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error)
 	SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackSearchResult, error)
+	FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.PlaylistMetadata, error)
+	FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlistMeta *blueprint.PlaylistMetadata, result chan blueprint.TrackSearchResult) error
 }
 
 type PlatformServiceFactory struct {

@@ -14,12 +14,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-redis/redis/v8"
-	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v4"
-	"github.com/google/uuid"
-	"github.com/teris-io/shortid"
-	"golang.org/x/text/unicode/norm"
 	"io"
 	"log"
 	"net/mail"
@@ -30,6 +24,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/go-redis/redis/v8"
+	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/uuid"
+	"github.com/teris-io/shortid"
+	"golang.org/x/text/unicode/norm"
 )
 
 // Encrypt encrypts data using 256-bit AES-GCM.  This both hides the content of
@@ -570,7 +571,7 @@ func CacheTrackByID(track *blueprint.TrackSearchResult, red *redis.Client, ident
 	// fixme(note): setting without expiry
 	mErr := red.Set(context.Background(), key, value, 0).Err()
 	if mErr != nil {
-		log.Printf("ERROR [services][spotify][CachePlaylistTracksWithID] Set error: %v\n", mErr)
+		log.Printf("ERROR [services][%s][CachePlaylistTracksWithID] Set error: %v\n", identifier, mErr)
 		return false
 	}
 	return true
@@ -591,4 +592,16 @@ func CacheTrackByArtistTitle(track *blueprint.TrackSearchResult, red *redis.Clie
 		return false
 	}
 	return true
+}
+
+func ContainsElement(collections []string, element string) bool {
+	cpy := collections
+	for _, elem := range cpy {
+		log.Printf("Original: %v, Check: %v", elem, element)
+		if strings.Contains(element, elem) {
+			return true
+		}
+		continue
+	}
+	return false
 }

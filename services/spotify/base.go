@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
 	"log"
 	"net/url"
 	"orchdio/blueprint"
@@ -15,13 +14,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-redis/redis/v8"
 	"github.com/jmoiron/sqlx"
 	"github.com/samber/lo"
 	"github.com/zmb3/spotify/v2"
-	spotifyauth "github.com/zmb3/spotify/v2/auth"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
+
+	spotifyauth "github.com/zmb3/spotify/v2/auth"
 )
 
 // ExtractArtiste retrieves an artiste from a passed string containing something like
@@ -32,13 +33,6 @@ func ExtractArtiste(artiste string) string {
 		return strings.Trim(artiste[:featIndex], " ")
 	}
 	return strings.ReplaceAll(artiste, " ", "")
-}
-
-type PlatformService interface {
-	SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResult, error)
-	//SearchPlaylistWithTracks(searchResult *blueprint.PlaylistSearchResult) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks, error)
-
-	SearchTrackWithTitle(searchData *blueprint.TrackSearchResult) (*blueprint.TrackSearchResult, error)
 }
 
 type Service struct {
@@ -159,6 +153,16 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*
 		if err != nil {
 			log.Printf("\n[services][spotify][base][SearchTrackWithTitle] error - could not unmarshal cached result: %v\n", err)
 			return nil, err
+		}
+
+		ok := s.WebhookSender.SendTrackEvent(s.App.WebhookAppID, &blueprint.PlaylistConversionEventTrack{
+			EventType: blueprint.PlaylistConversionTrackEvent,
+			Platform:  IDENTIFIER,
+			// TaskId: s.RedisClient.HGet(context.Background(), cleanedArtiste, "id").Val(),
+			Track: result,
+		})
+		if !ok {
+			log.Print("[services][platforms][spotify][base][SearchTrackWithTitle] error - could not send track webhook event")
 		}
 		return result, nil
 	}
@@ -290,6 +294,17 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 			Cover:         results.Album.Images[0].URL,
 		}
 
+		ok := s.WebhookSender.SendTrackEvent(s.App.WebhookAppID, &blueprint.PlaylistConversionEventTrack{
+			EventType: blueprint.PlaylistConversionTrackEvent,
+			Platform:  IDENTIFIER,
+			TaskId:    info.EntityID,
+			Track:     &out,
+		})
+
+		if !ok {
+			log.Print("[services][platforms][spotify][base][SearchTrackWithTitle] error - could not send track webhook event")
+		}
+
 		serialized, err := json.Marshal(out)
 		if err != nil {
 			log.Printf("\n[services][spotify][base][SearchTrackWithID] error - could not serialize track: %v\n", err)
@@ -313,10 +328,7 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 	return &deserializedTrack, nil
 }
 
-// SearchPlaylistWithID fetches a playlist and returns a list of tracks and the playlist info with pagination info
-// This function caches each of the tracks in the playlist, the playlist snapshop id in the scheme: "spotify:snapshot:id"
-// and the playlist id in the scheme: "spotify:playlist:id"
-func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResult, error) {
+func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.PlaylistMetadata, error) {
 	token := s.NewAuthToken()
 	if token == nil {
 		log.Printf("\n[services][spotify][base][SearchPlaylistWithID] error - could not fetch token\n")
@@ -325,7 +337,198 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 
 	ctx := context.Background()
 	client := s.NewClient(ctx, token)
-	options := spotify.Fields("description,uri,external_urls,snapshot_id,name,images")
+	options := spotify.Fields("description,uri,external_urls,snapshot_id,name,images,owner,tracks(total,items(track))")
+
+	cacheKey := util.FormatPlatformConversionCacheKey(info.EntityID, IDENTIFIER)
+	_, cacheErr := s.RedisClient.Get(context.Background(), cacheKey).Result()
+
+	if cacheErr != nil && !errors.Is(cacheErr, redis.Nil) {
+		log.Printf("\n[services][SearchPlaylistWithID] error - Could not fetch snapshot id from cache\n")
+		return nil, cacheErr
+	}
+
+	_, snapshotErr := s.RedisClient.Get(context.Background(), util.FormatPlatformPlaylistSnapshotID(IDENTIFIER, info.EntityID)).Result()
+	if snapshotErr != nil && !errors.Is(snapshotErr, redis.Nil) {
+		log.Printf("\n[services][SearchPlaylistWithID] error - Could not fetch snapshot id from cache\n")
+		return nil, snapshotErr
+	}
+
+	playlistInfo, err := client.GetPlaylist(context.Background(), spotify.ID(info.EntityID), options)
+	if err != nil {
+		return nil, err
+	}
+
+	// svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
+	playlistMeta := &blueprint.PlaylistMetadata{
+		// no length yet. its calculated by adding up all the track lengths in the playlist
+		Length: "",
+		Title:  playlistInfo.SimplePlaylist.Name,
+		// no preview. might be an abstracted implementation in the future.
+		Preview: "",
+
+		// todo: fetch user's orchdio @ and/or id and enrich. might need a specific owner object
+		Owner: playlistInfo.Owner.DisplayName,
+		// fixme: possible nil pointer
+		Cover:       playlistInfo.SimplePlaylist.Images[0].URL,
+		Entity:      "playlist",
+		URL:         playlistInfo.ExternalURLs["spotify"],
+		NBTracks:    int(playlistInfo.Tracks.Total),
+		Description: playlistInfo.Description,
+		// similar to deezer, spotify does not have a field that specifies last updated, so we'll use snapshotid
+		// (deezer calls it checksum) to know if the version of the playlist has changed since last we fetched & cached.
+		Checksum: playlistInfo.SnapshotID,
+		// no short url here.
+		// todo: try to pass the entity id here
+		//ShortURL: info.TaskID,
+	}
+
+	// ok := svixInstance.SendPlaylistMetadataEvent(&blueprint.LinkInfo{
+	// 	Platform: IDENTIFIER,
+	// 	EntityID: info.EntityID,
+	// 	App:      s.App.WebhookAppID,
+	// }, &blueprint.PlaylistConversionEventMetadata{
+	// 	Platform:  IDENTIFIER,
+	// 	Meta:      playlistMeta,
+	// 	EventType: blueprint.PlaylistConversionMetadataEvent,
+	// 	TaskId:    info.TaskID,
+	// })
+
+	// if !ok {
+	// 	log.Printf("[internal][platforms][platform_factory]: Could not send playlist conversion metadata event")
+	// } else {
+	// 	log.Printf("Send playlist metadata conversion event to webhook provider for spotify")
+	// }
+
+	return playlistMeta, nil
+}
+
+func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlistMeta *blueprint.PlaylistMetadata, resultChan chan blueprint.TrackSearchResult) error {
+	log.Println("Going to asynchronously fetch the tracks from spotify now and send each result to the channel as they come in")
+
+	token := s.NewAuthToken()
+	if token == nil {
+		log.Printf("\n[services][spotify][base][SearchPlaylistWithID] error - could not fetch token\n")
+		return errors.New("could not fetch token")
+	}
+
+	ctx := context.Background()
+	client := s.NewClient(ctx, token)
+
+	cacheKey := util.FormatPlatformConversionCacheKey(info.EntityID, IDENTIFIER)
+	cachedSnapshot, cacheErr := s.RedisClient.Get(context.Background(), cacheKey).Result()
+
+	if cacheErr != nil && !errors.Is(cacheErr, redis.Nil) {
+		log.Printf("\n[services][SearchPlaylistWithID] error - Could not fetch snapshot id from cache\n")
+		return cacheErr
+	}
+
+	cachedSnapshotID, snapshotErr := s.RedisClient.Get(context.Background(), util.FormatPlatformPlaylistSnapshotID(IDENTIFIER, info.EntityID)).Result()
+	if snapshotErr != nil && !errors.Is(snapshotErr, redis.Nil) {
+		log.Printf("\n[services][SearchPlaylistWithID] error - Could not fetch snapshot id from cache\n")
+		return snapshotErr
+	}
+
+	if cacheErr != nil && errors.Is(cacheErr, redis.Nil) || cachedSnapshotID != playlistMeta.Checksum {
+
+		playlist, cErr := client.GetPlaylistItems(ctx, spotify.ID(info.EntityID))
+		if cErr != nil {
+			log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - Could not fetch playlist from spotify: %v\n", cErr)
+			return cErr
+		}
+		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - playlist fetched from spotify: %v\n", len(playlist.Items))
+
+		maxPages := playlist.Total / 100
+
+		if maxPages == 0 {
+			maxPages = 1
+		}
+
+		var otherItems []spotify.PlaylistItem
+
+		// fetch ALL the pages
+		for page := 1; page <= maxPages; page++ {
+			log.Printf("Fetching for page... %d", page)
+			out := &spotify.PlaylistItemPage{}
+			paginationErr := client.NextPage(ctx, out)
+			if errors.Is(paginationErr, spotify.ErrNoMorePages) {
+				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - No more pages for playlist\n")
+			}
+
+			if !errors.Is(paginationErr, spotify.ErrNoMorePages) {
+				log.Printf("\n[services][spotify][base][SearchPlaylistWithID] error - could not fetch playlist: unexpected error. %v\n", paginationErr)
+				return paginationErr
+			}
+
+			log.Printf("Pagination data")
+			spew.Dump(out)
+
+			// log.Println("Dumping playlist items for debugging...")
+			// spew.Dump(playlist.Items)
+			otherItems = append(otherItems, out.Items...)
+			// playlist.Items = append(playlist.Items, playlist.Items...)
+		}
+
+		log.Printf("All pages fetched & total number from playlistBaseObject is %d\n\n", len(otherItems))
+		log.Println("Appended list from other pages fetched is")
+		spew.Dump(len(playlist.Items))
+
+		for _, track := range playlist.Items {
+			var artistes []string
+			for _, artist := range track.Track.Track.Artists {
+				artistes = append(artistes, artist.Name)
+			}
+
+			// todo: move this to the point where we can update the playlistmeta (in the case of spotify conversion) in the service platform
+			// playlistLength += track.Track.Track.Duration / 1000
+
+			var cover string
+			if len(track.Track.Track.Album.Images) > 0 {
+				cover = track.Track.Track.Album.Images[0].URL
+			}
+
+			trackCopy := blueprint.TrackSearchResult{
+				URL:           track.Track.Track.ExternalURLs["spotify"],
+				Artists:       artistes,
+				Released:      track.Track.Track.Album.ReleaseDate,
+				Duration:      util.GetFormattedDuration(track.Track.Track.Duration / 1000),
+				DurationMilli: track.Track.Track.Duration,
+				Explicit:      track.Track.Track.Explicit,
+				Title:         track.Track.Track.Name,
+				Preview:       track.Track.Track.PreviewURL,
+				Album:         track.Track.Track.Album.Name,
+				ID:            track.Track.Track.ID.String(),
+				Cover:         cover,
+			}
+			resultChan <- trackCopy
+		}
+	}
+
+	playlistResult := blueprint.PlaylistSearchResult{}
+	err := json.Unmarshal([]byte(cachedSnapshot), &playlistResult)
+	if err != nil {
+		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not unmarshal playlist: %v\n", err)
+		return err
+	}
+
+	for _, track := range playlistResult.Tracks {
+		resultChan <- track
+	}
+	return nil
+}
+
+// SearchPlaylistWithID fetches a playlist and returns a list of tracks and the playlist info with pagination info
+// This function caches each of the tracks in the playlist, the playlist snapshop id in the scheme: "spotify:snapshot:id"
+// and the playlist id in the scheme: "spotify:playlist:id"
+func (s *Service) SearchPlaylistWithID(info *blueprint.LinkInfo) (*blueprint.PlaylistSearchResult, error) {
+	token := s.NewAuthToken()
+	if token == nil {
+		log.Printf("\n[services][spotify][base][SearchPlaylistWithID] error - could not fetch token\n")
+		return nil, errors.New("could not fetch token")
+	}
+
+	ctx := context.Background()
+	client := s.NewClient(ctx, token)
+	options := spotify.Fields("description,uri,external_urls,snapshot_id,name,images,owner,tracks(total,items(track))")
 
 	// --id--: 55JFgMW6BkDzIIHA7D3Wwo
 	// --snapshotID--: MixiMzRkNTFkNDJhZTIyOGQ1ZWViZTFjYWI4OTIxMDdiNWE2ZTA5OGVm
@@ -333,7 +536,7 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 	// first get the snapshot id from cache. if it exists and its the same as the one in the playlist,
 	// then we want to return the cached data. however, if the snapshot id is different, we want to
 	// fetch the data from the spotify api and cache it.
-	cacheKey := util.FormatPlatformConversionCacheKey(id, IDENTIFIER)
+	cacheKey := util.FormatPlatformConversionCacheKey(info.EntityID, IDENTIFIER)
 	cachedSnapshot, cacheErr := s.RedisClient.Get(context.Background(), cacheKey).Result()
 
 	if cacheErr != nil && !errors.Is(cacheErr, redis.Nil) {
@@ -341,162 +544,190 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 		return nil, cacheErr
 	}
 
-	cachedSnapshotID, snapshotErr := s.RedisClient.Get(context.Background(), util.FormatPlatformPlaylistSnapshotID(IDENTIFIER, id)).Result()
+	cachedSnapshotID, snapshotErr := s.RedisClient.Get(context.Background(), util.FormatPlatformPlaylistSnapshotID(IDENTIFIER, info.EntityID)).Result()
 	if snapshotErr != nil && !errors.Is(snapshotErr, redis.Nil) {
 		log.Printf("\n[services][SearchPlaylistWithID] error - Could not fetch snapshot id from cache\n")
 		return nil, snapshotErr
 	}
 
-	info, err := client.GetPlaylist(context.Background(), spotify.ID(id), options)
+	playlistInfo, err := client.GetPlaylist(context.Background(), spotify.ID(info.EntityID), options)
 	if err != nil {
 		return nil, err
 	}
 
-	log.Printf("DUMPINB SEARCH PLAYLIST SNAPSHOTID")
-	spew.Dump(cachedSnapshotID)
+	svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
+	playlistMeta := &blueprint.PlaylistMetadata{
+		// no length yet. its calculated by adding up all the track lengths in the playlist
+		Length: "",
+		Title:  playlistInfo.SimplePlaylist.Name,
+		// no preview. might be an abstracted implementation in the future.
+		Preview: "",
 
-	if info != nil {
+		// todo: fetch user's orchdio @ and/or id and enrich. might need a specific owner object
+		Owner: playlistInfo.Owner.DisplayName,
+		// fixme: possible nil pointer
+		Cover:       playlistInfo.SimplePlaylist.Images[0].URL,
+		Entity:      "playlist",
+		URL:         playlistInfo.ExternalURLs["spotify"],
+		NBTracks:    int(playlistInfo.Tracks.Total),
+		Description: playlistInfo.Description,
+		// no short url here.
+		// todo: try to pass the entity id here
+		//ShortURL: info.TaskID,
+	}
 
-		if cacheErr != nil && errors.Is(cacheErr, redis.Nil) || cachedSnapshotID != info.SnapshotID {
+	ok := svixInstance.SendPlaylistMetadataEvent(&blueprint.LinkInfo{
+		Platform: IDENTIFIER,
+		EntityID: info.EntityID,
+		App:      s.App.WebhookAppID,
+	}, &blueprint.PlaylistConversionEventMetadata{
+		Platform:  IDENTIFIER,
+		Meta:      playlistMeta,
+		EventType: blueprint.PlaylistConversionMetadataEvent,
+		TaskId:    info.TaskID,
+	})
 
-			playlist, cErr := client.GetPlaylistItems(ctx, spotify.ID(id))
-			if cErr != nil {
-				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - Could not fetch playlist from spotify: %v\n", cErr)
-				return nil, cErr
+	if !ok {
+		log.Printf("[internal][platforms][platform_factory]: Could not send playlist conversion metadata event")
+	} else {
+		log.Printf("Send playlist metadata conversion event to webhook provider for spotify")
+	}
+
+	//if info != nil {
+
+	if cacheErr != nil && errors.Is(cacheErr, redis.Nil) || cachedSnapshotID != playlistInfo.SnapshotID {
+
+		playlist, cErr := client.GetPlaylistItems(ctx, spotify.ID(info.EntityID))
+		if cErr != nil {
+			log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - Could not fetch playlist from spotify: %v\n", cErr)
+			return nil, cErr
+		}
+		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - playlist fetched from spotify: %v\n", len(playlist.Items))
+
+		// fetch ALL the pages
+		for page := 1; ; page++ {
+			out := &spotify.PlaylistItemPage{}
+			paginationErr := client.NextPage(ctx, out)
+
+			spew.Dump("Pagination data is", out)
+			if errors.Is(paginationErr, spotify.ErrNoMorePages) {
+				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - No more pages for playlist\n")
+				break
 			}
-			log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - playlist fetched from spotify: %v\n", len(playlist.Items))
-
-			// fetch ALL the pages
-			for page := 1; ; page++ {
-				out := &spotify.PlaylistItemPage{}
-				paginationErr := client.NextPage(ctx, out)
-				if errors.Is(paginationErr, spotify.ErrNoMorePages) {
-					log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - No more pages for playlist\n")
-					break
-				}
-				if paginationErr != nil {
-					log.Printf("\n[services][spotify][base][SearchPlaylistWithID] error - could not fetch playlist: %v\n", err)
-					return nil, paginationErr
-				}
-				playlist.Items = append(playlist.Items, out.Items...)
+			if paginationErr != nil {
+				log.Printf("\n[services][spotify][base][SearchPlaylistWithID] error - could not fetch playlist: %v\n", err)
+				return nil, paginationErr
 			}
-
-			var tracks []blueprint.TrackSearchResult
-
-			// calculate the duration of the playlist
-			playlistLength := 0
-			for _, track := range playlist.Items {
-				var artistes []string
-				for _, artist := range track.Track.Track.Artists {
-					artistes = append(artistes, artist.Name)
-				}
-
-				playlistLength += track.Track.Track.Duration / 1000
-
-				var cover string
-				if len(track.Track.Track.Album.Images) > 0 {
-					cover = track.Track.Track.Album.Images[0].URL
-				}
-
-				trackCopy := blueprint.TrackSearchResult{
-					URL:           track.Track.Track.ExternalURLs["spotify"],
-					Artists:       artistes,
-					Released:      track.Track.Track.Album.ReleaseDate,
-					Duration:      util.GetFormattedDuration(track.Track.Track.Duration / 1000),
-					DurationMilli: track.Track.Track.Duration,
-					Explicit:      track.Track.Track.Explicit,
-					Title:         track.Track.Track.Name,
-					Preview:       track.Track.Track.PreviewURL,
-					Album:         track.Track.Track.Album.Name,
-					ID:            track.Track.Track.ID.String(),
-					Cover:         cover,
-				}
-
-				// send webhook event to svix
-				svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
-				ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, &blueprint.PlaylistConversionEventTrack{
-					Track:    &trackCopy,
-					Platform: IDENTIFIER,
-				})
-
-				if !ok {
-					log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - Could not send webhook event\n")
-				}
-
-				tracks = append(tracks, trackCopy)
-				// cache the track. the scheme is: "spotify:track_id"
-				trackCacheKey := util.FormatPlaylistTrackByCacheKeyID(IDENTIFIER, track.Track.Track.ID.String())
-				serialized, sErr := json.Marshal(trackCopy)
-				if sErr != nil {
-					log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not serialize track: %v\n", sErr)
-				}
-				pErr := s.RedisClient.Set(context.Background(), trackCacheKey, string(serialized), time.Hour*24).Err()
-				if pErr != nil {
-					log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not cache track: %v\n", pErr)
-				} else {
-					log.Printf("\n[services][spotify][base][FetchPlaylistWithID] success - track %s by %s has been cached\n", trackCopy.Title, trackCopy.Artists[0])
-				}
-			}
-
-			log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - playlist trcaks length: %v\n", len(tracks))
-			// fixme: handle nil value to pointer info
-			playlistResult := blueprint.PlaylistSearchResult{
-				URL:    info.ExternalURLs[IDENTIFIER],
-				Tracks: tracks,
-				Title:  info.Name,
-				Length: util.GetFormattedDuration(playlistLength),
-				Owner:  info.Owner.DisplayName,
-				Cover:  info.Images[0].URL,
-			}
-
-			// update the snapshotID in the cache
-			err = s.RedisClient.Set(context.Background(), util.FormatPlatformPlaylistSnapshotID(IDENTIFIER, id), info.SnapshotID, 0).Err()
-			if err != nil {
-				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not cache snapshot id: %v\n", err)
-			} else {
-				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] success - snapshot id has been cached %s\n", info.SnapshotID)
-			}
-
-			// cache the whole playlist
-			serializedPlaylist, sErr := json.Marshal(playlistResult)
-			if sErr != nil {
-				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not serialize playlist: %v\n", sErr)
-			}
-
-			gErr := s.RedisClient.Set(context.Background(), util.FormatPlatformConversionCacheKey(id, IDENTIFIER), string(serializedPlaylist), 0).Err()
-			if gErr != nil {
-				log.Printf("[services][spotify][base][FetchPlaylistWithID] error - could not cache playlist: %v\n", gErr)
-			}
-
-			return &playlistResult, nil
+			playlist.Items = append(playlist.Items, out.Items...)
 		}
 
-		// if we get here, then the snapshot id is the same as the one in the cache.
-		// we can return the cached data
-		playlistResult := blueprint.PlaylistSearchResult{}
-		err = json.Unmarshal([]byte(cachedSnapshot), &playlistResult)
+		log.Print("Fetched all page.... playlist item length is", len(playlist.Items))
+
+		var tracks []blueprint.TrackSearchResult
+
+		// calculate the duration of the playlist
+		playlistLength := 0
+		for _, track := range playlist.Items {
+			var artistes []string
+			for _, artist := range track.Track.Track.Artists {
+				artistes = append(artistes, artist.Name)
+			}
+
+			playlistLength += track.Track.Track.Duration / 1000
+
+			var cover string
+			if len(track.Track.Track.Album.Images) > 0 {
+				cover = track.Track.Track.Album.Images[0].URL
+			}
+
+			trackCopy := blueprint.TrackSearchResult{
+				URL:           track.Track.Track.ExternalURLs["spotify"],
+				Artists:       artistes,
+				Released:      track.Track.Track.Album.ReleaseDate,
+				Duration:      util.GetFormattedDuration(track.Track.Track.Duration / 1000),
+				DurationMilli: track.Track.Track.Duration,
+				Explicit:      track.Track.Track.Explicit,
+				Title:         track.Track.Track.Name,
+				Preview:       track.Track.Track.PreviewURL,
+				Album:         track.Track.Track.Album.Name,
+				ID:            track.Track.Track.ID.String(),
+				Cover:         cover,
+			}
+
+			// send webhook event to svix
+			ok2 := svixInstance.SendTrackEvent(s.App.WebhookAppID, &blueprint.PlaylistConversionEventTrack{
+				EventType: blueprint.PlaylistConversionTrackEvent,
+				Track:     &trackCopy,
+				Platform:  IDENTIFIER,
+			})
+
+			if !ok2 {
+				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - Could not send webhook event\n")
+			}
+			log.Printf("Sent playlist track convertion event to webhook provider\n")
+
+			tracks = append(tracks, trackCopy)
+
+			// cache the track. the scheme is: "spotify:track_id"
+			trackCacheKey := util.FormatPlaylistTrackByCacheKeyID(IDENTIFIER, track.Track.Track.ID.String())
+			serialized, sErr := json.Marshal(trackCopy)
+			if sErr != nil {
+				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not serialize track: %v\n", sErr)
+			}
+			pErr := s.RedisClient.Set(context.Background(), trackCacheKey, string(serialized), time.Hour*24).Err()
+			if pErr != nil {
+				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not cache track: %v\n", pErr)
+			} else {
+				log.Printf("\n[services][spotify][base][FetchPlaylistWithID] success - track %s by %s has been cached\n", trackCopy.Title, trackCopy.Artists[0])
+			}
+		}
+
+		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - playlist trcaks length: %v\n", len(tracks))
+		// fixme: handle nil value to pointer info
+		playlistResult := blueprint.PlaylistSearchResult{
+			URL:    playlistInfo.ExternalURLs[IDENTIFIER],
+			Tracks: tracks,
+			Title:  playlistInfo.Name,
+			Length: util.GetFormattedDuration(playlistLength),
+			Owner:  playlistInfo.Owner.DisplayName,
+			Cover:  playlistInfo.Images[0].URL,
+		}
+
+		// update the snapshotID in the cache
+		err = s.RedisClient.Set(context.Background(), util.FormatPlatformPlaylistSnapshotID(IDENTIFIER, info.EntityID), playlistInfo.SnapshotID, 0).Err()
 		if err != nil {
-			log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not unmarshal playlist: %v\n", err)
-			return nil, err
+			log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not cache snapshot id: %v\n", err)
+		} else {
+			log.Printf("\n[services][spotify][base][FetchPlaylistWithID] success - snapshot id has been cached %s\n", playlistInfo.SnapshotID)
+		}
+
+		// cache the whole playlist
+		serializedPlaylist, sErr := json.Marshal(playlistResult)
+		if sErr != nil {
+			log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not serialize playlist: %v\n", sErr)
+		}
+
+		gErr := s.RedisClient.Set(context.Background(), util.FormatPlatformConversionCacheKey(info.EntityID, IDENTIFIER), string(serializedPlaylist), 0).Err()
+		if gErr != nil {
+			log.Printf("[services][spotify][base][FetchPlaylistWithID] error - could not cache playlist: %v\n", gErr)
 		}
 
 		return &playlistResult, nil
 	}
 
-	return nil, nil
-}
-
-func (s *Service) sendTrackConversionWebhookEvent(searchData *blueprint.TrackSearchData, trackResult *blueprint.TrackSearchResult) {
-	event := &blueprint.PlaylistConversionEventTrack{
-		EventType: blueprint.PlaylistConversionTrackEvent,
-		Platform:  IDENTIFIER,
-		TaskId:    searchData.Meta.PlaylistID,
-		Track:     trackResult,
+	// if we get here, then the snapshot id is the same as the one in the cache.
+	// we can return the cached data
+	playlistResult := blueprint.PlaylistSearchResult{}
+	err = json.Unmarshal([]byte(cachedSnapshot), &playlistResult)
+	if err != nil {
+		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not unmarshal playlist: %v\n", err)
+		return nil, err
 	}
 
-	if !s.WebhookSender.SendTrackEvent(s.App.WebhookAppID, event) {
-		log.Printf("Failed to send webhook event for track: %s", trackResult.Title)
-	}
+	return &playlistResult, nil
+	//}
+
+	//return nil, nil
 }
 
 func (s *Service) FetchPlaylistHash(token, playlistId string) []byte {
