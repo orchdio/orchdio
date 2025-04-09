@@ -72,6 +72,56 @@ type PlaylistConversionEventTrack struct {
 	Track     *TrackSearchResult `json:"track"`
 }
 
+//	{
+//	 event_type: "track_conversion_event",
+//	 tracks: [
+//			{
+//				event_type: "track_conversion_track",
+//				platform: "spotify",
+//				task_id: "1234567890",
+//				track: {
+//					id: "1234567890",
+//					name: "Track Name",
+//					artist: "Artist Name",
+//					album: "Album Name",
+//					duration: 180,
+//					genres: ["genre1", "genre2"],
+//					popularity: 80,
+//					cover: "https://example.com/cover.jpg",
+//					url: "https://example.com/track.mp3"
+//				}
+//			},
+//			{
+//				event_type: "track_conversion_track",
+//				platform: "spotify",
+//				task_id: "1234567890",
+//				track: {
+//					id: "1234567890",
+//					name: "Track Name",
+//					artist: "Artist Name",
+//					album: "Album Name",
+//					duration: 180,
+//					genres: ["genre1", "genre2"],
+//					popularity: 80,
+//					cover: "https://example.com/cover.jpg",
+//					url: "https://example.com/track.mp3"
+//				}
+//			}
+//
+// ]
+// }
+// PlaylistTrackConversionEventResponse represents the event response sent to webhook when a track in a playlist is converted.
+type PlaylistTrackConversionEventResponse struct {
+	TaskID    string                                `json:"task_id"`
+	EventType string                                `json:"event_type"`
+	Tracks    []PlaylistTrackConversionEventPayload `json:"tracks"`
+}
+
+type PlaylistTrackConversionEventPayload struct {
+	Platform string             `json:"platform"`
+	Track    *TrackSearchResult `json:"track"`
+}
+
 type PlaylistFollow struct {
 	ID        int       `json:"id,omitempty" db:"id"`
 	UID       uuid.UUID `json:"uid,omitempty" db:"uuid"`

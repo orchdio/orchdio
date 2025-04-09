@@ -67,8 +67,7 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (
 	platformsServiceFactory := platforminternal.NewPlatformServiceFactory(pg, red, app, webhookSender)
 	serviceFactory := serviceinternal.NewServiceFactory(platformsServiceFactory)
 
-	// xConversion, aErr := serviceFactory.AsyncConvertPlaylist(info)
-	xConversion, xErr := serviceFactory.AsyncConvertPlaylist(info)
+	xConversion, xErr := serviceFactory.AsynqConvertPlaylist(info)
 	if xErr != nil {
 		return nil, xErr
 	}

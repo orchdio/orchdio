@@ -33,9 +33,10 @@ const (
 // it uses lowercase snake_case because svix, the webhook service used does not allow
 // : as delimiter
 var (
-	PlaylistConversionMetadataEvent = "playlist_conversion_metadata"
-	PlaylistConversionTrackEvent    = "playlist_conversion_track"
-	PlaylistConversionDoneEvent     = "playlist_conversion_done"
+	PlaylistConversionMetadataEvent     = "playlist_conversion_metadata"
+	PlaylistConversionTrackEvent        = "playlist_conversion_track"
+	PlaylistConversionDoneEvent         = "playlist_conversion_done"
+	PlaylistConversionMissingTrackEvent = "playlist_conversion_missing_track"
 )
 
 const (
@@ -271,6 +272,18 @@ type PlaylistConversionDoneEventMetadata struct {
 	// the platform that the playlist was converted from
 	SourcePlatform string `json:"source_platform,omitempty"`
 	TargetPlatform string `json:"target_platform,omitempty"`
+}
+
+type MissingTrackMeta struct {
+	Platform        string            `json:"platform"`
+	MissingPlatform string            `json:"missing_platform"`
+	Item            TrackSearchResult `json:"item"`
+}
+
+type MissingTrackEventPayload struct {
+	EventType string           `json:"event_type" default:"playlist_conversion_missing_track"`
+	TaskID    string           `json:"task_id"`
+	TrackMeta MissingTrackMeta `json:"meta"`
 }
 
 type PlaylistConversionTrackItem struct {

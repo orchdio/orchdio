@@ -27,8 +27,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/vmihailenco/taskq/v3"
-
 	"github.com/antoniodipinto/ikisocket"
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
@@ -48,7 +46,6 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/joho/godotenv"
 	"github.com/robfig/cron/v3"
-	"github.com/vmihailenco/taskq/v3/redisq"
 )
 
 /**
@@ -121,11 +118,6 @@ func main() {
 		panic("Could not connect to redis. Please check your redis configuration.")
 	}
 
-	var QueueFactory = redisq.NewFactory()
-	var playlistQueue = QueueFactory.RegisterQueue(&taskq.QueueOptions{
-		Name:  blueprint.PlaylistConversionQueueName,
-		Redis: redisClient,
-	})
 	asynqMux := asynq.NewServeMux()
 
 	if env == "production" {
@@ -380,7 +372,7 @@ func main() {
 
 	userController := account.NewUserController(db, redisClient, asyncClient, asynqMux)
 	authMiddleware := middleware.NewAuthMiddleware(db)
-	conversionController := conversion.NewConversionController(db, redisClient, playlistQueue, QueueFactory, asyncClient, asynqServer, asynqMux)
+	conversionController := conversion.NewConversionController(db, redisClient, asyncClient, asynqServer, asynqMux)
 	devAppController := developer.NewDeveloperController(db)
 
 	platformsControllers := platforms.NewPlatform(redisClient, db, asyncClient, asynqMux)

@@ -549,7 +549,7 @@ func FormatPlaylistTrackByCacheKeyID(platform, trackID string) string {
 // fixme: perhaps pass "artists" and join
 
 func FormatTargetPlaylistTrackByCacheKeyTitle(platform, artist string, title string) string {
-	return fmt.Sprintf("%s:track:titleartist%s:%s", platform, artist, title)
+	return fmt.Sprintf("%s:track:title-artist-%s:%s", platform, artist, title)
 }
 
 func FormatPlatformConversionCacheKey(playlistID, platform string) string {

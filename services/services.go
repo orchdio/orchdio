@@ -372,18 +372,18 @@ func (s *SyncFollowTask) HasPlaylistBeenUpdated(platform, entity, entityId, appI
 		// TODO: implement other platforms
 		case "spotify":
 			log.Printf("[follow][FetchPlaylistHash] - checking if playlist has been updated")
-			spotifyService := spotify.NewService(&creds, s.DB, s.Red, app, webhookSender)
+			_ = spotify.NewService(&creds, s.DB, s.Red, app, webhookSender)
 			// fixme: there is a bug here. we need to pass the user's auth token to the fetchplaylisthash function
 			// 		question is: how do we get the user's auth token in this case? unless whenever we run this function,
 			// 		we let it run in the context of an authed user request, so that way we can always get the user's auth token
 			//      or we pass the developer credentials (use NewAuthToken on service) and see if it works
 			// 		since it works for normal conversions.
-			ent := string(spotifyService.FetchPlaylistHash("", entityId))
-			if ent == "" {
-				return nil, false, nil, fmt.Errorf("could not get playlist hash")
-			}
-			log.Printf("[follow][FetchPlaylistHash] - playlist hash is: %v", ent)
-			entitySnapshot = ent
+			// ent := string(spotifyService.FetchPlaylistHash("", entityId))
+			// if ent == "" {
+			// 	return nil, false, nil, fmt.Errorf("could not get playlist hash")
+			// }
+			// log.Printf("[follow][FetchPlaylistHash] - playlist hash is: %v", ent)
+			// entitySnapshot = ent
 			log.Printf("[follow][FetchPlaylistHash] - fetched playlist hash from spotify: %v", entitySnapshot)
 			//case "tidal":
 			//	log.Printf("[follow][FetchPlaylistHash] - checking if playlist has been updated")

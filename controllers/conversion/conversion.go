@@ -15,28 +15,23 @@ import (
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
-	"github.com/vmihailenco/taskq/v3"
 )
 
 // Controller is the controller for the conversion service.
 type Controller struct {
 	DB          *sqlx.DB
 	Red         *redis.Client
-	Queue       taskq.Queue
-	Factory     taskq.Factory
 	Asynq       *asynq.Client
 	AsynqServer *asynq.Server
 	AsynqMux    *asynq.ServeMux
 }
 
 // NewConversionController creates a new conversion controller.
-func NewConversionController(db *sqlx.DB, red *redis.Client, queue taskq.Queue, factory taskq.Factory, asynqClient *asynq.Client, asynqserver *asynq.Server, mux *asynq.ServeMux) *Controller {
+func NewConversionController(db *sqlx.DB, red *redis.Client, asynqClient *asynq.Client, asynqserver *asynq.Server, mux *asynq.ServeMux) *Controller {
 
 	res := &Controller{
 		DB:          db,
 		Red:         red,
-		Queue:       queue,
-		Factory:     factory,
 		Asynq:       asynqClient,
 		AsynqServer: asynqserver,
 		AsynqMux:    mux,

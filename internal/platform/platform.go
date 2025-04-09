@@ -19,7 +19,6 @@ import (
 )
 
 type PlatformService interface {
-	SearchPlaylistWithID(info *blueprint.LinkInfo) (*blueprint.PlaylistSearchResult, error)
 	SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error)
 	SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackSearchResult, error)
 	FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.PlaylistMetadata, error)

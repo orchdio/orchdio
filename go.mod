@@ -32,7 +32,6 @@ require (
 	github.com/svix/svix-webhooks v1.44.0
 	github.com/teris-io/shortid v0.0.0-20220617161101-71ec9f2aa569
 	github.com/vicanso/go-axios v1.6.1
-	github.com/vmihailenco/taskq/v3 v3.2.9
 	github.com/zmb3/spotify/v2 v2.2.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.36.0

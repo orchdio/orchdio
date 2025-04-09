@@ -28,11 +28,6 @@ func FetchSingleTrack(id string) (*ytmusic.TrackItem, error) {
 	return result, nil
 }
 
-type PlatformService interface {
-	SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResult, error)
-	SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error)
-}
-
 type Service struct {
 	RedisClient          *redis.Client
 	IntegrationAppSecret string
@@ -60,10 +55,6 @@ func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.Pl
 	return nil, nil
 }
 
-func (s *Service) SearchPlaylistWithID(info *blueprint.LinkInfo) (*blueprint.PlaylistSearchResult, error) {
-	// todo: implement playlist searching with id
-	return nil, nil
-}
 func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error) {
 
 	cleanedArtiste := fmt.Sprintf("ytmusic-%s-%s", util.NormalizeString(searchData.Artists[0]), searchData.Title)

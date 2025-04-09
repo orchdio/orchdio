@@ -14,7 +14,6 @@ import (
 	"orchdio/util"
 	svixwebhook "orchdio/webhooks/svix"
 	"os"
-	"sort"
 	"sync"
 
 	"github.com/davecgh/go-spew/spew"
@@ -150,7 +149,7 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 		return nil, fErr
 	}
 
-	_, tErr := pc.factory.GetPlatformService(info.TargetPlatform)
+	toService, tErr := pc.factory.GetPlatformService(info.TargetPlatform)
 	if tErr != nil {
 		log.Printf("DEBUG: error getting platform service: %v", tErr)
 	}
@@ -162,30 +161,29 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 		return nil, fmt.Errorf("error searching playlist: %v", sErr)
 	}
 
-	log.Printf("Fetched playlist information, will then do the rest later on for tracks...")
-	spew.Dump(playlistMeta)
+	ok := pc.factory.WebhookSender.SendPlaylistMetadataEvent(&blueprint.LinkInfo{
+		Platform: info.Platform,
+		EntityID: info.EntityID,
+		App:      pc.factory.App.WebhookAppID,
+	}, &blueprint.PlaylistConversionEventMetadata{
+		Platform:  info.Platform,
+		Meta:      playlistMeta,
+		EventType: blueprint.PlaylistConversionMetadataEvent,
+		TaskId:    info.TaskID,
+	})
 
-	// todo: send meta webhook event here, instead of inside each platform implementation methods.
-	//
-	//
-	// fetch tracks for source platform here.
-	/**
-	Reasoning through the flow:
-		- first, we want to fetch the tracks for the source platform. When fetching each track,
-		the platform will return a track object that is different for each platform. then we convert
-		to a common track object that can be used across platforms.
-
-		so lets say here we want to fetch a spotify playlist,
-		we first get the playlist id, then we fetch the tracks for that playlist.
-
-		We can pass a channel to the method for the spotify platform that returns each of the tracks
-		when we get these track here at this specific point, we can loop through and then
-		search on target platform
-	*/
+	if !ok {
+		log.Printf("[internal][platforms][platform_factory]: Could not send playlist conversion metadata event")
+	} else {
+		log.Printf("Sent playlist metadata conversion event to webhook provider for %s", info.Platform)
+	}
 
 	resultChan := make(chan blueprint.TrackSearchResult)
 
 	var srcPlaylistTracks []blueprint.TrackSearchResult
+	var targetPlaylistTracks []blueprint.TrackSearchResult
+
+	var omittedTracksMeta []blueprint.MissingTrackEventPayload
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -202,175 +200,116 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 
 	go func() {
 		for result := range resultChan {
-			log.Println("Here we deal with other track searching and network calls...")
+
+			// cache source track
+			ok := util.CacheTrackByArtistTitle(&result, pc.factory.Red, info.Platform)
+			if !ok {
+				log.Printf("[service][AsynqConvertPlaylist][track-result-cache-error] Error caching source playlist track")
+			}
+
+			ok2 := util.CacheTrackByID(&result, pc.factory.Red, info.Platform)
+			if !ok2 {
+				log.Printf("[service][AsynqConvertPlaylist][track-result-cache-error] Error caching source playlist track")
+			}
+
+			searchData := &blueprint.TrackSearchData{
+				Platform: info.TargetPlatform,
+				Title:    result.Title,
+				Artists:  result.Artists,
+				Meta: &blueprint.TrackSearchMeta{
+					TaskID: info.TaskID,
+				},
+			}
+
+			targetPlatformTrack, sErr := toService.SearchTrackWithTitle(searchData)
+			if sErr == blueprint.EnoResult {
+				log.Printf("Error searching track... %v\n\n", sErr)
+				log.Printf("Should add to omitted track here, send omitted track event & then send webhook event for the available track")
+
+				meta := &blueprint.MissingTrackEventPayload{
+					EventType: blueprint.PlaylistConversionMissingTrackEvent,
+					TaskID:    info.TaskID,
+					TrackMeta: blueprint.MissingTrackMeta{
+						Platform:        info.Platform,
+						MissingPlatform: info.TargetPlatform,
+						Item:            result,
+					},
+				}
+
+				mRes, missingWhErr := pc.factory.WebhookSender.SendEvent(pc.factory.App.WebhookAppID, blueprint.PlaylistConversionMissingTrackEvent, meta)
+
+				if missingWhErr != nil {
+					log.Printf("Error sending missing track webhook event... %v\n\n", missingWhErr)
+				}
+
+				log.Printf("Missing playlist track webhook event response is: %v", mRes)
+				omittedTracksMeta = append(omittedTracksMeta, *meta)
+
+				// todo: send omitted track webhook event here, add the track to the omitted tracks list
+				continue
+			}
+
+			// cache target track result
+			ok3 := util.CacheTrackByArtistTitle(targetPlatformTrack, pc.factory.Red, info.TargetPlatform)
+			if !ok3 {
+				log.Printf("[service][AsynqConvertPlaylist][track-result-cache-error] Error caching target playlist track")
+			}
+
+			ok4 := util.CacheTrackByID(targetPlatformTrack, pc.factory.Red, info.TargetPlatform)
+			if !ok4 {
+				log.Printf("[service][AsynqConvertPlaylist][track-result-cache-error] Error caching target playlist track")
+			}
+
+			targetPlaylistTracks = append(targetPlaylistTracks, *targetPlatformTrack)
+			playlistTrackConversionEventData := &blueprint.PlaylistTrackConversionEventResponse{
+				EventType: blueprint.PlaylistConversionTrackEvent,
+				TaskID:    info.TaskID,
+				Tracks: []blueprint.PlaylistTrackConversionEventPayload{
+					{
+						Platform: info.Platform,
+						Track:    &result,
+					},
+					{
+						Platform: info.TargetPlatform,
+						Track:    targetPlatformTrack,
+					},
+				},
+			}
+
+			_, whErr := pc.factory.WebhookSender.SendEvent(pc.factory.App.WebhookAppID, blueprint.PlaylistConversionTrackEvent, playlistTrackConversionEventData)
+			if whErr != nil {
+				log.Printf("Error sending playlist track conversion webhook: %v", whErr)
+			}
+
 			srcPlaylistTracks = append(srcPlaylistTracks, result)
 		}
 		wg.Done()
 	}()
 
 	wg.Add(1)
-
 	wg.Wait()
 
+	_, whErr := pc.factory.WebhookSender.SendEvent(pc.factory.App.WebhookAppID, blueprint.PlaylistConversionDoneEvent, &blueprint.PlaylistConversionDoneEventMetadata{
+		EventType:      blueprint.PlaylistConversionDoneEvent,
+		TaskID:         info.TaskID,
+		PlaylistID:     info.EntityID,
+		SourcePlatform: info.Platform,
+		TargetPlatform: info.TargetPlatform,
+	})
+
+	if whErr != nil {
+		log.Printf("Error sending playlist conversion done webhook: %v", whErr)
+	}
+
+	log.Print("Sent conversion done webhook event")
+
+	log.Printf("Missing tracks are: %v", len(omittedTracksMeta))
+
 	log.Printf("Finished fetching all tracks...")
-	spew.Dump(srcPlaylistTracks)
-
-	log.Println("Length of tracks from converted playlist is", len(srcPlaylistTracks))
-
 	// todo: cache playlist info in this section...
 
 	return nil, nil
 }
-
-func (pc *Service) AsyncConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.PlaylistConversion, error) {
-	if info.TargetPlatform == "" {
-		return nil, errors.New("target platform is required")
-	}
-
-	fromService, fErr := pc.factory.GetPlatformService(info.Platform)
-	if fErr != nil {
-		log.Printf("DEBUG: error getting platform service: %v", fErr)
-		return nil, fErr
-	}
-
-	toService, tErr := pc.factory.GetPlatformService(info.TargetPlatform)
-	if tErr != nil {
-		log.Printf("DEBUG: error getting platform service: %v", tErr)
-	}
-
-	idSearchResult, sErr := fromService.SearchPlaylistWithID(info)
-	if sErr != nil {
-		log.Printf("[internal][platforms][platform_factory]: %v", sErr)
-		return nil, fmt.Errorf("error searching playlist: %v", sErr)
-	}
-
-	// fixme: pay attention here
-	if len(idSearchResult.Tracks) == 0 {
-		log.Printf("[internal][platforms][platform_factory] DEBUG(todo): no tracks found")
-		return nil, nil
-	}
-
-	// todo: check this, dynamically set it perhaps or remove if negligible advantage
-	result := &blueprint.PlaylistConversion{
-		Meta: blueprint.PlaylistMetadata{
-			Entity:   "playlist",
-			URL:      idSearchResult.URL,
-			Title:    idSearchResult.Title,
-			Length:   idSearchResult.Length,
-			Owner:    idSearchResult.Owner,
-			Cover:    idSearchResult.Cover,
-			NBTracks: len(idSearchResult.Tracks),
-		},
-	}
-
-	// var trackItems []*blueprint.PlaylistConversionTrackItem
-	// we can send the track result webhook event here, it contains the source and target platform results
-	// trackItem := &blueprint.PlaylistConversionTrackItem{
-	// 	Item: blueprint.TrackSearchResult{
-	// 		URL:,
-	// 	},
-	// }
-
-	workerCount := 10
-	jobs := make(chan trackJob, workerCount)
-	results := make(chan trackJob, workerCount)
-	var resultsByIndex []trackJob
-	var wg sync.WaitGroup
-
-	wg.Add(workerCount)
-	for i := 0; i < workerCount; i++ {
-		go pc.asyncPlaylistConversionWorker(&toService, jobs, results, &wg)
-	}
-
-	go func() {
-		for i := range idSearchResult.Tracks {
-			track := idSearchResult.Tracks[i]
-			jobs <- trackJob{track: &blueprint.PlatformSearchTrack{
-				Title:    track.Title,
-				Artistes: track.Artists,
-				URL:      track.URL,
-				ID:       track.ID,
-			}, index: i, platform: info.Platform, targetPlatform: info.TargetPlatform, info: info}
-		}
-		close(jobs)
-	}()
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	var fetchedResults []blueprint.TrackSearchResult
-	var omittedResults []blueprint.OmittedTracks
-	var mu sync.Mutex
-
-	for searchResults := range results {
-		mu.Lock()
-		resultsByIndex = append(resultsByIndex, searchResults)
-		mu.Unlock()
-	}
-
-	sort.SliceStable(resultsByIndex, func(i, j int) bool {
-		return resultsByIndex[i].index < resultsByIndex[j].index
-	})
-
-	for i := 0; i < len(resultsByIndex); i++ {
-		resultByIndex := resultsByIndex[i]
-		if resultByIndex.err != nil || resultByIndex.result == nil {
-			omittedResults = append(omittedResults, blueprint.OmittedTracks{
-				Title:    idSearchResult.Tracks[i].Title,
-				URL:      idSearchResult.Tracks[i].URL,
-				Artistes: idSearchResult.Tracks[i].Artists,
-				Platform: spotify.IDENTIFIER,
-				Index:    i + 1,
-			})
-			continue
-		}
-
-		// webhookTrackEvent := &blueprint.PlaylistTrackConversionResult{
-		// 	// Items: []blueprint.PlaylistConversionTrackItem,
-		// }
-
-		fetchedResults = append(fetchedResults, *resultByIndex.result)
-	}
-
-	srcPlatform := blueprint.PlatformPlaylistTrackResult{
-		Tracks: &idSearchResult.Tracks,
-		Length: util.SumUpResultLength(&idSearchResult.Tracks),
-	}
-
-	targetPlatform := blueprint.PlatformPlaylistTrackResult{
-		Tracks: &fetchedResults,
-		Length: util.SumUpResultLength(&fetchedResults),
-	}
-
-	uErr := pc.updatePlatformPlaylistTracks(info.Platform, result, &srcPlatform)
-	if uErr != nil {
-		return nil, fmt.Errorf("error updating platform tracks: %v", uErr)
-	}
-
-	uErr2 := pc.updatePlatformPlaylistTracks(info.TargetPlatform, result, &targetPlatform)
-	if uErr2 != nil {
-		log.Printf("DEBUG: error updating platform source playlist '%s' tracks: %v", info.TargetPlatform, uErr2)
-	}
-
-	result.OmittedTracks = &omittedResults
-
-	// send conversion event done here.
-	//
-	playlistDoneEventMeta := &blueprint.PlaylistConversionDoneEventMetadata{
-		EventType:      blueprint.PlaylistConversionDoneEvent,
-		TaskID:         info.EntityID,
-		PlaylistID:     info.EntityID,
-		SourcePlatform: info.Platform,
-		TargetPlatform: info.TargetPlatform,
-	}
-
-	pc.factory.WebhookSender.SendEvent(pc.factory.App.WebhookAppID, blueprint.PlaylistConversionDoneEvent, playlistDoneEventMeta)
-	return result, nil
-}
-
-// note: results is a send-only channel while jobs is a receive only channel
 
 func (pc *Service) asyncPlaylistConversionWorker(sv *platforminternal.PlatformService, jobs <-chan trackJob, results chan<- trackJob, wg *sync.WaitGroup) {
 	defer wg.Done()
