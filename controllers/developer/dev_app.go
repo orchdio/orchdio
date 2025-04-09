@@ -120,7 +120,8 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 	// create a new instance of svix service
 	svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
 	webhookName := fmt.Sprintf("%s:%s", body.Name, string(uid))
-	whResponse, whErr := svixInstance.CreateApp(webhookName)
+	webhookAppUID := svixwebhook.FormatSvixAppUID(string(uid))
+	whResponse, whErr := svixInstance.CreateApp(webhookName, webhookAppUID)
 
 	if whErr != nil {
 		log.Printf("[controllers][CreateApp] developer -  error: could not create developer app: %v\n", whErr)
@@ -199,43 +200,37 @@ func (d *Controller) UpdateApp(ctx *fiber.Ctx) error {
 	whAppName := fmt.Sprintf("%s:%s", updatedApp.Name, updatedApp.UID.String())
 	endpointUniqID := svixwebhook.FormatSvixEndpointUID(updatedApp.UID.String())
 
+	webhookAppUID := svixwebhook.FormatSvixAppUID(updatedApp.UID.String())
+
 	// if webhook app id is empty, then that means the application was not created on Svix.
 	// this is largely due to backwards compatibility.
-	// Fixme: remove this after fixing DB issues
 	if updatedApp.WebhookAppID == "" {
 		// check if app already exists
-		_, exErr := svixInstance.GetApp(whAppName)
-		if exErr != nil {
-			log.Printf("[controllers][updateApp] developer -  error: could not get existing svix app:\n")
-			// hack: not sure how to get the correct error object from the svix go module. the error returned seems to be a string
-			// so the solution below uses keyword detection.
-			if strings.Contains(exErr.Error(), "404") {
-				log.Printf("[controllers][updateApp] developer -  error: app does not exist\n")
+		// hack: not sure how to get the correct error object from the svix go module. the error returned seems to be a string
+		// so the solution below uses keyword detection.
+		log.Printf("[controllers][updateApp] developer -  error: app does not exist\n")
 
-				// create new app on svix
-				svixApp, appErr := svixInstance.CreateApp(whAppName)
-				if appErr != nil {
-					log.Printf("[controllers][UpdateApp] developer -  error: could not create app in Database: %v\n", err)
-					return util.ErrorResponse(ctx, fiber.StatusInternalServerError, appErr, "Could not create developer app")
-				}
-
-				_, whErr := svixInstance.CreateEndpoint(svixApp.Id, endpointUniqID, updatedApp.WebhookURL)
-				if whErr != nil {
-					log.Printf("[controllers][UpdateApp] developer -  error: could not create webhook: %v\n", whErr)
-					return util.ErrorResponse(ctx, fiber.StatusInternalServerError, whErr, "Could not create webhook")
-				}
-
-				err = database.UpdateWebhookAppID(updatedApp.UID.String(), svixApp.Id)
-				if err != nil {
-					log.Printf("[controllers][UpdateApp] developer -  error: could not update webhook: %v\n", err)
-					return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not update webhook")
-				}
-				updatedApp.WebhookAppID = svixApp.Id
-				updatedApp.Name = webhookName
-				return util.SuccessResponse(ctx, fiber.StatusCreated, "App updated successfully")
-			}
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not get existing svix app")
+		// create new app on svix
+		svixApp, appErr := svixInstance.CreateApp(whAppName, webhookAppUID)
+		if appErr != nil {
+			log.Printf("[controllers][UpdateApp] developer -  error: could not create app in Database: %v\n", appErr)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, appErr, "Could not create developer app")
 		}
+
+		_, whErr := svixInstance.CreateEndpoint(svixApp.Id, endpointUniqID, updatedApp.WebhookURL)
+		if whErr != nil {
+			log.Printf("[controllers][UpdateApp] developer -  error: could not create webhook: %v\n", whErr)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, whErr, "Could not create webhook")
+		}
+
+		err = database.UpdateWebhookAppID(updatedApp.UID.String(), svixApp.Id)
+		if err != nil {
+			log.Printf("[controllers][UpdateApp] developer -  error: could not update webhook: %v\n", err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "Could not update webhook")
+		}
+		updatedApp.WebhookAppID = svixApp.Id
+		updatedApp.Name = webhookName
+		return util.SuccessResponse(ctx, fiber.StatusCreated, "App updated successfully")
 	}
 
 	// note: here we are checking if the endpoint exists for an app. This is because at the moment, we want to make sure
@@ -250,7 +245,8 @@ func (d *Controller) UpdateApp(ctx *fiber.Ctx) error {
 	// right now
 	_, epErr := svixInstance.GetEndpoint(updatedApp.WebhookAppID, endpointUniqID)
 	if epErr != nil {
-		log.Printf("[controllers][updateApp] developer -  error: could not get existing svix app: %v\n", err)
+		log.Printf("[controllers][updateApp] developer -  error: could not get existing svix app: %v\n", epErr)
+		log.Printf("WH error: %v\n", epErr.Error())
 		if strings.Contains(epErr.Error(), "404") {
 			// create a new endpoint.
 			_, cErr := svixInstance.CreateEndpoint(updatedApp.WebhookAppID, endpointUniqID, updatedApp.WebhookURL)

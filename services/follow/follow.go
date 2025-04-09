@@ -5,11 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/go-redis/redis/v8"
-	"github.com/google/uuid"
-	"github.com/hibiken/asynq"
-	"github.com/jmoiron/sqlx"
-	"github.com/lib/pq"
 	"log"
 	"orchdio/blueprint"
 	"orchdio/db"
@@ -20,6 +15,12 @@ import (
 	"orchdio/services/tidal"
 	"orchdio/universal"
 	"time"
+
+	"github.com/go-redis/redis/v8"
+	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
+	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 )
 
 type Follow struct {

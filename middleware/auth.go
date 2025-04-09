@@ -4,11 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
-	"github.com/gofiber/fiber/v2"
-	"github.com/jmoiron/sqlx"
-	"github.com/samber/lo"
-	"go.uber.org/zap"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
@@ -23,6 +18,12 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/davecgh/go-spew/spew"
+	"github.com/gofiber/fiber/v2"
+	"github.com/jmoiron/sqlx"
+	"github.com/samber/lo"
+	"go.uber.org/zap"
 )
 
 type AuthMiddleware struct {

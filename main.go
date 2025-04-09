@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/vmihailenco/taskq/v3"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
@@ -47,7 +46,6 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/joho/godotenv"
 	"github.com/robfig/cron/v3"
-	"github.com/vmihailenco/taskq/v3/redisq"
 )
 
 /**
@@ -120,11 +118,6 @@ func main() {
 		panic("Could not connect to redis. Please check your redis configuration.")
 	}
 
-	var QueueFactory = redisq.NewFactory()
-	var playlistQueue = QueueFactory.RegisterQueue(&taskq.QueueOptions{
-		Name:  blueprint.PlaylistConversionQueueName,
-		Redis: redisClient,
-	})
 	asynqMux := asynq.NewServeMux()
 
 	if env == "production" {
@@ -232,6 +225,9 @@ func main() {
 						log.Printf("[main] [QueueErrorHandler] Error unmarshalling task payload %v", err)
 						return
 					}
+
+					taskData.LinkInfo.TaskID = taskData.TaskID
+
 					log.Printf("[main] [QueueErrorHandler] Queue info %v", queueInfo)
 					if queueInfo.Paused {
 						log.Printf("[main][QueueErrorHandler] Queue is paused")
@@ -251,6 +247,7 @@ func main() {
 							log.Printf("[main][QueueErrorHandler] error - could not unmarshal playlist task data %v", err)
 							return
 						}
+						playlistData.LinkInfo.TaskID = playlistData.TaskID
 						err = playlistQueue.PlaylistHandler(playlistData.TaskID, playlistData.ShortURL, playlistData.LinkInfo, playlistData.App.UID.String())
 						if err != nil {
 							log.Printf("[main][QueueErrorHandler] error - could not retry playlist conversion.. %v", err)
@@ -304,10 +301,10 @@ func main() {
 			//r
 			// get the PID of the asynq server and send it a kill signal to OS
 			// this is a hacky way to kill the asynq server
-			queueServer, err := inspector.Servers()
-			if err != nil {
-				log.Printf("Error getting queue server %v", err)
-				return err
+			queueServer, insErr := inspector.Servers()
+			if insErr != nil {
+				log.Printf("Error getting queue server %v", insErr)
+				return iErr
 			}
 
 			// make sure we have a queue server
@@ -375,7 +372,7 @@ func main() {
 
 	userController := account.NewUserController(db, redisClient, asyncClient, asynqMux)
 	authMiddleware := middleware.NewAuthMiddleware(db)
-	conversionController := conversion.NewConversionController(db, redisClient, playlistQueue, QueueFactory, asyncClient, asynqServer, asynqMux)
+	conversionController := conversion.NewConversionController(db, redisClient, asyncClient, asynqServer, asynqMux)
 	devAppController := developer.NewDeveloperController(db)
 
 	platformsControllers := platforms.NewPlatform(redisClient, db, asyncClient, asynqMux)
@@ -429,8 +426,12 @@ func main() {
 
 	// entity and task related controllers.
 	// entity is the type of action the user is trying to do. for example. converting a deezer link to tidal
-	orchRouter.Post("/entity/convert", authMiddleware.AddReadOnlyDeveloperToContext,
-		middleware.ExtractLinkInfoFromBody, platformsControllers.ConvertEntity)
+	orchRouter.Post("/playlist/convert", authMiddleware.AddReadOnlyDeveloperToContext,
+		middleware.ExtractLinkInfoFromBody, platformsControllers.ConvertPlaylist)
+
+	/// handler for track conversions.
+	// todo: move implementation of track only related code to the controller attached to this.
+	orchRouter.Post("/track/convert", authMiddleware.AddReadOnlyDeveloperToContext, middleware.ExtractLinkInfoFromBody, platformsControllers.ConvertTrack)
 	// a task is a single conversion job or a "self-contained instance" of a typical conversion.
 	// it includes information on what platform the user is converting from, to, and other necessary info.
 	orchRouter.Get("/task/:taskId", authMiddleware.AddReadOnlyDeveloperToContext, conversionController.GetPlaylistTask)

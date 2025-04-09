@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-var DeezerHost = []string{"deezer.page.link", "www.deezer.com"}
+var DeezerHost = []string{"deezer.page.link", "www.deezer.com", "dzr.page.link"}
 
 const (
 	SpotifyHost    = "open.spotify.com"
@@ -33,9 +33,10 @@ const (
 // it uses lowercase snake_case because svix, the webhook service used does not allow
 // : as delimiter
 var (
-	PlaylistConversionMetadataEvent = "playlist_conversion_metadata"
-	PlaylistConversionTrackEvent    = "playlist_conversion_track"
-	PlaylistConversionDoneEvent     = "playlist_conversion_done"
+	PlaylistConversionMetadataEvent     = "playlist_conversion_metadata"
+	PlaylistConversionTrackEvent        = "playlist_conversion_track"
+	PlaylistConversionDoneEvent         = "playlist_conversion_done"
+	PlaylistConversionMissingTrackEvent = "playlist_conversion_missing_track"
 )
 
 const (
@@ -136,6 +137,7 @@ type LinkInfo struct {
 	TargetPlatform string `json:"target_platform,omitempty"`
 	App            string `json:"app,omitempty"`
 	Developer      string `json:"developer,omitempty"`
+	TaskID         string `json:"task_id,omitempty"`
 }
 
 type ConversionBody struct {
@@ -150,25 +152,14 @@ type Pagination struct {
 	Platform string `json:"platform"`
 }
 
-// Conversion represents the final response for a typical track conversion
-type Conversion struct {
-	Entity    string `json:"entity"`
-	Platforms struct {
-		Deezer     *TrackSearchResult `json:"deezer,omitempty"`
-		Spotify    *TrackSearchResult `json:"spotify,omitempty"`
-		Tidal      *TrackSearchResult `json:"tidal,omitempty"`
-		YTMusic    *TrackSearchResult `json:"ytmusic,omitempty"`
-		AppleMusic *TrackSearchResult `json:"applemusic,omitempty"`
-	} `json:"platforms"`
-	ShortURL string `json:"short_url,omitempty"`
-}
-
 type NewTask struct {
 	ID string `json:"task_id"`
 }
 
-type TaskResponse struct {
-	ID      string      `json:"task_id,omitempty"`
+type PlaylistTaskResponse struct {
+	ID string `json:"task_id,omitempty"`
+	// payload would be the main payload of whatever entity is returning this
+	// for now, we have playlist and tracks.
 	Payload interface{} `json:"payload"`
 	Status  string      `json:"status,omitempty"`
 }
@@ -270,4 +261,36 @@ type OrchdioLoggerOptions struct {
 	Error                interface{} `json:"error"`
 	Message              string      `json:"message"`
 	AddTrace             bool        `json:"add_trace"`
+}
+
+type PlaylistConversionDoneEventMetadata struct {
+	EventType string `json:"event_type" default:"playlist_conversion_done"`
+	// the unique (orchdio internal) task id for this conversion
+	TaskID string `json:"task_id,omitempty"`
+	// the PlaylistID of the playlist that was converted
+	PlaylistID string `json:"playlist_id"`
+	// the platform that the playlist was converted from
+	SourcePlatform string `json:"source_platform,omitempty"`
+	TargetPlatform string `json:"target_platform,omitempty"`
+}
+
+type MissingTrackMeta struct {
+	Platform        string            `json:"platform"`
+	MissingPlatform string            `json:"missing_platform"`
+	Item            TrackSearchResult `json:"item"`
+}
+
+type MissingTrackEventPayload struct {
+	EventType string           `json:"event_type" default:"playlist_conversion_missing_track"`
+	TaskID    string           `json:"task_id"`
+	TrackMeta MissingTrackMeta `json:"meta"`
+}
+
+type PlaylistConversionTrackItem struct {
+	Platform string            `json:"platform"`
+	Item     TrackSearchResult `json:"item"`
+}
+
+type PlaylistTrackConversionResult struct {
+	Items []PlaylistConversionTrackItem `json:"items"`
 }

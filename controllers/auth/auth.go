@@ -7,14 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-redis/redis/v8"
-	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v4"
-	"github.com/google/uuid"
-	"github.com/hibiken/asynq"
-	"github.com/jmoiron/sqlx"
-	"github.com/samber/lo"
-	"go.uber.org/zap"
 	"net/http"
 	"net/url"
 	"orchdio/blueprint"
@@ -30,6 +22,15 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/go-redis/redis/v8"
+	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
+	"github.com/jmoiron/sqlx"
+	"github.com/samber/lo"
+	"go.uber.org/zap"
 )
 
 type Controller struct {

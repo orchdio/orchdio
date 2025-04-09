@@ -2,13 +2,14 @@ package logger
 
 import (
 	"fmt"
+	"orchdio/blueprint"
+	"os"
+	"time"
+
 	"github.com/TheZeroSlave/zapsentry"
 	"github.com/getsentry/sentry-go"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"orchdio/blueprint"
-	"os"
-	"time"
 )
 
 // NewLogger returns a new zap logger
