@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/google/uuid"
-	"github.com/samber/lo"
 	"log"
 	"orchdio/blueprint"
 	"orchdio/db/queries"
@@ -15,6 +13,9 @@ import (
 	"orchdio/services/tidal"
 	"orchdio/util"
 	"os"
+
+	"github.com/google/uuid"
+	"github.com/samber/lo"
 )
 
 // CreateNewApp creates a new app for the developer and returns a uuid of the newly created app

@@ -64,7 +64,7 @@ func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 
 	if conversionBody.URL == "" {
 		log.Printf("\n[middleware][ExtractLinkInfoFromBody] warning - URL not detected. Skipping...\n")
-		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Bad request. Check you're using the '?conversionBody' query string")
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Bad request. Request body must contain a URL or is sent with the wrong key")
 	}
 	linkInfo, err := services.ExtractLinkInfo(conversionBody.URL)
 	linkInfo.App = app.UID.String()

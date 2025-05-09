@@ -4,38 +4,34 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/go-redis/redis/v8"
-	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
-	"github.com/hibiken/asynq"
-	"github.com/jmoiron/sqlx"
-	"github.com/vmihailenco/taskq/v3"
 	"log"
 	"net/http"
 	"orchdio/blueprint"
 	"orchdio/db"
 	"orchdio/util"
+
+	"github.com/go-redis/redis/v8"
+	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
+	"github.com/jmoiron/sqlx"
 )
 
 // Controller is the controller for the conversion service.
 type Controller struct {
 	DB          *sqlx.DB
 	Red         *redis.Client
-	Queue       taskq.Queue
-	Factory     taskq.Factory
 	Asynq       *asynq.Client
 	AsynqServer *asynq.Server
 	AsynqMux    *asynq.ServeMux
 }
 
 // NewConversionController creates a new conversion controller.
-func NewConversionController(db *sqlx.DB, red *redis.Client, queue taskq.Queue, factory taskq.Factory, asynqClient *asynq.Client, asynqserver *asynq.Server, mux *asynq.ServeMux) *Controller {
+func NewConversionController(db *sqlx.DB, red *redis.Client, asynqClient *asynq.Client, asynqserver *asynq.Server, mux *asynq.ServeMux) *Controller {
 
 	res := &Controller{
 		DB:          db,
 		Red:         red,
-		Queue:       queue,
-		Factory:     factory,
 		Asynq:       asynqClient,
 		AsynqServer: asynqserver,
 		AsynqMux:    mux,
@@ -81,7 +77,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "Could not deserialize task result")
 		}
 
-		result := &blueprint.TaskResponse{
+		result := &blueprint.PlaylistTaskResponse{
 			ID:      taskId,
 			Status:  taskRecord.Status,
 			Payload: res,
@@ -100,7 +96,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		}
 
 		// create a new task response
-		result := &blueprint.TaskResponse{
+		result := &blueprint.PlaylistTaskResponse{
 			ID:      taskId,
 			Status:  taskRecord.Status,
 			Payload: res,
@@ -118,7 +114,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		}
 
 		if res.Meta.URL == "" {
-			taskResponse := &blueprint.TaskResponse{
+			taskResponse := &blueprint.PlaylistTaskResponse{
 				ID:      taskId,
 				Payload: nil,
 				Status:  "pending",
@@ -127,7 +123,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		}
 
 		res.Meta.Entity = "playlist"
-		taskResponse := &blueprint.TaskResponse{
+		taskResponse := &blueprint.PlaylistTaskResponse{
 			ID:      taskUUID.String(),
 			Payload: res,
 			Status:  taskRecord.Status,
@@ -137,7 +133,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 	}
 
 	if taskRecord.Status == "pending" {
-		taskResponse := &blueprint.TaskResponse{
+		taskResponse := &blueprint.PlaylistTaskResponse{
 			ID:      taskId,
 			Payload: nil,
 			Status:  "pending",

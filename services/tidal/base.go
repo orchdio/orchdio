@@ -5,30 +5,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jmoiron/sqlx"
 	"log"
 	"net/url"
 	"orchdio/blueprint"
 	"orchdio/util"
-	svixwebhook "orchdio/webhooks/svix"
-	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/jmoiron/sqlx"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/nleeper/goment"
-	"github.com/samber/lo"
 	"github.com/vicanso/go-axios"
 )
 
 const ApiUrl = "https://listen.tidal.com/v1"
 const AuthBase = "https://auth.tidal.com/v1/oauth2"
-
-type Platform interface {
-	SearchTrackWithID(id string) (*Track, error)
-}
 
 type Service struct {
 	DB                     *sqlx.DB
@@ -36,15 +29,21 @@ type Service struct {
 	IntegrationCredentials *blueprint.IntegrationCredentials
 	Base                   string
 	App                    *blueprint.DeveloperApp
+	WebhookSender          WebhookSender
 }
 
-func NewService(credentials *blueprint.IntegrationCredentials, DB *sqlx.DB, red *redis.Client, devApp *blueprint.DeveloperApp) *Service {
+type WebhookSender interface {
+	SendTrackEvent(appID string, event *blueprint.PlaylistConversionEventTrack) bool
+}
+
+func NewService(credentials *blueprint.IntegrationCredentials, DB *sqlx.DB, red *redis.Client, devApp *blueprint.DeveloperApp, webhookSender WebhookSender) *Service {
 	return &Service{
 		DB:                     DB,
 		Redis:                  red,
 		IntegrationCredentials: credentials,
 		Base:                   ApiUrl,
 		App:                    devApp,
+		WebhookSender:          webhookSender,
 	}
 }
 
@@ -102,18 +101,6 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 			log.Printf("\n[services][tidal][SearchWithID] - could not cache track - %v\n", err)
 		} else {
 			log.Printf("\n[services][tidal][SearchWithID] - track cached successfully\n")
-		}
-
-		// send webhook event here. Event sent: blueprint.PlaylistConversionEventTrack
-		svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
-		payload := &blueprint.PlaylistConversionEventTrack{
-			Platform: IDENTIFIER,
-			Track:    &searchResult,
-		}
-
-		ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, payload)
-		if !ok {
-			log.Printf("\n[controllers][platforms][tidal][SearchTrackWithID] - could not send webhook event\n")
 		}
 		return &searchResult, nil
 	}
@@ -175,6 +162,24 @@ func (s *Service) FetchTrackWithID(id string) (*Track, error) {
 // SearchTrackWithTitle will perform a search on tidal for the track we want
 func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error) {
 	cleanedArtiste := strings.ToLower(fmt.Sprintf("tidal-%s-%s", util.NormalizeString(searchData.Artists[0]), searchData.Title))
+	cacheKey := util.FormatTargetPlaylistTrackByCacheKeyTitle(IDENTIFIER, cleanedArtiste, searchData.Title)
+
+	if s.Redis.Exists(context.Background(), cacheKey).Val() == 1 {
+		cachedTrack, err := s.Redis.Get(context.Background(), cacheKey).Result()
+		if err != nil && !errors.Is(err, redis.Nil) {
+			return nil, err
+		}
+
+		var deserialized blueprint.TrackSearchResult
+		err = json.Unmarshal([]byte(cachedTrack), &deserialized)
+		if err != nil {
+			log.Printf("[services][platforms][tidal][SearchTrackWithID] - could not deserialiaze cached track - %v\n", err)
+			return nil, err
+		}
+
+		return &deserialized, nil
+	}
+
 	result, err := s.FetchSingleTrackByTitle(searchData.Title, searchData.Artists[0])
 	if err != nil {
 		log.Printf("\n[controllers][platforms][tidal][SearchTrackWithTitle] - could not search track with title '%s' on tidal - %v\n", searchData.Title, err)
@@ -204,40 +209,6 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*
 			Album:         track.Album.Title,
 			ID:            strconv.Itoa(track.Id),
 			Cover:         util.BuildTidalAssetURL(track.Album.Cover),
-		}
-
-		serialized, mErr := json.Marshal(tidalTrack)
-		if mErr != nil {
-			log.Printf("\n[services][tidal][SearchTrackWithTitle] - could not serialize track result - %v\n", mErr)
-			return nil, mErr
-		}
-
-		// cache the track. If the artiste is in the list of artistes, we cache the track
-		// we set the key to be the artiste name and the value to be the serialized track
-		// and set the cache to expire in 24 hours
-		if lo.Contains(tidalTrack.Artists, searchData.Artists[0]) {
-			keys := map[string]interface{}{
-				cleanedArtiste: string(serialized),
-			}
-			for cacheArtiste, cacheResult := range keys {
-				err = s.Redis.Set(context.Background(), cacheArtiste, cacheResult, time.Hour*24).Err()
-				if err != nil {
-					log.Printf("\n[controllers][platforms][deezer][SearchTrackWithTitle] error caching track - %v\n", err)
-				} else {
-					log.Printf("\n[controllers][platforms][tidal][SearchTrackWithTitle] Track %s has been cached\n", tidalTrack.Title)
-				}
-			}
-		}
-
-		// send webhook event here. Event sent: blueprint.PlaylistConversionEventTrack
-		svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
-		payload := &blueprint.PlaylistConversionEventTrack{
-			Platform: IDENTIFIER,
-			Track:    tidalTrack,
-		}
-		ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, payload)
-		if !ok {
-			log.Printf("\n[controllers][platforms][tidal][SearchTrackWithTitle] - could not send webhook event\n")
 		}
 		return tidalTrack, nil
 	}
@@ -283,8 +254,8 @@ func (s *Service) FetchSingleTrackByTitle(title, artiste string) (*SearchResult,
 	return searchResult, nil
 }
 
-// FetchPlaylistInfo returns a playlist info[main] Error processing task handler not found for task
-func (s *Service) FetchPlaylistInfo(id string) (*PlaylistInfo, error) {
+// fetchPlaylistInfo returns a playlist info. An internal method called in FetchPlaylistMetaInfo.
+func (s *Service) fetchPlaylistInfo(id string) (*PlaylistInfo, error) {
 	accessToken, err := s.FetchNewAuthToken(s.IntegrationCredentials.AppID, s.IntegrationCredentials.AppSecret, s.IntegrationCredentials.AppRefreshToken)
 	if err != nil {
 		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistInfo] - could not fetch auth token - %v\n", err)
@@ -313,99 +284,69 @@ func (s *Service) FetchPlaylistInfo(id string) (*PlaylistInfo, error) {
 	return playlistInfo, nil
 }
 
-// SearchPlaylistWithTracks fetches the tracks for a playlist from tidal, using the result from search
-// from another platform. This function builds the `PlatformSearchTrack` used to fetch the track
-func (s *Service) SearchPlaylistWithTracks(p *blueprint.PlaylistSearchResult) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
-	var trackSearch []blueprint.PlatformSearchTrack
-	for _, track := range p.Tracks {
-		trackSearch = append(trackSearch, blueprint.PlatformSearchTrack{
-			Title:    track.Title,
-			Artistes: track.Artists,
-			URL:      track.URL,
-			ID:       track.ID,
-		})
-		continue
-	}
-	tracks, omittedTracks := s.FetchTracks(trackSearch)
-	return tracks, omittedTracks
-}
+// FetchTracksForSourcePlatform fetches the tracks from the source platform and sends each result to the channel as they come in.
+func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlistMeta *blueprint.PlaylistMetadata, resultChan chan blueprint.TrackSearchResult) error {
+	identifierHash := fmt.Sprintf("tidal:playlist:%s", info)
+	infoHash := fmt.Sprintf("tidal:snapshot:%s", info)
 
-// SearchPlaylistWithID fetches a specific playlist based on the id. It returns the playlist search result,
-// a bool to indicate if the playlist has been updated since the last time a call was made
-// and an error if there is one
-func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResult, error) {
-	identifierHash := fmt.Sprintf("tidal:playlist:%s", id)
-	log.Printf("Converting playlist with ID %s on TIDAL\n", id)
-
-	// infoHash represents the key for the snapshot of the playlist info, in this case
-	// just a lasUpdated timestamp in string format.
-	infoHash := fmt.Sprintf("tidal:snapshot:%s", id)
-
-	info, err := s.FetchPlaylistInfo(id)
-	if err != nil {
-		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not fetch playlist info - %v\n", err)
-		return nil, err
-	}
-
-	// if we have already cached the playlist info.
-	// The assumption here is that the playlist info and the playlist tracks are always both cached every time
 	if s.Redis.Exists(context.Background(), identifierHash).Val() == 1 {
-		// fetch the playlist info from redis
-		cachedInfo, err := s.Redis.Get(context.Background(), infoHash).Result()
-		if err != nil && err != redis.Nil {
-			log.Printf("\n[controllers][platforms][tidal][SearchPlaylistWithID] - could not fetch cached playlist info - %v\n", err)
-			return nil, err
+		// fetch the playlist playlistInfo from redis
+		cachedInfo, gErr := s.Redis.Get(context.Background(), infoHash).Result()
+		if gErr != nil && !errors.Is(gErr, redis.Nil) {
+			log.Printf("\n[controllers][platforms][tidal][SearchPlaylistWithID] - could not fetch cached playlist playlistInfo - %v\n", gErr)
+			return gErr
 		}
 
-		// deserialize the playlist info
+		// deserialize the playlist playlistInfo
 		var cachedLastPlayedAt string
 		_ = json.Unmarshal([]byte(cachedInfo), &cachedLastPlayedAt)
 
-		// format the timestamps on both of the playlist info
-		lastUpdated, err := goment.New(cachedLastPlayedAt)
-		infoLastUpdated, err := goment.New(info.LastUpdated)
+		// format the timestamps on both of the playlist playlistInfo
+		lastUpdated, gmErr := goment.New(cachedLastPlayedAt)
+		infoLastUpdated, gmErr2 := goment.New(playlistMeta.LastUpdated)
 
-		if err != nil {
-			log.Printf("\n[controllers][platforms][tidal][SearchPlaylistWithID] - could not parse last updated time - %v\n", err)
-			return nil, err
+		if gmErr != nil || gmErr2 != nil {
+			log.Printf("\n[controllers][platforms][tidal][SearchPlaylistWithID] - could not parse last updated time - %v - %v\n", gmErr, gmErr2)
+			return gmErr2
 		}
 
 		var result *blueprint.PlaylistSearchResult
-
 		// fetch the cached tracks from redis.
-		cachedResult, err := s.Redis.Get(context.Background(), identifierHash).Result()
-		if err != nil {
-			log.Printf("\n[services][tidal][FetchPlaylistTracksInfo] - ⚠️ error fetching key from redis. - %v\n", err)
-			return nil, err
+		cachedResult, sErr := s.Redis.Get(context.Background(), identifierHash).Result()
+		if sErr != nil {
+			log.Printf("\n[services][tidal][FetchPlaylistTracksInfo] - ⚠️ error fetching key from redis. - %v\n", sErr)
+			return sErr
 		}
 		// deserialize the tracks we fetched from redis
-		err = json.Unmarshal([]byte(cachedResult), &result)
-		if err != nil {
-			log.Printf("\n[services][tidal][FetchPlaylistTracksInfo] - ⚠️ error deserializimng cache result - %v\n", err)
-			return nil, err
+		jErr := json.Unmarshal([]byte(cachedResult), &result)
+		if jErr != nil {
+			log.Printf("\n[services][tidal][FetchPlaylistTracksInfo] - ⚠️ error deserializimng cache result - %v\n", jErr)
+			return jErr
 		}
+
 		// if the timestamps are the same, that means that our playlist has not
 		// changed, so we can return the cached result. in the other case, we
 		// are doing nothing so we go on to fetch the tracks from the tidal api.
 		if lastUpdated.IsSame(infoLastUpdated) {
-			return result, nil
+			// send webhook event track conversion for each (cached) track here
+			// fixme: send these async
+			for i := range result.Tracks {
+				track := &result.Tracks[i]
+				resultChan <- *track
+			}
+			return nil
 		}
 	}
 
-	accessToken, err := s.FetchNewAuthToken(s.IntegrationCredentials.AppID, s.IntegrationCredentials.AppSecret, s.IntegrationCredentials.AppRefreshToken)
-	if err != nil {
-		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - error - %v\n", err)
-		return nil, err
-	}
-
-	if err != nil {
-		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not deserialize playlist result from tidal - %v\n", err)
-		return nil, err
+	// playlist has not been cached... here we do fresh tracklist fetching & processing...
+	accessToken, sErr := s.FetchNewAuthToken(s.IntegrationCredentials.AppID, s.IntegrationCredentials.AppSecret, s.IntegrationCredentials.AppRefreshToken)
+	if sErr != nil {
+		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - error - %v\n", sErr)
+		return sErr
 	}
 
 	playlistResult := &PlaylistTracks{}
-
-	var pages = info.NumberOfTracks / 100
+	var pages = playlistMeta.NBTracks / 100
 	if pages == 0 {
 		pages = 1
 	}
@@ -420,117 +361,83 @@ func (s *Service) SearchPlaylistWithID(id string) (*blueprint.PlaylistSearchResu
 	})
 	// implement pagination fetching
 	for page := 0; page <= pages; page++ {
-		response, err := instance.Get(fmt.Sprintf("/playlists/%s/items?offset=%d&limit=100&countryCode=US", id, page*100))
+		response, err := instance.Get(fmt.Sprintf("/playlists/%s/items?offset=%d&limit=100&countryCode=US", info, page*100))
 		if err != nil {
 			log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - error - %v\n", err)
-			return nil, err
+			return err
 		}
+
 		res := &PlaylistTracks{}
 		err = json.Unmarshal(response.Data, res)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not deserialize playlist result from tidal - %v\n", err)
-			return nil, err
+			return err
 		}
 		if len(res.Items) == 0 {
 			break
 		}
-		playlistResult.Items = append(playlistResult.Items, res.Items...)
+
+		for _, item := range playlistResult.Items {
+			var artistes []string
+			for _, artist := range item.Item.Artists {
+				artistes = append(artistes, artist.Name)
+			}
+			t := blueprint.TrackSearchResult{
+				URL:           item.Item.Url,
+				Artists:       artistes,
+				Released:      item.Item.StreamStartDate,
+				Duration:      util.GetFormattedDuration(item.Item.Duration),
+				DurationMilli: item.Item.Duration * 1000,
+				Explicit:      item.Item.Explicit,
+				Title:         item.Item.Title,
+				Preview:       "",
+				Album:         item.Item.Album.Title,
+				ID:            strconv.Itoa(item.Item.Id),
+				Cover:         util.BuildTidalAssetURL(item.Item.Album.Cover),
+			}
+
+			resultChan <- t
+		}
+	}
+	return nil
+}
+
+// FetchPlaylistMetaInfo returns a playlist metadata. It'll always return the latest playlist metadata infoa as we hit the tidal API.
+func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.PlaylistMetadata, error) {
+	_ = fmt.Sprintf("tidal:playlist:%s", info)
+	log.Printf("Converting playlist with ID %s on TIDAL\n", info)
+
+	// infoHash represents the key for the snapshot of the playlist playlistInfo, in this case
+	// just a lasUpdated timestamp in string format.
+	_ = fmt.Sprintf("tidal:snapshot:%s", info)
+
+	playlistInfo, err := s.fetchPlaylistInfo(info.EntityID)
+	if err != nil {
+		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not fetch playlist playlistInfo - %v\n", err)
+		return nil, err
 	}
 
-	var tracks []blueprint.TrackSearchResult
-	for _, item := range playlistResult.Items {
-		var artistes []string
-		for _, artist := range item.Item.Artists {
-			artistes = append(artistes, artist.Name)
-		}
-		t := blueprint.TrackSearchResult{
-			URL:           item.Item.Url,
-			Artists:       artistes,
-			Released:      item.Item.StreamStartDate,
-			Duration:      util.GetFormattedDuration(item.Item.Duration),
-			DurationMilli: item.Item.Duration * 1000,
-			Explicit:      item.Item.Explicit,
-			Title:         item.Item.Title,
-			Preview:       "",
-			Album:         item.Item.Album.Title,
-			ID:            strconv.Itoa(item.Item.Id),
-			Cover:         util.BuildTidalAssetURL(item.Item.Album.Cover),
-		}
-
-		tracks = append(tracks, t)
-	}
-	// then convert to a blueprint.PlaylistSearchResult
-	result := &blueprint.PlaylistSearchResult{
-		Title:   info.Title,
-		Tracks:  tracks, // TODO: playlistResult.Items,
-		URL:     info.Url,
-		Length:  util.GetFormattedDuration(info.Duration),
+	playlistMeta := &blueprint.PlaylistMetadata{
+		// no length yet. its calculated by adding up all the track lengths in the playlist
+		Length: util.GetFormattedDuration(playlistInfo.Duration),
+		Title:  playlistInfo.Title,
+		// no preview. might be an abstracted implementation in the future.
 		Preview: "",
-		Owner:   "", // info.Creator.Id // TODO: implement fetching the user with this ID and populating it here,
-		Cover:   util.BuildTidalAssetURL(info.SquareImage),
-	}
-	ser, _ := json.Marshal(result)
-	// cache the result
-	err = s.Redis.Set(context.Background(), identifierHash, ser, 0).Err()
-	if err != nil {
-		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not cache playlist for %s into redis - %v\n", err, info.Title)
-	} else {
-		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - cached playlist into redis - %v\n", info.Title)
-	}
 
-	infoSer, _ := json.Marshal(info.LastUpdated)
-	err = s.Redis.Set(context.Background(), infoHash, infoSer, 0).Err()
-	if err != nil {
-		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not cache playlist info for %s info into redis - %v\n", err, info.Title)
-	} else {
-		log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - cached playlist info into redis - %v\n", info.Title)
+		// todo: fetch user's orchdio @ and/or id and enrich. might need a specific owner object. support fetching by tidal id for tidal implementation
+		Owner: strconv.Itoa(playlistInfo.Creator.Id),
+		// fixme: possible nil pointer
+		Cover:  playlistInfo.SquareImage,
+		Entity: "playlist",
+		URL:    playlistInfo.Url,
+		// no short url here.
+		// todo: try to pass the entity id here
+		ShortURL:    info.TaskID,
+		NBTracks:    playlistInfo.NumberOfTracks,
+		Description: playlistInfo.Description,
+		LastUpdated: playlistInfo.LastUpdated,
 	}
-	return result, err
-}
-
-// FetchTrackWithTitleChan fetches a track with the title from tidal but using a channel
-func (s *Service) FetchTrackWithTitleChan(searchData *blueprint.TrackSearchData, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
-	track, err := s.SearchTrackWithTitle(searchData)
-	if err != nil {
-		log.Printf("\n[controllers][platforms][tidal][FetchTrackWithTitleChan] - error fetching title - %v\n", err)
-		defer wg.Done()
-		c <- nil
-		wg.Add(1)
-		return
-	}
-	defer wg.Done()
-	c <- track
-	wg.Add(1)
-	return
-}
-
-// FetchTracks fetches all the tracks for a playlist from tidal, using the built `PlatformSearchTrack` type
-func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack) (*[]blueprint.TrackSearchResult, *[]blueprint.OmittedTracks) {
-	var c = make(chan *blueprint.TrackSearchResult, len(tracks))
-	var fetchedTracks []blueprint.TrackSearchResult
-	var omittedTracks []blueprint.OmittedTracks
-	var wg sync.WaitGroup
-	for _, track := range tracks {
-		// WARNING: unhandled slice index
-		searchData := &blueprint.TrackSearchData{
-			Title:   track.Title,
-			Artists: track.Artistes,
-		}
-		go s.FetchTrackWithTitleChan(searchData, c, &wg)
-		outputTrack := <-c
-		if outputTrack == nil || outputTrack.URL == "" {
-			omittedTracks = append(omittedTracks, blueprint.OmittedTracks{
-				Title:    track.Title,
-				Artistes: track.Artistes,
-				URL:      track.URL,
-			})
-			continue
-		}
-		fetchedTracks = append(fetchedTracks, *outputTrack)
-	}
-
-	wg.Wait()
-	return &fetchedTracks, &omittedTracks
+	return playlistMeta, nil
 }
 
 func (s *Service) FetchNewAuthToken(appId, appSecret, appRefresh string) (string, error) {

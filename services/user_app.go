@@ -3,10 +3,6 @@ package services
 import (
 	"database/sql"
 	"errors"
-	"github.com/google/uuid"
-	"github.com/jmoiron/sqlx"
-	"github.com/lib/pq"
-	"github.com/samber/lo"
 	"log"
 	"orchdio/blueprint"
 	"orchdio/db"
@@ -16,6 +12,11 @@ import (
 	"orchdio/services/spotify"
 	"orchdio/services/tidal"
 	"strings"
+
+	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
+	"github.com/samber/lo"
 )
 
 type UserDevApp struct {

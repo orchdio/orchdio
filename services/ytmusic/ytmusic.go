@@ -5,16 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-redis/redis/v8"
-	"github.com/raitonoberu/ytmusic"
 	"log"
 	"orchdio/blueprint"
 	"orchdio/util"
-	svixwebhook "orchdio/webhooks/svix"
-	"os"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/go-redis/redis/v8"
+	"github.com/raitonoberu/ytmusic"
 )
 
 const IDENTIFIER = "ytmusic"
@@ -41,67 +39,24 @@ func NewService(redisClient *redis.Client, devApp *blueprint.DeveloperApp) *Serv
 	return &Service{
 		RedisClient: redisClient,
 		App:         devApp,
+		// fixme(note): we dont need this for now.
 		//IntegrationAppID:     integrationAppID,
 		//IntegrationAppSecret: integrationAppSecret,
 	}
 }
 
-// SearchTrackWithID fetches a track from the ID using the link.
-func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackSearchResult, error) {
-	cacheKey := "ytmusic:track:" + info.EntityID
-	cachedTrack, err := s.RedisClient.Get(context.Background(), cacheKey).Result()
+func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlistMeta *blueprint.PlaylistMetadata, result chan blueprint.TrackSearchResult) error {
+	log.Println("YTmusic not implemented yet...")
+	return blueprint.ErrNotImplemented
+}
 
-	if err != nil && errors.Is(err, redis.Nil) {
-		log.Printf("[services][ytmusic][SearchTrackWithLink] Track not found in cache, fetching from YT Music: %v\n", info.EntityID)
-		track, fErr := FetchSingleTrack(info.EntityID)
-		if fErr != nil {
-			log.Printf("[services][ytmusic][SearchTrackWithLink] Error fetching track from YT Music: %v\n", fErr)
-			return nil, fErr
-		}
-
-		if track == nil {
-			log.Printf("[services][ytmusic][SearchTrackWithLink] Track is nil: %v\n", info.EntityID)
-			return nil, nil
-		}
-
-		// get artistes
-		artistes := make([]string, 0)
-
-		for _, artist := range track.Artists {
-			artistes = append(artistes, artist.Name)
-		}
-
-		s.RedisClient.Set(context.Background(), cacheKey, track, time.Hour*24)
-		// TODO: add more fields to the result in the ytmusic library
-		thumbnail := ""
-		if len(track.Thumbnails) > 0 {
-			thumbnail = track.Thumbnails[0].URL
-		}
-		return &blueprint.TrackSearchResult{
-			URL:           info.TargetLink,
-			Artists:       artistes,
-			Released:      "",
-			Duration:      util.GetFormattedDuration(track.Duration),
-			DurationMilli: track.Duration * 1000,
-			Explicit:      false,
-			Title:         track.Title,
-			Preview:       info.TargetLink, // for now, preview is also original link
-			Album:         track.Album.Name,
-			ID:            track.VideoID,
-			Cover:         thumbnail,
-		}, nil
-	}
-
-	var result blueprint.TrackSearchResult
-	err = json.Unmarshal([]byte(cachedTrack), &result)
-	if err != nil {
-		log.Printf("[services][ytmusic][SearchTrackWithLink] Error unmarshalling cached track: %v\n", err)
-		return nil, err
-	}
-	return &result, nil
+func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.PlaylistMetadata, error) {
+	// todo: implement playlist meta info fetching
+	return nil, nil
 }
 
 func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error) {
+
 	cleanedArtiste := fmt.Sprintf("ytmusic-%s-%s", util.NormalizeString(searchData.Artists[0]), searchData.Title)
 
 	if s.RedisClient.Exists(context.Background(), cleanedArtiste).Val() == 1 {
@@ -119,15 +74,15 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*
 		}
 
 		// send webhook event here
-		svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
-		payload := &blueprint.PlaylistConversionEventTrack{
-			Platform: IDENTIFIER,
-			Track:    &result,
-		}
-		ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, payload)
-		if !ok {
-			log.Printf("[services][ytmusic][SearchTrackWithTitle] Error sending webhook event: %v\n", err)
-		}
+		//svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
+		//payload := &blueprint.PlaylistConversionEventTrack{
+		//	Platform: IDENTIFIER,
+		//	Track:    &result,
+		//}
+		//ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, payload)
+		//if !ok {
+		//	log.Printf("[services][ytmusic][SearchTrackWithTitle] Error sending webhook event: %v\n", err)
+		//}
 		return &result, nil
 	}
 
@@ -212,80 +167,87 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*
 	}
 
 	// send webhook event here
-	svixInstance := svixwebhook.New(os.Getenv("SVIX_APP_ID"), false)
-	payload := &blueprint.PlaylistConversionEventTrack{
-		Platform: IDENTIFIER,
-		Track:    result,
-	}
-	ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, payload)
-	if !ok {
-		log.Printf("[services][ytmusic][SearchTrackWithTitle] Error sending webhook event: %v\n", err)
-	}
+	//svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
+	//payload := &blueprint.PlaylistConversionEventTrack{
+	//	Platform: IDENTIFIER,
+	//	Track:    result,
+	//}
+	//ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, payload)
+	//if !ok {
+	//	log.Printf("[services][ytmusic][SearchTrackWithTitle] Error sending webhook event: %v\n", err)
+	//}
 
 	return result, nil
 }
 
-func (s *Service) SearchTrackWithTitleChan(searchData *blueprint.TrackSearchData, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
-	track, err := s.SearchTrackWithTitle(searchData)
-	if err != nil {
-		log.Printf("[services][ytmusic][SearchTrackWithTitleChan] Error searching track: %v\n", err)
-		defer wg.Done()
-		c <- nil
-		wg.Add(1)
-		return
+func (s *Service) CachePlaylistTracksWithID(tracks *[]blueprint.TrackSearchResult) {
+	for _, t := range *tracks {
+		key := util.FormatPlaylistTrackByCacheKeyID(IDENTIFIER, t.ID)
+		value, err := json.Marshal(t)
+		if err != nil {
+			log.Printf("ERROR [services][spotify][CachePlaylistTracksWithID] json.Marshal error: %v\n", err)
+		}
+		// fixme(note): setting without expiry
+		mErr := s.RedisClient.Set(context.Background(), key, value, 0)
+		if mErr != nil {
+			log.Printf("ERROR [services][spotify][CachePlaylistTracksWithID] Set error: %v\n", err)
+		}
 	}
-	defer wg.Done()
-	c <- track
-	wg.Add(1)
-	return
 }
 
-// FetchTracks searches for the tracks passed and return the results on youtube music.
-func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis.Client) (*[]blueprint.TrackSearchResult, error) {
-	var fetchedTracks []blueprint.TrackSearchResult
-	var omittedTracks []blueprint.OmittedTracks
-	var wg sync.WaitGroup
-	var c = make(chan *blueprint.TrackSearchResult, len(tracks))
+// SearchTrackWithID fetches a track from the ID using the link.
+func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackSearchResult, error) {
+	cacheKey := "ytmusic:track:" + info.EntityID
+	cachedTrack, err := s.RedisClient.Get(context.Background(), cacheKey).Result()
 
-	for _, track := range tracks {
-		if track.Title == "" {
-			log.Printf("[services][ytmusic][FetchTracks] Track title is empty, skipping: %v\n", track)
-			continue
-		}
-		identifierHash := util.HashIdentifier(fmt.Sprintf("ytmusic-%s-%s", track.Artistes[0], track.Title))
-		if red.Exists(context.Background(), identifierHash).Val() == 1 {
-			var deserializedTrack blueprint.TrackSearchResult
-			cachedTrack := red.Get(context.Background(), identifierHash).Val()
-			err := json.Unmarshal([]byte(cachedTrack), &deserializedTrack)
-			if err != nil {
-				log.Printf("[services][ytmusic][FetchTracks] Error fetching track from cache: %v\n", err)
-				return nil, nil
-			}
-			fetchedTracks = append(fetchedTracks, deserializedTrack)
-			continue
+	if err != nil && errors.Is(err, redis.Nil) {
+		log.Printf("[services][ytmusic][SearchTrackWithLink] Track not found in cache, fetching from YT Music: %v\n", info.EntityID)
+		track, fErr := FetchSingleTrack(info.EntityID)
+		if fErr != nil {
+			log.Printf("[services][ytmusic][SearchTrackWithLink] Error fetching track from YT Music: %v\n", fErr)
+			return nil, fErr
 		}
 
-		searchData := &blueprint.TrackSearchData{
-			Title:   track.Title,
-			Artists: track.Artistes,
+		if track == nil {
+			log.Printf("[services][ytmusic][SearchTrackWithLink] Track is nil: %v\n", info.EntityID)
+			return nil, nil
 		}
 
-		go s.SearchTrackWithTitleChan(searchData, c, &wg)
-		outputTracks := <-c
-		if outputTracks == nil {
-			log.Printf("[services][ytmusic][FetchTracks] no track found for title : %v\n", track.Title)
-			omittedTracks = append(omittedTracks, blueprint.OmittedTracks{
-				Title:    track.Title,
-				URL:      track.URL,
-				Artistes: track.Artistes,
-			})
-			continue
+		// get artistes
+		artistes := make([]string, 0)
+
+		for _, artist := range track.Artists {
+			artistes = append(artistes, artist.Name)
 		}
 
-		fetchedTracks = append(fetchedTracks, *outputTracks)
+		s.RedisClient.Set(context.Background(), cacheKey, track, time.Hour*24)
+		// TODO: add more fields to the result in the ytmusic library
+		thumbnail := ""
+		if len(track.Thumbnails) > 0 {
+			thumbnail = track.Thumbnails[0].URL
+		}
+		return &blueprint.TrackSearchResult{
+			URL:           info.TargetLink,
+			Artists:       artistes,
+			Released:      "",
+			Duration:      util.GetFormattedDuration(track.Duration),
+			DurationMilli: track.Duration * 1000,
+			Explicit:      false,
+			Title:         track.Title,
+			Preview:       info.TargetLink, // for now, preview is also original link
+			Album:         track.Album.Name,
+			ID:            track.VideoID,
+			Cover:         thumbnail,
+		}, nil
 	}
-	wg.Wait()
-	return &fetchedTracks, nil
+
+	var result blueprint.TrackSearchResult
+	err = json.Unmarshal([]byte(cachedTrack), &result)
+	if err != nil {
+		log.Printf("[services][ytmusic][SearchTrackWithLink] Error unmarshalling cached track: %v\n", err)
+		return nil, err
+	}
+	return &result, nil
 }
 
 // FetchPlaylistTracklist fetches the tracks of a playlist on youtube music.
