@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/jmoiron/sqlx"
 
 	"github.com/go-redis/redis/v8"
@@ -417,6 +418,19 @@ func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.Pl
 		return nil, err
 	}
 
+	log.Print("TIDAL playlist info is")
+
+	spew.Dump(playlistInfo)
+	// https: //resources.tidal.com/images/a54242f6/21a4/46f6/81cc/7cdd2df4922a/1080x1080.jpg
+	// https://resources.tidal.com/images/57917d2e/a292/4505/99fb/ba6731300dd2/1080x1080.jpg
+	// https://resources.tidal.com/images/57917d2e/a292/4505/99fb/ba6731300dd2/1080x1080.jpg
+	//
+	//https://resources.tidal.com/images/57917d2e/a292/4505/99fb/ba6731300dd2/1080x1089.jpg"
+	// "https://resources.tidal.com/images/1b7da5d1/d5bc/41ce/9b4b/bbeb928b2300/1080x1080.jpg"
+	//
+	//https://resources.tidal.com/images/57917d2e/a292/4505/99fb/ba6731300dd2/1080x1080.jpg
+	//https://resources.tidal.com/images/1b7da5d1/d5bc/41ce/9b4b/bbeb928b2300/1080x1080.jpg
+	artCover := fmt.Sprintf("https://resources.tidal.com/images/%s/1080x1080.jpg", strings.ReplaceAll(playlistInfo.SquareImage, "-", "/"))
 	playlistMeta := &blueprint.PlaylistMetadata{
 		// no length yet. its calculated by adding up all the track lengths in the playlist
 		Length: util.GetFormattedDuration(playlistInfo.Duration),
@@ -427,7 +441,7 @@ func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.Pl
 		// todo: fetch user's orchdio @ and/or id and enrich. might need a specific owner object. support fetching by tidal id for tidal implementation
 		Owner: strconv.Itoa(playlistInfo.Creator.Id),
 		// fixme: possible nil pointer
-		Cover:  playlistInfo.SquareImage,
+		Cover:  artCover,
 		Entity: "playlist",
 		URL:    playlistInfo.Url,
 		// no short url here.

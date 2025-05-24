@@ -12,6 +12,7 @@ import (
 	svixwebhook "orchdio/webhooks/svix"
 	"os"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/jmoiron/sqlx"
 
 	"github.com/go-redis/redis/v8"
@@ -69,6 +70,8 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (
 
 	xConversion, xErr := serviceFactory.AsynqConvertPlaylist(info)
 	if xErr != nil {
+		log.Printf("Error converting playlist here in universal")
+		spew.Dump(xErr)
 		return nil, xErr
 	}
 	return xConversion, nil

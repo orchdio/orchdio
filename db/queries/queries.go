@@ -5,8 +5,8 @@ ON CONFLICT("email") DO UPDATE
 SET email=EXCLUDED.email,updated_at=now() RETURNING email, uuid)
 			SELECT * from user_rec;`
 
-const CreateNewOrgUser = `INSERT INTO "users" ( email, uuid, password, created_at, updated_at) 
-	VALUES ($1, $2, $3, now(), now()) 
+const CreateNewOrgUser = `INSERT INTO "users" ( email, uuid, password, created_at, updated_at)
+	VALUES ($1, $2, $3, now(), now())
 ON CONFLICT DO NOTHING RETURNING id`
 
 const UpdateUserPassword = `UPDATE "users" SET password = $1 WHERE uuid = $2`
@@ -52,13 +52,13 @@ const FetchUserWithApiKey = `SELECT u.id, u.email, coalesce(u.username, '') as u
 const UpdateUserWebhook = `UPDATE webhooks SET url = $1, verify_token = $3, updated_at = now() FROM users AS u WHERE "user" = $2 RETURNING uuid;`
 const DeleteUserWebhook = `DELETE FROM webhooks wh WHERE wh.user = $1;`
 
-const CreateOrUpdateTask = `INSERT INTO tasks(uuid, shortid, app, entity_id, created_at, updated_at, type) values ($1, $2, $3, $4, now(), now(), 'conversion') ON CONFLICT("uuid") 
+const CreateOrUpdateTask = `INSERT INTO tasks(uuid, shortid, app, entity_id, created_at, updated_at, type) values ($1, $2, $3, $4, now(), now(), 'conversion') ON CONFLICT("uuid")
 DO UPDATE SET status = 'pending', updated_at = now() RETURNING uuid;`
 
 const UpdateTaskStatus = `UPDATE tasks SET status = $2, updated_at = now() WHERE uuid = $1 RETURNING uuid;`
 const UpdateTaskResult = `UPDATE tasks SET result = $2, updated_at = now() WHERE uuid = $1 RETURNING result;`
 
-const FetchTask = `SELECT id, uuid, entity_id, created_at, updated_at, app, status, coalesce(result, '{}') as result FROM tasks WHERE uuid= $1;`
+const FetchTask = `SELECT id, uuid, entity_id, created_at, updated_at, app, status, coalesce(result, '{}') as result, coalesce(shortid, '') as shortid FROM tasks WHERE uuid= $1;`
 const FetchTaskByShortID = `SELECT id, uuid, entity_id, created_at, updated_at, app, status, coalesce(result, '{}') as result FROM tasks WHERE shortid = $1;`
 const DeleteTask = `DELETE FROM tasks WHERE uuid = $1;`
 
@@ -71,13 +71,13 @@ const FetchFollowedTask = `SELECT * FROM  follows where entity_id = $1;`
 
 const FetchTaskByEntityIdAndType = `SELECT * FROM tasks WHERE entity_id = $1 and type = $2;`
 
-const FetchPlaylistFollowsToProcess = `SELECT DISTINCT on(follow.id) follow.id, 
-follow.created_at, follow.updated_at, follow.developer, 
+const FetchPlaylistFollowsToProcess = `SELECT DISTINCT on(follow.id) follow.id,
+follow.created_at, follow.updated_at, follow.developer,
 follow.entity_id, follow.entity_url, json_agg("user".*), follow.app
-as subscribers FROM follows follow JOIN users "user" 
-    ON "user"::text <> ANY (subscribers::text[]) WHERE 
-		entity_id IS NOT NULL AND entity_url IS NOT NULL 
-			AND (status <> 'ERROR' OR follow.updated_at > CURRENT_DATE - interval '10 minutes') 
+as subscribers FROM follows follow JOIN users "user"
+    ON "user"::text <> ANY (subscribers::text[]) WHERE
+		entity_id IS NOT NULL AND entity_url IS NOT NULL
+			AND (status <> 'ERROR' OR follow.updated_at > CURRENT_DATE - interval '10 minutes')
 			AND entity_url IS NOT NULL GROUP BY follow.id;
 `
 
