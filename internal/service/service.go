@@ -216,8 +216,6 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 				log.Printf("[service][AsynqConvertPlaylist][track-result-cache-error] Error caching source playlist track")
 			}
 
-			// evRR := pc.updatePlatformPlaylistTracks(info.Platform, finalResult, &Platformpl)
-
 			searchData := &blueprint.TrackSearchData{
 				Platform: info.TargetPlatform,
 				Title:    result.Title,
@@ -259,8 +257,6 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 				}
 
 				omittedTracks = append(omittedTracks, *omittedTrack)
-
-				// todo: send omitted track webhook event here, add the track to the omitted tracks list
 				continue
 			}
 
