@@ -417,6 +417,7 @@ func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.Pl
 		return nil, err
 	}
 
+	artCover := fmt.Sprintf("https://resources.tidal.com/images/%s/1080x1080.jpg", strings.ReplaceAll(playlistInfo.SquareImage, "-", "/"))
 	playlistMeta := &blueprint.PlaylistMetadata{
 		// no length yet. its calculated by adding up all the track lengths in the playlist
 		Length: util.GetFormattedDuration(playlistInfo.Duration),
@@ -427,7 +428,7 @@ func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.Pl
 		// todo: fetch user's orchdio @ and/or id and enrich. might need a specific owner object. support fetching by tidal id for tidal implementation
 		Owner: strconv.Itoa(playlistInfo.Creator.Id),
 		// fixme: possible nil pointer
-		Cover:  playlistInfo.SquareImage,
+		Cover:  artCover,
 		Entity: "playlist",
 		URL:    playlistInfo.Url,
 		// no short url here.
