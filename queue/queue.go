@@ -173,6 +173,10 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 	}
 	taskId := task.UID.String()
 
+	// then here, we add the shortID to the info payload. this is to enable us do things like send the short_id (unique_id)
+	// to a client (via webhook) after a playlist has been converted.
+	info.UniqueID = task.UniqueID
+
 	playlist, cErr := universal.ConvertPlaylist(info, o.Red, o.DB)
 	var status string
 	// for now, we don't want to bother about retrying and all of that. we're simply going to mark a task as failed if it fails
@@ -247,17 +251,14 @@ func (o *OrchdioQueue) PlaylistHandler(uid, shorturl string, info *blueprint.Lin
 		return nil
 	}
 
-	// these seem to be for backwards compatibility and stuff. keep note and remove at a later date
-	if playlist != nil {
-		status = blueprint.TaskStatusCompleted
-	}
-
-	if status == "" {
-		log.Printf("[queue][PlaylistHandler] - updating task status to failed... skipping")
+	if playlist == nil {
+		log.Printf("Playlist is nil, what to do???")
 		return nil
 	}
 
+	status = blueprint.TaskStatusCompleted
 	playlist.Meta.ShortURL = shorturl
+	// fixme: magic string
 	playlist.Meta.Entity = "playlist"
 
 	// serialize playlist

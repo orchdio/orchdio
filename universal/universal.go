@@ -69,6 +69,7 @@ func ConvertPlaylist(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (
 
 	xConversion, xErr := serviceFactory.AsynqConvertPlaylist(info)
 	if xErr != nil {
+		log.Printf("Error converting playlist here in universal")
 		return nil, xErr
 	}
 	return xConversion, nil
