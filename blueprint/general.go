@@ -161,7 +161,9 @@ type NewTask struct {
 }
 
 type PlaylistTaskResponse struct {
-	ID string `json:"task_id,omitempty"`
+	TaskID string `json:"task_id,omitempty"`
+	// this is also the short url
+	UniqueID string `json:"unique_id,omitempty"`
 	// payload would be the main payload of whatever entity is returning this
 	// for now, we have playlist and tracks.
 	Payload interface{} `json:"payload"`

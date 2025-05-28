@@ -274,7 +274,7 @@ func (d *NewDB) UpdateTaskResult(uid, data string) (*blueprint.PlaylistConversio
 	return &pc, nil
 }
 
-// FetchTask fetches a task and returns the task or an error
+// FetchTask fetches a task with a short unique id or uuid and returns the task or an error
 func (d *NewDB) FetchTask(uid string) (*blueprint.TaskRecord, error) {
 	// currently, in the db we were fetching by taskid, but we also want to fetch by the shortid
 	// so we check if the taskId is a valid uuid, if it is, we fetch by taskid, if not, we fetch by shortid

@@ -22,7 +22,10 @@ type TrackConversion struct {
 	// UniqueID is the same as taskId. also adding shortURL here because it's easier
 	// and (probably) makes more sense for the track conversion payload to carry it itself
 	// for easier integration.
-	UniqueID string `json:"unique_id,omitempty"`
+	UniqueID       string `json:"unique_id,omitempty"`
+	ShortURL       string `json:"short_url,omitempty"`
+	SourcePlatform string `json:"source_platform,omitempty"`
+	TargetPlatform string `json:"target_platform,omitempty"`
 }
 
 type TrackPlatform struct {
