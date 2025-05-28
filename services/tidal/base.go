@@ -437,6 +437,7 @@ func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.Pl
 		NBTracks:    playlistInfo.NumberOfTracks,
 		Description: playlistInfo.Description,
 		LastUpdated: playlistInfo.LastUpdated,
+		ID:          playlistInfo.Uuid,
 	}
 	return playlistMeta, nil
 }

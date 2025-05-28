@@ -41,6 +41,11 @@ type PlaylistConversion struct {
 	OmittedTracks *[]OmittedTracks `json:"empty_tracks,omitempty"`
 	Meta          PlaylistMetadata `json:"meta,omitempty"`
 	Status        string           `json:"status,omitempty" default:"pending"`
+
+	UniqueID       string `json:"unique_id,omitempty"`
+	Platform       string `json:"platform,omitempty"`
+	TargetPlatform string `json:"target_platform,omitempty"`
+	Entity         string `json:"entity" default:"playlist"`
 }
 
 type PlaylistMetadata struct {
@@ -56,12 +61,14 @@ type PlaylistMetadata struct {
 	Description string `json:"description,omitempty"`
 	LastUpdated string `json:"last_updated,omitempty"`
 	Checksum    string `json:"checksum,omitempty"`
+	ID          string `json:"id"`
 }
 
 type PlaylistConversionEventMetadata struct {
 	EventType string            `json:"event_type" default:"playlist_conversion_metadata"`
 	Platform  string            `json:"platform"`
 	TaskId    string            `json:"task_id"`
+	UniqueID  string            `json:"unique_id"`
 	Meta      *PlaylistMetadata `json:"meta"`
 }
 

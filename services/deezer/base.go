@@ -307,6 +307,7 @@ func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.Pl
 		Description: playlistInfo.Description,
 		// deezer playlists dont have last updated fields, so we use the checksum to know if/when the playlist has updated since we last fetched and cached
 		Checksum: playlistInfo.Checksum,
+		ID:       strconv.Itoa(int(playlistInfo.Id)),
 	}
 
 	return playlistMeta, nil

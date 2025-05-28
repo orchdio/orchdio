@@ -60,7 +60,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 	// so when we get a task, we are technically getting two types of tasks in two different contexts.
 	// in this case, if the task is not a valid uuid, that means it's a short url task. we then return
 	// the task result task (context) data.
-	taskUUID, pErr := uuid.Parse(taskId)
+	_, pErr := uuid.Parse(taskId)
 	if pErr != nil {
 		log.Printf("[controller][conversion][GetPlaylistTaskStatus][warning] - not a playlist task, most likely a short url")
 
@@ -78,9 +78,10 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 		}
 
 		result := &blueprint.PlaylistTaskResponse{
-			ID:      taskId,
-			Status:  taskRecord.Status,
-			Payload: res,
+			TaskID:   taskRecord.UID.String(),
+			UniqueID: taskRecord.UniqueID,
+			Status:   taskRecord.Status,
+			Payload:  res,
 		}
 		return util.SuccessResponse(ctx, http.StatusOK, result)
 	}
@@ -97,9 +98,10 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 
 		// create a new task response
 		result := &blueprint.PlaylistTaskResponse{
-			ID:      taskId,
-			Status:  taskRecord.Status,
-			Payload: res,
+			TaskID:   taskRecord.UID.String(),
+			UniqueID: taskRecord.UniqueID,
+			Status:   taskRecord.Status,
+			Payload:  res,
 		}
 		return util.ErrorResponse(ctx, http.StatusOK, result, "")
 	}
@@ -115,18 +117,20 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 
 		if res.Meta.URL == "" {
 			taskResponse := &blueprint.PlaylistTaskResponse{
-				ID:      taskId,
-				Payload: nil,
-				Status:  "pending",
+				TaskID:   taskRecord.UID.String(),
+				UniqueID: taskRecord.UniqueID,
+				Payload:  nil,
+				Status:   "pending",
 			}
 			return util.SuccessResponse(ctx, http.StatusOK, taskResponse)
 		}
 
 		res.Meta.Entity = "playlist"
 		taskResponse := &blueprint.PlaylistTaskResponse{
-			ID:      taskUUID.String(),
-			Payload: res,
-			Status:  taskRecord.Status,
+			TaskID:   taskRecord.UID.String(),
+			UniqueID: taskRecord.UniqueID,
+			Payload:  res,
+			Status:   taskRecord.Status,
 		}
 
 		return util.SuccessResponse(ctx, http.StatusOK, taskResponse)
@@ -134,9 +138,10 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 
 	if taskRecord.Status == "pending" {
 		taskResponse := &blueprint.PlaylistTaskResponse{
-			ID:      taskId,
-			Payload: nil,
-			Status:  "pending",
+			TaskID:   taskRecord.UID.String(),
+			UniqueID: taskRecord.UniqueID,
+			Payload:  nil,
+			Status:   "pending",
 		}
 		return util.SuccessResponse(ctx, http.StatusOK, taskResponse)
 	}

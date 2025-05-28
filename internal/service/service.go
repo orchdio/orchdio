@@ -55,7 +55,11 @@ func (pc *Service) ConvertTrack(info *blueprint.LinkInfo) (*blueprint.TrackConve
 	}
 
 	trackConversion := &blueprint.TrackConversion{
-		Entity: "track",
+		Entity:         "track",
+		UniqueID:       info.TaskID,
+		ShortURL:       info.UniqueID,
+		SourcePlatform: info.Platform,
+		TargetPlatform: info.TargetPlatform,
 	}
 
 	uErr := pc.updatePlatformTracks(info.Platform, trackConversion, srcTrackResult)
@@ -173,6 +177,7 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 		Meta:      playlistMeta,
 		EventType: blueprint.PlaylistConversionMetadataEvent,
 		TaskId:    info.TaskID,
+		UniqueID:  info.UniqueID,
 	})
 
 	if !ok {
@@ -254,6 +259,7 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 					Artistes: result.Artists,
 					// todo: remove this (and other fields not added here) from the result after confirming its ok.
 					Platform: info.Platform,
+					URL:      result.URL,
 				}
 
 				omittedTracks = append(omittedTracks, *omittedTrack)
@@ -336,6 +342,12 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 	finalResult.OmittedTracks = &omittedTracks
 	finalResult.Meta = *playlistMeta
 	finalResult.Status = blueprint.TaskStatusCompleted
+
+	finalResult.Platform = info.Platform
+	finalResult.TargetPlatform = info.TargetPlatform
+	// fixme: magiclink
+	finalResult.Entity = "playlist"
+	finalResult.UniqueID = info.UniqueID
 
 	return finalResult, nil
 }
