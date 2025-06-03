@@ -27,7 +27,7 @@ type AppJWT struct {
 
 type AuthMiddlewareUserInfo struct {
 	Platform     string `json:"platform"`
-	PlatformID   string `json:"platform_ids"`
+	PlatformID   string `json:"platform_id"`
 	RefreshToken string `json:"refresh_token"`
 }
 
