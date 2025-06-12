@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"orchdio/blueprint"
 
-	"github.com/orchdio/spotify/v2"
-	spotifyauth "github.com/orchdio/spotify/v2/auth"
 	"github.com/savsgio/gotils/strings"
+	"github.com/zmb3/spotify/v2"
+	spotifyauth "github.com/zmb3/spotify/v2/auth"
 )
 
 // FetchAuthURL fetches the auth url
