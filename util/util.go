@@ -129,9 +129,10 @@ func SignOrgLoginJWT(claims *blueprint.AppJWT) ([]byte, error) {
 // SignJwt create a new jwt token
 func SignJwt(claims *blueprint.OrchdioUserToken) ([]byte, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &blueprint.OrchdioUserToken{
-		UUID:     claims.UUID,
-		Email:    claims.Email,
-		Platform: claims.Platform,
+		UUID:               claims.UUID,
+		Email:              claims.Email,
+		Platforms:          claims.Platforms,
+		LastAuthedPlatform: claims.LastAuthedPlatform,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 12)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

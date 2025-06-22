@@ -306,12 +306,23 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 
 		var userPlatformToken = encryptedRefreshToken
 
+		// get the user's apps that they've authed
+		userAppsInfo, err := database.FetchUserAppsInfoByUserUUID(userProfile.UUID.String())
+
+		if err != nil {
+			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch user apps info", zap.Error(err), zap.String("platform", "apple_music"))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+		}
+
+		// var userPlatformInfo []blueprint.OrchdioUserAppsInfo
+
 		t := blueprint.OrchdioUserToken{
-			RegisteredClaims: jwt.RegisteredClaims{},
-			Email:            body.Email,
-			Username:         displayName,
-			UUID:             userProfile.UUID,
-			Platform:         applemusic.IDENTIFIER,
+			RegisteredClaims:   jwt.RegisteredClaims{},
+			Email:              body.Email,
+			Username:           displayName,
+			UUID:               userProfile.UUID,
+			Platforms:          userAppsInfo,
+			LastAuthedPlatform: applemusic.IDENTIFIER,
 		}
 
 		authToken, err := util.SignJwt(&t)
@@ -610,12 +621,20 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 
 			userPlatformToken = encryptedRefreshToken
 
+			// get the user's apps that they've authed
+			userAppsInfo, err := database.FetchUserAppsInfoByUserUUID(userProfile.UUID.String())
+			if err != nil {
+				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch user apps info", zap.Error(err), zap.String("platform", "spotify"))
+				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+			}
+
 			t := blueprint.OrchdioUserToken{
-				RegisteredClaims: jwt.RegisteredClaims{},
-				Email:            userProfile.Email,
-				Username:         user.DisplayName,
-				UUID:             userProfile.UUID,
-				Platform:         spotify.IDENTIFIER,
+				RegisteredClaims:   jwt.RegisteredClaims{},
+				Email:              userProfile.Email,
+				Username:           user.DisplayName,
+				UUID:               userProfile.UUID,
+				Platforms:          userAppsInfo,
+				LastAuthedPlatform: spotify.IDENTIFIER,
 			}
 
 			authT, sErr := util.SignJwt(&t)
@@ -696,15 +715,23 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			updatedUserCredentials.Platform = deezer.IDENTIFIER
 			updatedUserCredentials.Token = encryptedRefreshToken
 
+			// get the user's apps that they've authed
+			userAppsInfo, err := database.FetchUserAppsInfoByUserUUID(userProfile.UUID.String())
+			if err != nil {
+				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch user apps info", zap.Error(err))
+				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+			}
+
 			userPlatformToken = encryptedRefreshToken
 
 			// generate jwt token for orchdio labs
 			t := blueprint.OrchdioUserToken{
-				RegisteredClaims: jwt.RegisteredClaims{},
-				Email:            deezerUser.Email,
-				Username:         deezerUser.Name,
-				UUID:             userProfile.UUID,
-				Platform:         deezer.IDENTIFIER,
+				RegisteredClaims:   jwt.RegisteredClaims{},
+				Email:              deezerUser.Email,
+				Username:           deezerUser.Name,
+				UUID:               userProfile.UUID,
+				Platforms:          userAppsInfo,
+				LastAuthedPlatform: deezer.IDENTIFIER,
 			}
 
 			authToken, sErr := util.SignJwt(&t)
