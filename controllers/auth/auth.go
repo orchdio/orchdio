@@ -235,6 +235,17 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 
 	logger := logger2.NewZapSentryLogger(loggerOpts)
 
+	database := db.NewDB{DB: a.DB}
+	// ensure the incoming app exists
+	developerApp, fErr := database.FetchAppByPublicKeyWithoutDevId(developerPubKey.(string))
+	if fErr != nil {
+		if errors.Is(fErr, sql.ErrNoRows) {
+			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "invalid app. please make sure that the public key belongs to an existing app.")
+		}
+		logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch developer app", zap.Error(fErr))
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+	}
+
 	// if the verb is POST, it means that the auth is most likely Apple Music auth, so we'll handle it differently
 	if ctx.Method() == "POST" {
 		// apple music auth flow
@@ -252,22 +263,11 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
-		database := db.NewDB{DB: a.DB}
 		state := body.State
 
 		if state == "" {
 			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: no state present. please pass a state for apple music auth")
 			return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "no state present. please pass a state for apple music auth")
-		}
-
-		// ensure the incoming app exists
-		developerApp, fErr := database.FetchAppByPublicKeyWithoutDevId(body.App)
-		if fErr != nil {
-			if errors.Is(fErr, sql.ErrNoRows) {
-				return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "invalid app. please make sure that the public key belongs to an existing app.")
-			}
-			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch developer app", zap.Error(fErr))
-			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		var displayName = "-"
@@ -307,7 +307,7 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		var userPlatformToken = encryptedRefreshToken
 
 		// get the user's apps that they've authed
-		userAppsInfo, err := database.FetchUserAppsInfoByUserUUID(userProfile.UUID.String())
+		userAppsInfo, err := database.FetchUserAppsInfoByUserUUID(userProfile.UUID.String(), developerApp.UID.String())
 
 		if err != nil {
 			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch user apps info", zap.Error(err), zap.String("platform", "apple_music"))
@@ -622,7 +622,7 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			userPlatformToken = encryptedRefreshToken
 
 			// get the user's apps that they've authed
-			userAppsInfo, err := database.FetchUserAppsInfoByUserUUID(userProfile.UUID.String())
+			userAppsInfo, err := database.FetchUserAppsInfoByUserUUID(userProfile.UUID.String(), developerApp.UID.String())
 			if err != nil {
 				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch user apps info", zap.Error(err), zap.String("platform", "spotify"))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
@@ -716,7 +716,7 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			updatedUserCredentials.Token = encryptedRefreshToken
 
 			// get the user's apps that they've authed
-			userAppsInfo, err := database.FetchUserAppsInfoByUserUUID(userProfile.UUID.String())
+			userAppsInfo, err := database.FetchUserAppsInfoByUserUUID(userProfile.UUID.String(), developerApp.UID.String())
 			if err != nil {
 				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch user apps info", zap.Error(err))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")

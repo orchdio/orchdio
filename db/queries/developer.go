@@ -146,8 +146,8 @@ uapps.refresh_token, coalesce(uapps.username, '') as username, u.email, "user" a
 // since for a user app, there is only an app for each plaform, so we can narrow down using platform when filtering
 // by user app's app's id
 
-const FetchUserAppAndInfoByPlatform = `SELECT uapps.uuid as app_id, uapps.platform, coalesce(uapps.platform_id, '') as platform_id, coalesce(uapps.username, '') as username
-	FROM user_apps uapps JOIN users u on uapps."user" = $1`
+const FetchUserAppAndInfoByPlatform = `SELECT distinct uapps.uuid as app_id, uapps.platform, coalesce(uapps.platform_id, '') as platform_id, coalesce(uapps.username, '') as username
+	FROM user_apps uapps JOIN users u on uapps."user" = $1 and app = $2`
 
 // update user platform token based on the streaming platform user provides
 

@@ -576,7 +576,7 @@ func (d *NewDB) FetchUserByIdentifier(identifier, app string) (*[]blueprint.User
 	return &res, nil
 }
 
-func (d *NewDB) FetchUserAppsInfoByUserUUID(userId string) ([]blueprint.OrchdioUserAppsInfo, error) {
+func (d *NewDB) FetchUserAppsInfoByUserUUID(userId, appId string) ([]blueprint.OrchdioUserAppsInfo, error) {
 	row, err := d.DB.Queryx(queries.FetchUserAppAndInfoByPlatform, userId)
 	if err != nil {
 		log.Printf("[db][FetchUserAppsInfo] error fetching user apps info. %v\n", err)
