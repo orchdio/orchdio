@@ -18,7 +18,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/gofiber/fiber/v2"
 	"golang.org/x/oauth2"
 
@@ -61,7 +60,6 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "No title to insert into playlist. please add title to the playlist")
 	}
 
-	spew.Dump(createBodyData)
 	// find the user in the database
 	database := db.NewDB{DB: p.DB}
 	user, err := database.FetchPlatformAndUserInfoByIdentifier(createBodyData.User, app.UID.String(), platform)
