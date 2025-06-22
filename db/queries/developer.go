@@ -135,14 +135,19 @@ and uapps.app = $2
          WHERE ( CASE WHEN $3 = 'id' THEN u.uuid::text = $1 ELSE u.email = $1 END )
 	AND app IS NOT NULL`
 
-// since for a user app, there is only an app for each plaform, so we can narrow down using platform when filtering
-// by user app's app's id
+// a query to fetch user apps info using the user's uuid (name, id, etc)
+// const UserAppsInfo = `select platform, username, platform_id from user_apps where "user" = $1`
 
-const FetchUserAppAndInfoByPlatform = `SELECT uapps.uuid as app_id,
-       uapps.platform, coalesce(uapps.platform_id, '') as platform_id,
+const UserAppsInfoByUserUUID = `SELECT uapps.uuid as app_id, uapps.platform, coalesce(uapps.platform_id, '') as platform_id,
 uapps.refresh_token, coalesce(uapps.username, '') as username, u.email, "user" as user_id
 	FROM user_apps uapps JOIN users u on uapps."user" = u.uuid AND uapps.app = $2
 	WHERE (CASE WHEN $3 = 'id' THEN u.uuid::text = $1 ELSE u.email = $1 END) AND platform = $4`
+
+// since for a user app, there is only an app for each plaform, so we can narrow down using platform when filtering
+// by user app's app's id
+
+const FetchUserAppAndInfoByPlatform = `SELECT uapps.uuid as app_id, uapps.platform, coalesce(uapps.platform_id, '') as platform_id, coalesce(uapps.username, '') as username
+	FROM user_apps uapps JOIN users u on uapps."user" = $1`
 
 // update user platform token based on the streaming platform user provides
 

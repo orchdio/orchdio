@@ -46,10 +46,20 @@ type AppAuthToken struct {
 // OrchdioUserToken represents a parsed user JWT claim
 type OrchdioUserToken struct {
 	jwt.RegisteredClaims
-	Email    string    `json:"email"`
-	Username string    `json:"username"`
-	UUID     uuid.UUID `json:"uuid"`
-	Platform string    `json:"platform"`
+	Email              string                `json:"email"`
+	Username           string                `json:"username"`
+	UUID               uuid.UUID             `json:"uuid"`
+	Platforms          []OrchdioUserAppsInfo `json:"platforms"`
+	LastAuthedPlatform string                `json:"last_authed_platform"`
+}
+
+// OrchdioUserAppsInfo represents a user's single app info. A user app is whatever platform the user has authorized for a specific app
+// It is what we send as part of the user's token after authorization.
+type OrchdioUserAppsInfo struct {
+	AppID      string `json:"app_id" db:"app_id"`
+	Platform   string `json:"platform" db:"platform"`
+	PlatformId string `json:"platform_id" db:"platform_id"`
+	Username   string `json:"username" db:"username"`
 }
 
 type OrchdioOrgCreateResponse struct {

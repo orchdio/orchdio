@@ -59,6 +59,7 @@ func (p *Platforms) AddPlaylistToAccount(ctx *fiber.Ctx) error {
 		log.Printf("\n[controllers][platforms][AddPlaylistToAccount] error - %v\n", "No title in playlist")
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "No title to insert into playlist. please add title to the playlist")
 	}
+
 	// find the user in the database
 	database := db.NewDB{DB: p.DB}
 	user, err := database.FetchPlatformAndUserInfoByIdentifier(createBodyData.User, app.UID.String(), platform)
