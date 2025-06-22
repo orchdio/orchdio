@@ -274,7 +274,7 @@ func (d *NewDB) UpdateTaskResult(uid, data string) (*blueprint.PlaylistConversio
 	return &pc, nil
 }
 
-// FetchTask fetches a task and returns the task or an error
+// FetchTask fetches a task with a short unique id or uuid and returns the task or an error
 func (d *NewDB) FetchTask(uid string) (*blueprint.TaskRecord, error) {
 	// currently, in the db we were fetching by taskid, but we also want to fetch by the shortid
 	// so we check if the taskId is a valid uuid, if it is, we fetch by taskid, if not, we fetch by shortid
@@ -576,6 +576,29 @@ func (d *NewDB) FetchUserByIdentifier(identifier, app string) (*[]blueprint.User
 	return &res, nil
 }
 
+func (d *NewDB) FetchUserAppsInfoByUserUUID(userId string) ([]blueprint.OrchdioUserAppsInfo, error) {
+	row, err := d.DB.Queryx(queries.FetchUserAppAndInfoByPlatform, userId)
+	if err != nil {
+		log.Printf("[db][FetchUserAppsInfo] error fetching user apps info. %v\n", err)
+		return nil, err
+	}
+
+	var res []blueprint.OrchdioUserAppsInfo
+	for row.Next() {
+		var r blueprint.OrchdioUserAppsInfo
+		err = row.StructScan(&r)
+		if err != nil {
+			log.Printf("[db][FetchUserAppsInfo] error scanning user apps info. %v\n", err)
+			return nil, err
+		}
+
+		res = append(res, r)
+	}
+
+	log.Printf("[db][FetchUserAppsInfo] fetched user's apps info. They have %d apps\n", len(res))
+	return res, nil
+}
+
 // FetchPlatformAndUserInfoByIdentifier fetches a user by the identifier (email or id) and a flag specifying which one and the platform the user
 func (d *NewDB) FetchPlatformAndUserInfoByIdentifier(identifier, app, platform string) (*blueprint.UserAppAndPlatformInfo, error) {
 	valid, opt := util.FetchIdentifierOption(identifier)
@@ -588,7 +611,7 @@ func (d *NewDB) FetchPlatformAndUserInfoByIdentifier(identifier, app, platform s
 	// 2. app id
 	// identifier — id or email
 	// 3. platform
-	row := d.DB.QueryRowx(queries.FetchUserAppAndInfoByPlatform, identifier, app, opt, platform)
+	row := d.DB.QueryRowx(queries.UserAppsInfoByUserUUID, identifier, app, opt, platform)
 	var res blueprint.UserAppAndPlatformInfo
 	err := row.StructScan(&res)
 	if err != nil {

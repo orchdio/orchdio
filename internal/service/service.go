@@ -55,7 +55,11 @@ func (pc *Service) ConvertTrack(info *blueprint.LinkInfo) (*blueprint.TrackConve
 	}
 
 	trackConversion := &blueprint.TrackConversion{
-		Entity: "track",
+		Entity:         "track",
+		UniqueID:       info.TaskID,
+		ShortURL:       info.UniqueID,
+		SourcePlatform: info.Platform,
+		TargetPlatform: info.TargetPlatform,
 	}
 
 	uErr := pc.updatePlatformTracks(info.Platform, trackConversion, srcTrackResult)
@@ -72,6 +76,7 @@ func (pc *Service) ConvertTrack(info *blueprint.LinkInfo) (*blueprint.TrackConve
 		},
 	}
 
+	// fixme: magic string? — improve this.
 	if info.TargetPlatform == "all" {
 		// get all targetPlatforms services apart from the current "from"
 		validPlatforms := []string{applemusic.IDENTIFIER, deezer.IDENTIFIER,
@@ -143,6 +148,8 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 		return nil, errors.New("target platform is required")
 	}
 
+	var finalResult = &blueprint.PlaylistConversion{}
+
 	fromService, fErr := pc.factory.GetPlatformService(info.Platform)
 	if fErr != nil {
 		log.Printf("DEBUG: error getting platform service: %v", fErr)
@@ -170,6 +177,7 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 		Meta:      playlistMeta,
 		EventType: blueprint.PlaylistConversionMetadataEvent,
 		TaskId:    info.TaskID,
+		UniqueID:  info.UniqueID,
 	})
 
 	if !ok {
@@ -184,6 +192,7 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 	var targetPlaylistTracks []blueprint.TrackSearchResult
 
 	var omittedTracksMeta []blueprint.MissingTrackEventPayload
+	var omittedTracks []blueprint.OmittedTracks
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -245,7 +254,15 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 				log.Printf("Missing playlist track webhook event response is: %v", mRes)
 				omittedTracksMeta = append(omittedTracksMeta, *meta)
 
-				// todo: send omitted track webhook event here, add the track to the omitted tracks list
+				omittedTrack := &blueprint.OmittedTracks{
+					Title:    result.Title,
+					Artistes: result.Artists,
+					// todo: remove this (and other fields not added here) from the result after confirming its ok.
+					Platform: info.Platform,
+					URL:      result.URL,
+				}
+
+				omittedTracks = append(omittedTracks, *omittedTrack)
 				continue
 			}
 
@@ -295,20 +312,44 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 		PlaylistID:     info.EntityID,
 		SourcePlatform: info.Platform,
 		TargetPlatform: info.TargetPlatform,
+		UniqueID:       info.UniqueID,
 	})
 
 	if whErr != nil {
-		log.Printf("Error sending playlist conversion done webhook: %v", whErr)
+		log.Printf("[service][AsynqConvertPlaylist] - Error sending playlist conversion done webhook: %v", whErr)
 	}
 
-	log.Print("Sent conversion done webhook event")
+	srcPlatformResultsErr := pc.updatePlatformPlaylistTracks(info.Platform, finalResult, &blueprint.PlatformPlaylistTrackResult{
+		Tracks: &srcPlaylistTracks,
+		Length: util.SumUpResultLength(&srcPlaylistTracks),
+	})
 
-	log.Printf("Missing tracks are: %v", len(omittedTracksMeta))
+	if srcPlatformResultsErr != nil {
+		log.Printf("[service][AsynqConvertPlaylist] - FATAL: could not build src platform result struct")
+		return nil, srcPlatformResultsErr
+	}
 
-	log.Printf("Finished fetching all tracks...")
-	// todo: cache playlist info in this section...
+	targetPlatformResultsErr := pc.updatePlatformPlaylistTracks(info.TargetPlatform, finalResult, &blueprint.PlatformPlaylistTrackResult{
+		Tracks: &targetPlaylistTracks,
+		Length: util.SumUpResultLength(&targetPlaylistTracks),
+	})
 
-	return nil, nil
+	if targetPlatformResultsErr != nil {
+		log.Printf("[service][AsynqConvertPlaylist] - FATAL: could not build target platform result struct")
+		return nil, targetPlatformResultsErr
+	}
+
+	finalResult.OmittedTracks = &omittedTracks
+	finalResult.Meta = *playlistMeta
+	finalResult.Status = blueprint.TaskStatusCompleted
+
+	finalResult.Platform = info.Platform
+	finalResult.TargetPlatform = info.TargetPlatform
+	// fixme: magiclink
+	finalResult.Entity = "playlist"
+	finalResult.UniqueID = info.UniqueID
+
+	return finalResult, nil
 }
 
 func (pc *Service) asyncPlaylistConversionWorker(sv *platforminternal.PlatformService, jobs <-chan trackJob, results chan<- trackJob, wg *sync.WaitGroup) {

@@ -97,9 +97,11 @@ func (p *Platforms) ConvertTrack(ctx *fiber.Ctx) error {
 		}
 
 		response := &blueprint.TrackConversion{
-			Entity:    "track",
-			Platforms: conversion.Platforms,
-			UniqueID:  conversion.UniqueID,
+			Entity:         "track",
+			Platforms:      conversion.Platforms,
+			UniqueID:       conversion.UniqueID,
+			SourcePlatform: linkInfo.Platform,
+			TargetPlatform: linkInfo.TargetPlatform,
 		}
 		return util.SuccessResponse(ctx, http.StatusOK, response)
 	}
@@ -165,9 +167,10 @@ func (p *Platforms) ConvertPlaylist(ctx *fiber.Ctx) error {
 
 		// TrackConversion task response to be polled later
 		res := &blueprint.PlaylistTaskResponse{
-			ID:      string(_taskId),
-			Payload: nil,
-			Status:  "pending",
+			TaskID:   string(_taskId),
+			UniqueID: string(shortURL),
+			Payload:  nil,
+			Status:   "pending",
 		}
 
 		log.Printf("[controller][conversion][EchoConversion] - task handler attached")

@@ -138,6 +138,10 @@ type LinkInfo struct {
 	App            string `json:"app,omitempty"`
 	Developer      string `json:"developer,omitempty"`
 	TaskID         string `json:"task_id,omitempty"`
+
+	// uniqueID stands for the shortURL (some places in the code) and short_id (as stored in the DB)
+	// this is what we end up sending to the user to be able to access a conversion (playlist or track) data.
+	UniqueID string `json:"unique_id,omitempty"`
 }
 
 type ConversionBody struct {
@@ -157,7 +161,9 @@ type NewTask struct {
 }
 
 type PlaylistTaskResponse struct {
-	ID string `json:"task_id,omitempty"`
+	TaskID string `json:"task_id,omitempty"`
+	// this is also the short url
+	UniqueID string `json:"unique_id,omitempty"`
 	// payload would be the main payload of whatever entity is returning this
 	// for now, we have playlist and tracks.
 	Payload interface{} `json:"payload"`
@@ -183,6 +189,7 @@ type TaskRecord struct {
 	Type       string    `json:"type,omitempty" db:"type"`
 	RetryCount int       `json:"retry_count,omitempty" db:"retry_count"`
 	App        string    `json:"app,omitempty" db:"app"`
+	UniqueID   string    `json:"unique_id,omitempty" db:"shortid"`
 }
 
 type FollowTask struct {
@@ -272,6 +279,8 @@ type PlaylistConversionDoneEventMetadata struct {
 	// the platform that the playlist was converted from
 	SourcePlatform string `json:"source_platform,omitempty"`
 	TargetPlatform string `json:"target_platform,omitempty"`
+
+	UniqueID string `json:"unique_id,omitempty"`
 }
 
 type MissingTrackMeta struct {

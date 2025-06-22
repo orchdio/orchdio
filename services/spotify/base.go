@@ -339,6 +339,7 @@ func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.Pl
 		// no short url here.
 		// todo: try to pass the entity id here
 		//ShortURL: info.TaskID,
+		ID: string(playlistInfo.ID),
 	}
 
 	return playlistMeta, nil

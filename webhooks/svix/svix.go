@@ -206,7 +206,6 @@ func (s *SvixWebhook) SendTrackEvent(appId string, out *blueprint.PlaylistConver
 }
 
 func (s *SvixWebhook) SendPlaylistMetadataEvent(info *blueprint.LinkInfo, result *blueprint.PlaylistConversionEventMetadata) bool {
-	// todo: send playlist conversion metadata event here
 	_, whEventErr := s.SendEvent(info.App, blueprint.PlaylistConversionMetadataEvent, &result)
 	if whEventErr != nil {
 		log.Printf("[internal][platforms][platform_factory]: Could not send playlist conversion metadata event %v", whEventErr)

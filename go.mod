@@ -23,7 +23,6 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/minchao/go-apple-music v0.0.0-20230815040201-3b2aec2d7ffe
 	github.com/nleeper/goment v1.4.4
-	github.com/orchdio/spotify/v2 v2.0.0-20250404203736-f61444cf86c9
 	github.com/raitonoberu/ytmusic v0.0.0-20240324143733-0e5780514b1d
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/samber/lo v1.49.1

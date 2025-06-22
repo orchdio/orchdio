@@ -25,3 +25,7 @@ todo
 misc.json
 
 scratch.txt
+.zed
+
+# ignore debugger generated files.
+__debug_*
