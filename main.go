@@ -152,7 +152,7 @@ func main() {
 	}
 
 	// ===========================================================
-	// this is the job queue config shenanigans
+	// job queue config
 	// ===========================================================
 	asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
 	inspector := asynq.NewInspector(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
@@ -544,8 +544,8 @@ func main() {
 	//c.Start()
 
 	serverChan := make(chan os.Signal, 1)
-	// we listen for SIGINT, SIGTERM and SIGKILL. this sends a signal to the serverChan channel, which we listen to in the goroutine below
-	signal.Notify(serverChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+	// we listen for SIGINT and SIGTERM. this sends a signal to the serverChan channel, which we listen to in the goroutine below
+	signal.Notify(serverChan, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	serverShutdown := make(chan struct{})
 
