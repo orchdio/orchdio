@@ -292,7 +292,7 @@ func main() {
 			if errors.As(err, &e) {
 				// e.Code will be the status code.
 				// e.Message will be the error message.
-				log.Printf(err.Error())
+				log.Print(err.Error())
 				return util.ErrorResponse(ctx, e.Code, "internal error", e.Message)
 			}
 			log.Printf("Error in next router %v", err)
