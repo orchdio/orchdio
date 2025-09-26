@@ -12,6 +12,8 @@ The current streaming platforms all do the same thing which is to stream music â
 a problem for both users and developers; developers have to write the same code to use music streaming api on each platform, and users have to maintain separate accounts on each platform, Orchdio solves this by providing unified, cross-platform APIs that enable developers build on various streaming services at once and allow users take charge of their accounts from several services in one place.
 
 
+![Sample Screenshot](track-conversion.png)
+
 #### Building and running the project locally
 
 
