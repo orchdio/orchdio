@@ -50,10 +50,11 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 		log.Printf("\n[services][ExtractLinkInfo][error] Error escaping URL: %v\n", escapeErr)
 		return nil, escapeErr
 	}
+
 	contains := strings.Contains(song, "https://")
 	if !contains {
 		log.Printf("[services][ExtractLinkInfo][warning] link doesnt seem to be https.")
-		return nil, blueprint.ErrInvalidLink
+		song = strings.ReplaceAll(song, "http", "https")
 	}
 
 	if len([]byte(song)) > 200 {
@@ -100,10 +101,6 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 	}
 
 	host := parsedURL.Host
-
-	wIndex := strings.Index(host, ".")
-	host = host[wIndex+1:]
-	// remove any possible leading www
 	var (
 		entityID string
 		entity   = "track"
@@ -111,7 +108,10 @@ func ExtractLinkInfo(t string) (*blueprint.LinkInfo, error) {
 	playlistIndex := strings.Index(song, "playlist")
 	trackIndex := strings.Index(song, "track")
 
-	log.Printf("EXTRACTED HOST IS.. %s", host)
+	// tidal is kind of weird with their urls..
+	if strings.Contains(host, "tidal.com") {
+		host = "tidal.com"
+	}
 
 	switch host {
 	case util.Find(blueprint.DeezerHost, host):
