@@ -12,11 +12,8 @@ import (
 	"orchdio/services/tidal"
 	"orchdio/services/ytmusic"
 	"orchdio/util"
-	svixwebhook "orchdio/webhooks/svix"
-	"os"
 	"sync"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/samber/lo"
 )
 
@@ -137,11 +134,6 @@ func (pc *Service) ConvertTrack(info *blueprint.LinkInfo) (*blueprint.TrackConve
 	return trackConversion, nil
 }
 
-// this is a method similar to AsynqConvertPlaylist except this moves some of the individually implemented
-// playlist conversion flow into the common factory interface. e.g. this method will ensure that when webhook
-// events for track conversions are sent, they are sent as pair of "source" and "target" tracks, to make it easier to
-// implement for clients.
-//
 // AsynqConvertPlaylist
 func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.PlaylistConversion, error) {
 	if info.TargetPlatform == "" {
@@ -352,39 +344,6 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 	return finalResult, nil
 }
 
-func (pc *Service) asyncPlaylistConversionWorker(sv *platforminternal.PlatformService, jobs <-chan trackJob, results chan<- trackJob, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	for job := range jobs {
-		result := trackJob{
-			track: job.track,
-			index: job.index,
-			info:  job.info,
-		}
-
-		searchData := blueprint.TrackSearchData{
-			Title:    job.track.Title,
-			Artists:  job.track.Artistes,
-			Platform: job.platform,
-			Meta: &blueprint.TrackSearchMeta{
-				TaskID: job.info.TaskID,
-			},
-		}
-
-		platformService := *sv
-		trackR, sErr := platformService.SearchTrackWithTitle(&searchData)
-		if sErr != nil {
-			log.Printf("[internal][platforms][platform_factory]: could not convert track data: %s, Platform: %s, Target Platform: %s, Error: %v", spew.Sdump(&searchData), job.platform, job.targetPlatform, sErr)
-			result.err = sErr
-			results <- result
-			continue
-		}
-
-		result.result = trackR
-		results <- result
-	}
-}
-
 func (pc *Service) updatePlatformPlaylistTracks(
 	platform string,
 	conversion *blueprint.PlaylistConversion,
@@ -423,15 +382,4 @@ func (pc *Service) updatePlatformTracks(platform string, conversion *blueprint.T
 	}
 
 	return nil
-}
-
-func (pc *Service) sendWebhookPlaylistMetadataEvent(info *blueprint.LinkInfo, conversion *blueprint.PlaylistConversion) error {
-	svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), true)
-	_, err := svixInstance.SendEvent(pc.factory.App.WebhookAppID, blueprint.PlaylistConversionMetadataEvent, &blueprint.PlaylistConversionEventMetadata{
-		Platform:  info.Platform,
-		Meta:      &conversion.Meta,
-		EventType: blueprint.PlaylistConversionMetadataEvent,
-		TaskId:    info.EntityID,
-	})
-	return err
 }

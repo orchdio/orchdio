@@ -72,17 +72,6 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*
 			log.Printf("[services][ytmusic][SearchTrackWithTitle] Error unmarshalling cached track: %v\n", err)
 			return nil, err
 		}
-
-		// send webhook event here
-		//svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
-		//payload := &blueprint.PlaylistConversionEventTrack{
-		//	Platform: IDENTIFIER,
-		//	Track:    &result,
-		//}
-		//ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, payload)
-		//if !ok {
-		//	log.Printf("[services][ytmusic][SearchTrackWithTitle] Error sending webhook event: %v\n", err)
-		//}
 		return &result, nil
 	}
 
@@ -95,9 +84,8 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*
 	}
 
 	tracks := r.Tracks
-
 	if len(tracks) == 0 {
-		return nil, nil
+		return nil, blueprint.EnoResult
 	}
 
 	var track *ytmusic.TrackItem
@@ -107,17 +95,10 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*
 			break
 		}
 		track = t
-		break
 	}
 
 	// get artistes
 	artistes := make([]string, 0)
-
-	if track == nil {
-		log.Printf("[services][ytmusic][SearchTrackWithTitle] Track is nil, returning nil\n")
-		return nil, nil
-	}
-
 	for _, artist := range track.Artists {
 		artistes = append(artistes, artist.Name)
 	}
@@ -165,18 +146,6 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*
 			return nil, err
 		}
 	}
-
-	// send webhook event here
-	//svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
-	//payload := &blueprint.PlaylistConversionEventTrack{
-	//	Platform: IDENTIFIER,
-	//	Track:    result,
-	//}
-	//ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, payload)
-	//if !ok {
-	//	log.Printf("[services][ytmusic][SearchTrackWithTitle] Error sending webhook event: %v\n", err)
-	//}
-
 	return result, nil
 }
 
@@ -252,26 +221,5 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 
 // FetchPlaylistTracklist fetches the tracks of a playlist on youtube music.
 func FetchPlaylistTracklist(id string, red *redis.Client) (*[]blueprint.TrackSearchResult, error) {
-	//n := ytmusic.Search(id)
-	//r, err := n.Next()
-	//if err != nil {
-	//	log.Printf("[services][ytmusic][FetchPlaylistTracklist] Error fetching playlist tracklist: %v\n", err)
-	//	return nil, err
-	//}
-	//playlists := r.Playlists
-	//if len(playlists) == 0 {
-	//	return nil, nil
-	//}
-	//playlist := playlists[0]
-	//tracks := make([]blueprint.TrackSearchResult, len(playlist.))
-	//playlistResult := &blueprint.PlaylistSearchResult{
-	//	Title:   playlist.Title,
-	//	Tracks:  nil,
-	//	URL:     "",
-	//	Length:  "",
-	//	Preview: "",
-	//	Owner:   "",
-	//	Cover:   "",
-	//}
 	return nil, nil
 }
