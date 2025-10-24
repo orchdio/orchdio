@@ -21,6 +21,24 @@ type NewDB struct {
 	DB *sqlx.DB
 }
 
+func ConnectDB(dbURL string) (*sqlx.DB, error) {
+	// "postgres://kauffman@localhost:5432/orchdio_test"
+	dbase, err := sqlx.Open("postgres", dbURL)
+
+	if err != nil {
+		log.Print("COULD NOT START (TEST) DATABASE")
+		return nil, err
+	}
+
+	err = dbase.Ping()
+	if err != nil {
+		log.Print("COULD NOT PING DATABASE")
+		return nil, err
+	}
+
+	return dbase, nil
+}
+
 // FindUserByEmail finds a user by their email
 func (d *NewDB) FindUserByEmail(email string) (*blueprint.User, error) {
 	result := d.DB.QueryRowx(queries.FindUserByEmail, email)

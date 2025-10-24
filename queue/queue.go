@@ -17,6 +17,10 @@ import (
 	sendinblue "github.com/sendinblue/APIv3-go-library/v2/lib"
 )
 
+type QueueService interface {
+	EnqueueTask(task *asynq.Task, q, taskId string, processIn time.Duration)
+}
+
 type OrchdioQueue struct {
 	AsynqClient *asynq.Client
 	AsynqRouter *asynq.ServeMux

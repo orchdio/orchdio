@@ -11,7 +11,6 @@ import (
 	"orchdio/blueprint"
 	"orchdio/db"
 	"orchdio/db/queries"
-	"orchdio/queue"
 	"orchdio/util"
 	"os"
 	"time"
@@ -330,7 +329,7 @@ func (u *UserController) LoginUserToOrg(ctx *fiber.Ctx) error {
 func (u *UserController) SendAdminWelcomeEmail(email string) error {
 	// prepare welcome email
 	taskID := uuid.NewString()
-	orchdioQueue := queue.NewOrchdioQueue(u.AsynqClient, u.DB, u.Redis, u.AsynqServer)
+	// orchdioQueue := queue.NewOrchdioQueue(u.AsynqClient, u.DB, u.Redis, u.AsynqServer)
 	taskData := &blueprint.EmailTaskData{
 		From:    os.Getenv("ALERT_EMAIL"),
 		To:      email,
@@ -347,13 +346,13 @@ func (u *UserController) SendAdminWelcomeEmail(email string) error {
 		return sErr
 	}
 
-	sendMail, zErr := orchdioQueue.NewTask(fmt.Sprintf("%s:%s", blueprint.SendWelcomeEmailTaskPattern, taskID), blueprint.EmailQueueName, 2, serializedEmailData)
+	sendMail, zErr := u.Queue.NewTask(fmt.Sprintf("%s:%s", blueprint.SendWelcomeEmailTaskPattern, taskID), blueprint.EmailQueueName, 2, serializedEmailData)
 	if zErr != nil {
 		log.Printf("[controller][account][CreateOrg] - error creating task: %v", zErr)
 		return zErr
 	}
 
-	err := orchdioQueue.EnqueueTask(sendMail, blueprint.EmailQueueName, taskID, time.Second*2)
+	err := u.Queue.EnqueueTask(sendMail, blueprint.EmailQueueName, taskID, time.Second*2)
 	if err != nil {
 		log.Printf("[controller][account][CreateOrg] - error enqueuing task: %v", err)
 	}
