@@ -13,9 +13,7 @@ import (
 	"github.com/vicanso/go-axios"
 )
 
-const (
-	ValidScopes = "basic_access,email,manage_library,delete_library,offline_access,listening_history"
-)
+var ValidScopes = []string{"basic_access", "email", "offline_access", "manage_library", "manage_community", "delete_library", "listening_history"}
 
 // Deezer represents a deezer instance.
 type Deezer struct {

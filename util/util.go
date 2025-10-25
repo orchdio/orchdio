@@ -10,6 +10,7 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -605,4 +606,45 @@ func ContainsElement(collections []string, element string) bool {
 		continue
 	}
 	return false
+}
+
+// TODO: move this to a util file or somewhere more useful.
+const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+
+func GenerateCodeVerifierAndChallenge() (string, string, error) {
+	randomBytes := make([]byte, 64)
+	if _, err := rand.Read(randomBytes); err != nil {
+		return "", "", err
+	}
+
+	var codeVerifier strings.Builder
+	codeVerifier.Grow(64)
+	for _, b := range randomBytes {
+		codeVerifier.WriteByte(possible[b%byte(len(possible))])
+	}
+
+	hash := sha256.New()
+	// write the code verifier bytes to the hash
+	hash.Write([]byte(codeVerifier.String()))
+
+	// Get the final hash sum
+	hashed := hash.Sum(nil)
+	codeChallenge := base64.RawURLEncoding.EncodeToString(hashed)
+
+	return codeVerifier.String(), codeChallenge, nil
+}
+
+func HasTokenExpired(expiresIn string) (bool, error) {
+	// Parse the expiry time string
+	expiryTime, err := time.Parse(time.RFC3339, expiresIn)
+	if err != nil {
+		return true, fmt.Errorf("failed to parse expiry time: %v", err)
+	}
+
+	// Get current time
+	now := time.Now()
+
+	// Compare if current time is after expiry time
+	// If now is after expiry time, the token has expired
+	return now.After(expiryTime), nil
 }

@@ -418,11 +418,11 @@ func main() {
 	authController := auth.NewAuthController(db, asyncClient, asynqServer, asynqMux, redisClient)
 	// Auth related endpoints. full endpoint scheme is: "/v1/auth/..."
 	// connect endpoints
-	orchRouter.Get("/auth/:platform/connect", authMiddleware.AddRequestPlatformToCtx, authController.AppAuthRedirect)
+	orchRouter.Get("/auth/:platform/connect", authMiddleware.AddRequestPlatformWithPubKeyToCtx, authController.AppAuthRedirect)
 	// the callback that the auth platform will redirect to and this is where we handle the redirect and generate an auth token for the user, as response
-	orchRouter.Get("/auth/:platform/callback", authMiddleware.AddRequestPlatformToCtx, authController.HandleAppAuthRedirect)
+	orchRouter.Get("/auth/:platform/callback", authMiddleware.AddRequestPlatformWithPubKeyToCtx, authController.HandleAppAuthRedirect)
 	// this is for the apple music auth. its a POST as it carries a body
-	orchRouter.Post("/auth/:platform/callback", authMiddleware.AddRequestPlatformToCtx, authController.HandleAppAuthRedirect)
+	orchRouter.Post("/auth/:platform/callback", authMiddleware.AddRequestPlatformWithPubKeyToCtx, authController.HandleAppAuthRedirect)
 
 	// entity and task related controllers.
 	// entity is the type of action the user is trying to do. for example. converting a deezer link to tidal
@@ -442,12 +442,12 @@ func main() {
 	// this is the account of the *DEVELOPER* not the user,
 	orchRouter.Get("/account", authMiddleware.AddReadWriteDeveloperToContext, userController.FetchUserInfoByIdentifier)
 	orchRouter.Get("/me", authMiddleware.AddReadWriteDeveloperToContext, userController.FetchUserProfile)
-	orchRouter.Get("/account/:userId/:platform/playlists", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformPlaylists)
+	orchRouter.Get("/account/:userId/:platform/playlists", authMiddleware.AddRequestPlatformWithPrivateKeyToCtx, authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformPlaylists)
 	// todo: add nb_artists to data response
-	orchRouter.Get("/account/:userId/:platform/artists", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformArtists)
-	orchRouter.Get("/account/:userId/:platform/albums", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, authMiddleware.VerifyUserActionApp, platformsControllers.FetchPlatformAlbums)
+	orchRouter.Get("/account/:userId/:platform/artists", authMiddleware.AddRequestPlatformWithPrivateKeyToCtx, authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformArtists)
+	orchRouter.Get("/account/:userId/:platform/albums", authMiddleware.AddRequestPlatformWithPrivateKeyToCtx, authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformAlbums)
 	// TODO: implement for tidal
-	orchRouter.Get("/account/:userId/:platform/history/tracks", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, authMiddleware.VerifyUserActionApp, platformsControllers.FetchTrackListeningHistory)
+	orchRouter.Get("/account/:userId/:platform/history/tracks", authMiddleware.AddRequestPlatformWithPrivateKeyToCtx, authMiddleware.AddReadWriteDeveloperToContext, authMiddleware.VerifyUserActionApp, platformsControllers.FetchTrackListeningHistory)
 
 	orchRouter.Post("/follow", authMiddleware.AddReadWriteDeveloperToContext, userController.FollowPlaylist)
 	orchRouter.Post("/waitlist/add", authMiddleware.AddReadWriteDeveloperToContext, userController.AddToWaitlist)

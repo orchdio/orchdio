@@ -19,7 +19,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/gofiber/fiber/v2"
 	"github.com/jmoiron/sqlx"
 	"github.com/samber/lo"
@@ -175,73 +174,6 @@ func (a *AuthMiddleware) HandleTrolls(ctx *fiber.Ctx) error {
 	return ctx.Next()
 }
 
-// CheckOrInitiateUserAuthStatus checks if the user is already authenticated on orchdio. If the user has been authorized, we will
-// continue to the next handler in line by proceeding to next but if the user is not authenticated then we
-// will return a redirect auth for the platform the user is trying to perform an action and or auth on.
-//func (a *AuthMiddleware) CheckOrInitiateUserAuthStatus(ctx *fiber.Ctx) error {
-//	// extract the user id from the path. the assumption here is that the user id would be passed in the endpoints path
-//	userId := ctx.Params("userId")
-//	// attach appId as query params. if we change the verb to POST, we can simply attach the appId to the header as
-//	// x-orchdio-app-id
-//	appId := ctx.Query("app_id")
-//	if userId == "" {
-//		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing user id")
-//	}
-//
-//	if appId == "" {
-//		log.Printf("[middleware][CheckUserAuthStatus] missing app id")
-//		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing app id")
-//	}
-//
-//	isValidUserId := util.IsValidUUID(userId)
-//	if !isValidUserId {
-//		log.Printf("[middleware][CheckUserAuthStatus] invalid user id")
-//		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid user id")
-//	}
-//
-//	// extract the platform to auth for
-//	platform := ctx.Query("platform")
-//	if platform == "" {
-//		log.Printf("[middleare][auth][CheckUserAuthStatus] - platform not present. Please specify platform to auth user on")
-//		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid Auth platform")
-//	}
-//
-//	scopes := ctx.Query("scopes")
-//	if scopes == "" {
-//		log.Printf("[middleware][auth][CheckUserAuthStatus] - scopes not present. Please specify scopes to auth user on")
-//		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid Auth scopes")
-//	}
-//	authScopes := strings.Split(scopes, ",")
-//	// get the hostname
-//	hostname := ctx.Hostname()
-//	if hostname == "" {
-//		log.Printf("[controllers][AppAuthRedirect] developer -  error: no hostname provided\n")
-//		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Hostname is not present. please pass your hostname as a header")
-//	}
-//
-//	if !lo.Contains([]string{"https://"}, hostname) {
-//		hostname = fmt.Sprintf("https://%s", hostname)
-//	}
-//	redirectURL := fmt.Sprintf("%s/v1/auth/%s/callback", hostname, platform)
-//
-//	// find the user in the db with the id
-//	database := db.NewDB{DB: a.DB}
-//	//user, err := database.FindUserByUUID(userId, platform)
-//	user, err := database.FetchPlatformAndUserInfoByIdentifier(userId, appId, platform, "id")
-//	if err != nil {
-//		if err == sql.ErrNoRows {
-//			return util.ErrorResponse(ctx, http.StatusNotFound, "not found", "App not found. User might not have authorized this app")
-//		}
-//		return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An internal error occurred")
-//	}
-//
-//	// check if the user is authenticated on orchdio
-//	if !user.Authorized {
-//	}
-//
-//	return ctx.Next()
-//}
-
 // VerifyUserActionApp verifies that the developer app is valid and that the user is authorized to perform the action. It attaches the user
 // context information to the locals. this is then used in controllers where user is making user action requests, for example fetching user library playlists.
 func (a *AuthMiddleware) VerifyUserActionApp(ctx *fiber.Ctx) error {
@@ -305,15 +237,39 @@ func FetcPlatformNameByIdentifier(identifier string) string {
 	return platforms[identifier]
 }
 
-//func (a *AuthMiddleware) AddOrgAppTo(ctx *fiber.Ctx) error {
-//	// extract the app id from the header
-//	app := ctx.Locals("app").(*blueprint.DeveloperApp)
-//	if app == nil {
-//		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing app")
-//	}
-//}
+func (a *AuthMiddleware) AddRequestPlatformWithPrivateKeyToCtx(ctx *fiber.Ctx) error {
+	platform := ctx.Params("platform")
+	reqId := ctx.Get("x-orchdio-request-id")
+	// todo: rename this to x-orchdio-private-key
+	privKey := ctx.Get("x-orchdio-key")
+	loggerOpts := &blueprint.OrchdioLoggerOptions{
+		RequestID: reqId,
+		Platform:  zap.String("platform", platform).String,
+	}
+	orchdioLogger := logger2.NewZapSentryLogger(loggerOpts)
+	orchdioLogger.Info("Request ID", zap.String("request_id", reqId))
+	if platform == "" {
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing platform")
+	}
 
-func (a *AuthMiddleware) AddRequestPlatformToCtx(ctx *fiber.Ctx) error {
+	platforms := []string{"spotify", "deezer", "tidal", "applemusic"}
+	if !lo.Contains(platforms, platform) {
+		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid platform")
+	}
+
+	path := ctx.Path()
+	orchdioLogger.Info("Request path", zap.String("path", path))
+
+	if privKey == "" {
+		orchdioLogger.Error("[middleware][AddRequestPlatformToCtx] developer -  error: could not fetch app developer with public key. No public key passed")
+		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "missing x-orchdio-public-key header")
+	}
+	ctx.Locals("app_private_key", privKey)
+	ctx.Locals("platform", platform)
+	return ctx.Next()
+}
+
+func (a *AuthMiddleware) AddRequestPlatformWithPubKeyToCtx(ctx *fiber.Ctx) error {
 	platform := ctx.Params("platform")
 	reqId := ctx.Get("x-orchdio-request-id")
 	pubKey := ctx.Get("x-orchdio-public-key")
@@ -322,7 +278,6 @@ func (a *AuthMiddleware) AddRequestPlatformToCtx(ctx *fiber.Ctx) error {
 		ApplicationPublicKey: zap.String("app_public_key", pubKey).String,
 		Platform:             zap.String("platform", platform).String,
 	}
-	spew.Dump("Headers are: ", string(ctx.Request().Header.RawHeaders()))
 	orchdioLogger := logger2.NewZapSentryLogger(loggerOpts)
 	orchdioLogger.Info("Request ID", zap.String("request_id", reqId))
 	if platform == "" {
@@ -343,10 +298,10 @@ func (a *AuthMiddleware) AddRequestPlatformToCtx(ctx *fiber.Ctx) error {
 	if appPubKey == "" && !strings.Contains(path, "/callback") {
 		orchdioLogger.Error("[middleware][AddRequestPlatformToCtx] developer -  error: could not fetch app developer with public key. No public key passed")
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "missing x-orchdio-public-key header")
-	} else {
-		ctx.Locals("app_pub_key", appPubKey)
 	}
 
+	// rename to pub key
+	ctx.Locals("app_pub_key", appPubKey)
 	ctx.Locals("platform", platform)
 	return ctx.Next()
 }

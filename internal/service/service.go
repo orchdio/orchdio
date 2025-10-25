@@ -38,6 +38,71 @@ type trackJob struct {
 	info *blueprint.LinkInfo
 }
 
+func (pc *Service) FetchLibraryPlaylists(platform, refreshToken string) ([]blueprint.UserPlaylist, error) {
+	platformService, sErr := pc.factory.GetPlatformService(platform)
+	if sErr != nil {
+		log.Println(sErr)
+		return nil, sErr
+	}
+
+	history, err := platformService.FetchLibraryPlaylists(refreshToken)
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+	return history, nil
+}
+
+func (pc *Service) FetchLibraryArtists(platform, refreshToken string) (*blueprint.UserLibraryArtists, error) {
+	platformService, sErr := pc.factory.GetPlatformService(platform)
+	if sErr != nil {
+		log.Println(sErr)
+		return nil, sErr
+	}
+
+	history, err := platformService.FetchUserArtists(refreshToken)
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+
+	return history, nil
+
+}
+
+func (pc *Service) FetchListeningHistory(platform, refreshToken string) ([]blueprint.TrackSearchResult, error) {
+	platformService, sErr := pc.factory.GetPlatformService(platform)
+	if sErr != nil {
+		log.Println(sErr)
+		return nil, sErr
+	}
+
+	history, err := platformService.FetchListeningHistory(refreshToken)
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+
+	return history, nil
+
+}
+func (pc *Service) FetchLibraryAlbums(platform, refreshToken string) ([]blueprint.LibraryAlbum, error) {
+
+	platformService, sErr := pc.factory.GetPlatformService(platform)
+	if sErr != nil {
+		log.Println(sErr)
+		return nil, sErr
+	}
+
+	libAlbums, err := platformService.FetchLibraryAlbums(refreshToken)
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+
+	return libAlbums, nil
+}
+
 func (pc *Service) ConvertTrack(info *blueprint.LinkInfo) (*blueprint.TrackConversion, error) {
 	srcPlatformService, sErr := pc.factory.GetPlatformService(info.Platform)
 	if sErr != nil {
