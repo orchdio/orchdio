@@ -38,6 +38,21 @@ type trackJob struct {
 	info *blueprint.LinkInfo
 }
 
+func (pc *Service) FetchUserInfo(platform, refreshToken string) (*blueprint.UserPlatformInfo, error) {
+	platformService, sErr := pc.factory.GetPlatformService(platform)
+	if sErr != nil {
+		log.Println(sErr)
+		return nil, sErr
+	}
+
+	user, err := platformService.FetchUserInfo(refreshToken)
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+	return user, nil
+}
+
 func (pc *Service) FetchLibraryPlaylists(platform, refreshToken string) ([]blueprint.UserPlaylist, error) {
 	platformService, sErr := pc.factory.GetPlatformService(platform)
 	if sErr != nil {

@@ -121,7 +121,7 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 	svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
 	webhookName := fmt.Sprintf("%s:%s", body.Name, string(uid))
 	webhookAppUID := svixwebhook.FormatSvixAppUID(string(uid))
-	whResponse, whErr := svixInstance.CreateApp(webhookName, webhookAppUID)
+	whResponse, _, whErr := svixInstance.CreateApp(webhookName, webhookAppUID)
 
 	if whErr != nil {
 		log.Printf("[controllers][CreateApp] developer -  error: could not create developer app: %v\n", whErr)
@@ -211,7 +211,7 @@ func (d *Controller) UpdateApp(ctx *fiber.Ctx) error {
 		log.Printf("[controllers][updateApp] developer -  error: app does not exist\n")
 
 		// create new app on svix
-		svixApp, appErr := svixInstance.CreateApp(whAppName, webhookAppUID)
+		svixApp, _, appErr := svixInstance.CreateApp(whAppName, webhookAppUID)
 		if appErr != nil {
 			log.Printf("[controllers][UpdateApp] developer -  error: could not create app in Database: %v\n", appErr)
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, appErr, "Could not create developer app")
@@ -364,16 +364,27 @@ func (d *Controller) FetchApp(ctx *fiber.Ctx) error {
 		}
 	}
 
+	// create a new app portal that lives long enough
+	svixWebhook := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
+	// get app portal
+	portalAccess, err := svixWebhook.CreateAppPortal(app.WebhookAppID)
+
+	if err != nil {
+		log.Print("Error fetching app portal...", err)
+		return util.SuccessResponse(ctx, fiber.StatusInternalServerError, "Could not fetch Dev app due to internal errors")
+	}
+
 	info := &blueprint.AppInfo{
-		AppID:       app.UID.String(),
-		Name:        app.Name,
-		Description: app.Description,
-		RedirectURL: app.RedirectURL,
-		WebhookURL:  app.WebhookURL,
-		PublicKey:   app.PublicKey.String(),
-		Authorized:  app.Authorized,
-		Credentials: creds,
-		DeezerState: app.DeezerState,
+		AppID:            app.UID.String(),
+		Name:             app.Name,
+		Description:      app.Description,
+		RedirectURL:      app.RedirectURL,
+		WebhookURL:       app.WebhookURL,
+		PublicKey:        app.PublicKey.String(),
+		Authorized:       app.Authorized,
+		Credentials:      creds,
+		DeezerState:      app.DeezerState,
+		WebhookPortalURL: portalAccess.Url,
 	}
 	return util.SuccessResponse(ctx, fiber.StatusOK, info)
 }

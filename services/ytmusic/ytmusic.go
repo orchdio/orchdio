@@ -241,3 +241,7 @@ func (s *Service) FetchLibraryPlaylists(refreshToken string) ([]blueprint.UserPl
 
 	return nil, blueprint.ErrNotImplemented
 }
+
+func (s *Service) FetchUserInfo(refreshToken string) (*blueprint.UserPlatformInfo, error) {
+	return nil, blueprint.ErrNotImplemented
+}

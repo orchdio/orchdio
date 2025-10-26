@@ -17,13 +17,34 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
+func FetchUserPlatformsInfo(platform, refreshToken, appId string, pg *sqlx.DB, red *redis.Client) (*blueprint.UserPlatformInfo, error) {
+	database := db.NewDB{DB: pg}
+	app, err := database.FetchAppByAppId(appId)
+
+	if err != nil {
+		log.Printf("\n[controllers][platforms][universal][FetchLibraryArtists] error - could not fetch app: %v\n", err)
+		return nil, err
+	}
+	webhookSender := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
+	platformsServiceFactory := platforminternal.NewPlatformServiceFactory(pg, red, app, webhookSender)
+	serviceFactory := serviceinternal.NewServiceFactory(platformsServiceFactory)
+	userInfo, err := serviceFactory.FetchUserInfo(platform, refreshToken)
+
+	if err != nil {
+		log.Println("\n[controllers][platforms][universal][FetchLibraryArtists] error - could not fetch playlist libraries.", err)
+		return nil, err
+	}
+
+	return userInfo, nil
+}
+
 func FetchLibraryPlaylists(platform, refreshToken, appId string, pg *sqlx.DB, red *redis.Client) ([]blueprint.UserPlaylist, error) {
 
 	database := db.NewDB{DB: pg}
 	app, err := database.FetchAppByAppId(appId)
 
 	if err != nil {
-		log.Printf("\n[controllers][platforms][universal][FetchLibraryArtists] error - could not fetch app: %v\n", err)
+		log.Printf("\n[controllers][platforms][universal][FetchLibraryArtists] error - could not fetch library playlists: %v\n", err)
 		return nil, err
 	}
 	webhookSender := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)

@@ -451,3 +451,13 @@ func (d *NewDB) UpdateWebhookAppID(devAppId, webhookAppId string) error {
 	log.Println("[db][UpdateWebhookAppID] developer -  convoy webhook id updated for app", devAppId)
 	return nil
 }
+
+// func (d *NewDB) UpdateWebhookSecret(devAppId string, appPortal *svix.AppPortalAccessOut) error {
+// 	_, err := d.DB.Exec(queries.UpdateWebhookSecret, devAppId, appPortal.GetToken())
+// 	if err != nil {
+// 		log.Println("[db][UpdateWebhookSecret] developer - could not update app webhook secret")
+// 		return err
+// 	}
+
+// 	return nil
+// }

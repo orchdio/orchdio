@@ -178,3 +178,5 @@ spotify_credentials = ( CASE WHEN $2 = 'spotify' THEN NULL ELSE spotify_credenti
 applemusic_credentials = ( CASE WHEN $2 = 'applemusic' THEN NULL ELSE applemusic_credentials END ) WHERE uuid = $1 AND developer = $3`
 
 const UpdateConvoyEndpointID = `UPDATE apps SET webhook_app_id = $1 WHERE uuid = $2`
+
+const UpdateWebhookSecret = `UPDATE apps SET verify_secret = $1 WHERE uuid = $2`

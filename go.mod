@@ -26,9 +26,8 @@ require (
 	github.com/raitonoberu/ytmusic v0.0.0-20240324143733-0e5780514b1d
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/samber/lo v1.49.1
-	github.com/savsgio/gotils v0.0.0-20240704082632-aef3928b8a38
 	github.com/sendinblue/APIv3-go-library/v2 v2.1.2
-	github.com/svix/svix-webhooks v1.44.0
+	github.com/svix/svix-webhooks v1.80.0
 	github.com/teris-io/shortid v0.0.0-20220617161101-71ec9f2aa569
 	github.com/vicanso/go-axios v1.6.1
 	github.com/zmb3/spotify/v2 v2.4.3
@@ -56,6 +55,7 @@ require (
 	github.com/philhofer/fwd v1.1.3-0.20240916144458-20a13a1f6b7c // indirect
 	github.com/redis/go-redis/v9 v9.7.0 // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
+	github.com/savsgio/gotils v0.0.0-20240704082632-aef3928b8a38 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/tinylib/msgp v1.2.5 // indirect
 	github.com/tkuchiki/go-timezone v0.2.3 // indirect
@@ -70,5 +70,4 @@ require (
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/time v0.11.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
-	gopkg.in/validator.v2 v2.0.1 // indirect
 )

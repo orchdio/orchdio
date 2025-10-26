@@ -27,6 +27,7 @@ type PlatformService interface {
 	FetchListeningHistory(refreshToken string) ([]blueprint.TrackSearchResult, error)
 	FetchUserArtists(refreshToken string) (*blueprint.UserLibraryArtists, error)
 	FetchLibraryPlaylists(refreshToken string) ([]blueprint.UserPlaylist, error)
+	FetchUserInfo(refreshToken string) (*blueprint.UserPlatformInfo, error)
 }
 
 type PlatformServiceFactory struct {

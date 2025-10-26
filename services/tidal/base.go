@@ -744,3 +744,7 @@ func (s *Service) FetchListeningHistory(refreshToken string) ([]blueprint.TrackS
 
 	return nil, blueprint.ErrNotImplemented
 }
+
+func (s *Service) FetchUserInfo(refreshToken string) (*blueprint.UserPlatformInfo, error) {
+	return nil, blueprint.ErrNotImplemented
+}

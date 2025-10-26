@@ -166,6 +166,8 @@ type AppInfo struct {
 	// due to the weird nature of deezer auth, we add the deezer state for the app here
 	// to be visible to the developer
 	DeezerState string `json:"deezer_state,omitempty"`
+
+	WebhookPortalURL string `json:"webhook_portal_url,omitempty"`
 }
 
 type AppTaskData struct {
