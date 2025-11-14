@@ -382,7 +382,7 @@ func main() {
 	conversionController := conversion.NewConversionController(dbase, redisClient, asyncClient, asynqServer, asynqMux)
 	devAppController := developer.NewDeveloperController(dbase)
 
-	platformsControllers := platforms.NewPlatform(redisClient, dbase, asyncClient, asynqMux)
+	platformsControllers := platforms.NewPlatform(redisClient, dbase, orchdioQueue)
 	/**
 	 ==================================================================
 	+

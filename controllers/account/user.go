@@ -30,12 +30,12 @@ import (
 type UserController struct {
 	DB    *sqlx.DB
 	Redis *redis.Client
-	Queue *queue.OrchdioQueue
+	Queue queue.QueueService
 	// AsynqClient *asynq.Client
 	// AsynqServer *asynq.ServeMux
 }
 
-func NewUserController(db *sqlx.DB, r *redis.Client, q *queue.OrchdioQueue) *UserController {
+func NewUserController(db *sqlx.DB, r *redis.Client, q queue.QueueService) *UserController {
 	return &UserController{
 		DB:    db,
 		Redis: r,

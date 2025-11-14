@@ -18,21 +18,26 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
 )
 
 // Platforms represents the structure for the platforms
 type Platforms struct {
-	Redis       *redis.Client
-	DB          *sqlx.DB
-	AsynqClient *asynq.Client
-	AsynqMux    *asynq.ServeMux
-	Logger      *blueprint.OrchdioLoggerOptions
+	Redis *redis.Client
+	DB    *sqlx.DB
+	// AsynqClient  *asynq.Client
+	// AsynqMux     *asynq.ServeMux
+	Logger *blueprint.OrchdioLoggerOptions
+	Queue  queue.QueueService
 }
 
-func NewPlatform(r *redis.Client, db *sqlx.DB, asynqClient *asynq.Client, asynqMux *asynq.ServeMux) *Platforms {
-	return &Platforms{Redis: r, DB: db, AsynqClient: asynqClient, AsynqMux: asynqMux}
+// func NewPlatform(r *redis.Client, db *sqlx.DB, asynqClient *asynq.Client, asynqMux *asynq.ServeMux) *Platforms {
+// 	return &Platforms{Redis: r, DB: db, AsynqClient: asynqClient, AsynqMux: asynqMux}
+// }
+//
+
+func NewPlatform(r *redis.Client, db *sqlx.DB, queue queue.QueueService) *Platforms {
+	return &Platforms{Redis: r, DB: db, Queue: queue}
 }
 
 func (p *Platforms) ConvertTrack(ctx *fiber.Ctx) error {
@@ -133,7 +138,7 @@ func (p *Platforms) ConvertPlaylist(ctx *fiber.Ctx) error {
 			ShortURL: string(shortURL),
 		}
 
-		orchdioQueue := queue.NewOrchdioQueue(p.AsynqClient, p.DB, p.Redis, p.AsynqMux)
+		// orchdioQueue := queue.NewOrchdioQueue(p.AsynqClient, p.DB, p.Redis, p.AsynqMux)
 
 		// create new task and set the handler. the handler will create or update a new task in the db
 		// in the case where the conversion fails, it sets the status to failed and ditto for success
@@ -144,8 +149,8 @@ func (p *Platforms) ConvertPlaylist(ctx *fiber.Ctx) error {
 			return ctx.Status(http.StatusInternalServerError).JSON("error marshalling link info")
 		}
 		// create new task
-		conversionTask, err := orchdioQueue.NewTask(fmt.Sprintf("%s_%s", blueprint.PlaylistConversionTaskTypePattern, taskData.TaskID), blueprint.PlaylistConversionTaskTypePattern, 1, ser)
-		enqErr := orchdioQueue.EnqueueTask(conversionTask, blueprint.PlaylistConversionQueueName, taskData.TaskID, time.Second*1)
+		conversionTask, err := p.Queue.NewTask(fmt.Sprintf("%s_%s", blueprint.PlaylistConversionTaskTypePattern, taskData.TaskID), blueprint.PlaylistConversionTaskTypePattern, 1, ser)
+		enqErr := p.Queue.EnqueueTask(conversionTask, blueprint.PlaylistConversionQueueName, taskData.TaskID, time.Second*1)
 		if enqErr != nil {
 			log.Printf("[controller][conversion][EchoConversion] - error enqueuing task: %v", enqErr)
 			return ctx.Status(http.StatusInternalServerError).JSON("error enqueuing task")

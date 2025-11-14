@@ -12,7 +12,6 @@ import (
 	"orchdio/controllers/platforms"
 	"orchdio/db"
 	"orchdio/middleware"
-	"orchdio/queue"
 	"strings"
 	"testing"
 	"time"
@@ -23,6 +22,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/h2non/gock"
 	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
 	"github.com/stretchr/testify/suite"
@@ -44,18 +44,21 @@ type TestUserController struct {
 
 type QueueService interface {
 	EnqueueTask(task *asynq.Task, q, taskId string, processIn time.Duration)
+	NewTask(taskType, queue string, retry int, payload []byte) (*asynq.Task, error)
 }
 
-type MockQueue struct {
-	queue.OrchdioQueue
-	// Remove the *queue.OrchdioQueue embedding
-	EnqueueTaskFn func(task *asynq.Task, queue, taskId string, processIn time.Duration) error
+type MockQueue struct{}
+
+func (m *MockQueue) EnqueueTask(task *asynq.Task, q, taskId string, processIn time.Duration) error {
+	log.Println("Mocked enqueued task")
+	return nil
 }
 
-// func (m *MockQueue) EnqueueTask(task *asynq.Task, q, taskId string, processIn time.Duration) error {
-// 	log.Println("Mocked enqueued task")
-// 	return nil
-// }
+// Add this method
+func (m *MockQueue) NewTask(taskType, queue string, retry int, payload []byte) (*asynq.Task, error) {
+	log.Println("Mocked queue instantiation")
+	return nil, nil
+}
 
 func (t *TestUserController) SendAdminWelcomeEmail(ctx context.Context, email string) error {
 	log.Println("Overridden SendAdminWelcomeEmail method for test case....")
@@ -69,19 +72,19 @@ func (p *PlatformsTestSuite) SetupSuite() {
 	drver, dErr := postgres.WithInstance(dbase.DB, &postgres.Config{})
 	if dErr != nil {
 		log.Print("Error instantiating the driver")
-		// panic(dErr)
+		panic(dErr)
 	}
 
 	dbDriver, dbErr := migrate.NewWithDatabaseInstance("file://../../db/migration", "postgres", drver)
 	if dbErr != nil {
 		log.Println("Error running migrations....")
-		// panic(dbErr)
+		panic(dbErr)
 	}
 
 	dbErr = dbDriver.Up()
 	if dbErr != nil && !errors.Is(dbErr, migrate.ErrNoChange) {
 		log.Println("Error migrating database")
-		// panic(dbErr)
+		panic(dbErr)
 	}
 
 	// create the test user db here, i suppose...
@@ -96,21 +99,16 @@ func (p *PlatformsTestSuite) SetupSuite() {
 	redisClient := redis.NewClient(redisOpts)
 	if redisClient.Ping(context.Background()).Err() != nil {
 		log.Printf("COULD NOT CONNECT TO REDIST INSTANCE FOR TESTING...")
-		// panic("Could not connect to redis. Please check your redis configuration.")
+		panic("Could not connect to redis. Please check your redis configuration.")
 	}
-	platformsHandler := platforms.NewPlatform(redisClient, dbase, nil, nil)
+
 	app := fiber.New()
 	authMiddleware := middleware.NewAuthMiddleware(dbase)
-	// asyncClient := asynq.NewClient(asynq.RedisClientOpt{Addr: redisOpts.Addr, Password: redisOpts.Password})
-	// asynqMux := asynq.NewServeMux()
-	mockQueue := &MockQueue{
-		EnqueueTaskFn: func(task *asynq.Task, queue, taskId string, processIn time.Duration) error {
-			log.Println("Mocked enqueued task")
-			return nil
-		},
-	}
+	mockQueue := &MockQueue{}
+
+	platformsHandler := platforms.NewPlatform(redisClient, dbase, mockQueue)
 	userController := &TestUserController{
-		UserController: account.NewUserController(dbase, redisClient, &mockQueue.OrchdioQueue),
+		UserController: account.NewUserController(dbase, redisClient, mockQueue),
 	}
 	//
 	// userController := account.NewUserController(dbase, redisClient, nil, nil)
@@ -176,8 +174,8 @@ func (p *PlatformsTestSuite) SetupSuite() {
 	// 	log.Println("COULD NOT CREATE A NEW APP")
 	// }
 
-	app.Post("/v1/track/convert", authMiddleware.AddReadOnlyDeveloperToContext, middleware.ExtractLinkInfoFromBody, platformsHandler.ConvertTrack)
 	app.Post("/v1/org/new", userController.CreateOrg)
+	app.Post("/v1/track/convert", authMiddleware.AddReadOnlyDeveloperToContext, middleware.ExtractLinkInfoFromBody, platformsHandler.ConvertTrack)
 
 	go func() {
 		app.Listen(":4200")
@@ -191,7 +189,6 @@ func (p *PlatformsTestSuite) SetupSuite() {
 	// p.Pubkey = pubKey
 	// p.PrivateKey = privateKey
 	//
-	// 	log.Print("TEST TEAR DOWN HERE...")
 }
 
 func TestPlatformsTestSuite(t *testing.T) {
@@ -229,38 +226,38 @@ func (p *PlatformsTestSuite) TestCreateNewOrg() {
 	}
 
 	println("the response")
-	p.Equal(200, res.StatusCode)
+	p.Equal(201, res.StatusCode)
 
 	log.Println("created org info is...")
 	spew.Dump(string(bod))
 
 }
 
-// func (p *PlatformsTestSuite) TestConvertTrack() {
-// 	defer gock.Off()
+func (p *PlatformsTestSuite) TestConvertTrack() {
+	defer gock.Off()
 
-// 	// gock.New("https://api")
+	// gock.New("https://api")
 
-// 	conversion := &blueprint.ConversionBody{
-// 		URL:            "https://open.spotify.com/track/01z2fBGB8Hl3Jd3zXe4IXR?si=d3685829cc0e498f",
-// 		TargetPlatform: "all",
-// 	}
+	conversion := &blueprint.ConversionBody{
+		URL:            "https://open.spotify.com/track/01z2fBGB8Hl3Jd3zXe4IXR?si=d3685829cc0e498f",
+		TargetPlatform: "all",
+	}
 
-// 	serConversion, err := json.Marshal(conversion)
-// 	if err != nil {
-// 		log.Println("Could not serialize conversion body")
-// 	}
+	serConversion, err := json.Marshal(conversion)
+	if err != nil {
+		log.Println("Could not serialize conversion body")
+	}
 
-// 	req := httptest.NewRequest("POST", "/v1/track/convert", strings.NewReader(string(serConversion)))
-// 	req.Header.Add("Content-Type", "application/json")
-// 	req.Header.Add("x-orchdio-public-key", p.Pubkey)
+	req := httptest.NewRequest("POST", "/v1/track/convert", strings.NewReader(string(serConversion)))
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("x-orchdio-public-key", p.Pubkey)
 
-// 	res, err := p.App.Test(req)
-// 	log.Printf("TEST SUITE TEST ERROR IS: %v", err)
+	res, err := p.App.Test(req)
+	log.Printf("TEST SUITE TEST ERROR IS: %v", err)
 
-// 	defer res.Body.Close()
-// 	p.Equal(200, res.StatusCode)
-// }
+	defer res.Body.Close()
+	p.Equal(200, res.StatusCode)
+}
 
 func (p *PlatformsTestSuite) TearDownSuite() {
 	log.Print("TEST TEAR DOWN HERE...")
