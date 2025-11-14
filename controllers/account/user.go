@@ -26,25 +26,26 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
-	"github.com/hibiken/asynq"
 	"github.com/jmoiron/sqlx"
 	"github.com/samber/lo"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type UserController struct {
-	DB          *sqlx.DB
-	Redis       *redis.Client
-	AsynqClient *asynq.Client
-	AsynqServer *asynq.ServeMux
+	DB    *sqlx.DB
+	Redis *redis.Client
+	Queue queue.QueueService
+	// AsynqClient *asynq.Client
+	// AsynqServer *asynq.ServeMux
 }
 
-func NewUserController(db *sqlx.DB, r *redis.Client, asynqClient *asynq.Client, asynqServer *asynq.ServeMux) *UserController {
+func NewUserController(db *sqlx.DB, r *redis.Client, q queue.QueueService) *UserController {
 	return &UserController{
-		DB:          db,
-		Redis:       r,
-		AsynqClient: asynqClient,
-		AsynqServer: asynqServer,
+		DB:    db,
+		Redis: r,
+		Queue: q,
+		// AsynqClient: asynqClient,
+		// AsynqServer: asynqServer,
 	}
 }
 
@@ -357,7 +358,7 @@ func (u *UserController) ResetPassword(ctx *fiber.Ctx) error {
 	}
 
 	// then send the email....
-	orchdioQueue := queue.NewOrchdioQueue(u.AsynqClient, u.DB, u.Redis, u.AsynqServer)
+	// orchdioQueue := queue.NewOrchdioQueue(u.Queue.AsynqClient, u.DB, u.Redis, u.Queue.AsynqRouter)
 	taskData := &blueprint.EmailTaskData{
 		From: os.Getenv("ALERT_EMAIL"),
 		To:   body.Email,
@@ -375,13 +376,13 @@ func (u *UserController) ResetPassword(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not serialize email data")
 	}
 
-	sendMail, qErr := orchdioQueue.NewTask(fmt.Sprintf("%s_%s", blueprint.SendResetPasswordTaskPattern, taskID), blueprint.SendResetPasswordTaskPattern, 2, serializedEmailData)
+	sendMail, qErr := u.Queue.NewTask(fmt.Sprintf("%s_%s", blueprint.SendResetPasswordTaskPattern, taskID), blueprint.SendResetPasswordTaskPattern, 2, serializedEmailData)
 	if qErr != nil {
 		log.Printf("[controller][user][ResetPassword] - error creating send email task: %v", qErr)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, qErr, "Could not create send email task")
 	}
 
-	err = orchdioQueue.EnqueueTask(sendMail, blueprint.EmailQueueName, taskID, time.Second*2)
+	err = u.Queue.EnqueueTask(sendMail, blueprint.EmailQueueName, taskID, time.Second*2)
 	if err != nil {
 		log.Printf("[controller][user][ResetPassword] - error enqueuing send email task: %v", err)
 		return util.ErrorResponse(ctx, http.StatusInternalServerError, err, "Could not enqueue send email task")

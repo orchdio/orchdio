@@ -17,6 +17,11 @@ import (
 	sendinblue "github.com/sendinblue/APIv3-go-library/v2/lib"
 )
 
+type QueueService interface {
+	EnqueueTask(task *asynq.Task, q, taskId string, processIn time.Duration) error
+	NewTask(taskType, queue string, retry int, payload []byte) (*asynq.Task, error)
+}
+
 type OrchdioQueue struct {
 	AsynqClient *asynq.Client
 	AsynqRouter *asynq.ServeMux
@@ -31,19 +36,6 @@ func NewOrchdioQueue(asynqClient *asynq.Client, db *sqlx.DB, red *redis.Client, 
 		Red:         red,
 		AsynqRouter: router,
 	}
-}
-
-// NewPlaylistQueue creates a new playlist queue.
-func (o *OrchdioQueue) NewPlaylistQueue(entityID string, payload *blueprint.LinkInfo) (*asynq.Task, error) {
-	ser, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("[queue][NewPlaylistQueue][NewPlaylistQueue] - error marshalling playlist conversion: %v", err)
-		return nil, err
-	}
-
-	var task = asynq.NewTask(entityID, ser)
-	log.Printf("[queue][NewPlaylistQueue][NewPlaylistQueue] - queued playlist: %v\n", entityID)
-	return task, nil
 }
 
 // PlaylistTaskHandler is the handler method for processing playlist conversion tasks.
@@ -81,14 +73,6 @@ func (o *OrchdioQueue) EnqueueTask(task *asynq.Task, queue, taskId string, proce
 	}
 	log.Printf("[queue][EnqueueTask] - enqueued task: %v", taskId)
 	return nil
-}
-
-// RunTask runs the task passed in by sending it to the router server handle func.
-func (o *OrchdioQueue) RunTask(pattern string, handler func(ctx context.Context, task *asynq.Task) error) {
-	log.Printf("[queue][RunTask] - attaching handler to task")
-	// create a new server
-	o.AsynqRouter.HandleFunc(pattern, handler)
-	log.Printf("[queue][RunTask] - attached handler to task")
 }
 
 // NewTask creates a new task and returns it.
