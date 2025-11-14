@@ -2,6 +2,7 @@ package testutils
 
 import (
 	"context"
+	"log"
 	"orchdio/blueprint"
 	"time"
 
@@ -27,6 +28,8 @@ type QueueService interface {
 	SendEmailHandler(ctx context.Context, task *asynq.Task) error
 }
 
+// type MockQueue struct{}
+
 type MockQueue struct {
 	mockNewTask          func(taskType, queue string, retry int, payload []byte) (*asynq.Task, error)
 	mockEnqueueTask      func(task *asynq.Task, queue, taskId string, processIn time.Duration) error
@@ -37,30 +40,23 @@ type MockQueue struct {
 }
 
 func (m *MockQueue) NewTask(taskType, queue string, retry int, payload []byte) (*asynq.Task, error) {
-	if m.mockNewTask != nil {
-		return m.mockNewTask(taskType, queue, retry, payload)
-	}
-	return asynq.NewTask(taskType, payload), nil
+	return nil, nil
 }
 
 func (m *MockQueue) EnqueueTask(task *asynq.Task, queue, taskId string, processIn time.Duration) error {
-	if m.mockEnqueueTask != nil {
-		return m.mockEnqueueTask(task, queue, taskId, processIn)
-	}
+	// if m.mockEnqueueTask != nil {
+	// 	return m.mockEnqueueTask(task, queue, taskId, processIn)
+	// }
+
+	log.Println("Mocked enqueue task method")
 	return nil
 }
 
 func (m *MockQueue) RunTask(pattern string, handler func(context.Context, *asynq.Task) error) {
-	if m.mockRunTask != nil {
-		m.mockRunTask(pattern, handler)
-	}
 }
 
 func (m *MockQueue) NewPlaylistQueue(entityID string, payload *blueprint.LinkInfo) (*asynq.Task, error) {
-	if m.mockNewPlaylistQueue != nil {
-		return m.mockNewPlaylistQueue(entityID, payload)
-	}
-	return asynq.NewTask(entityID, []byte{}), nil
+	return nil, nil
 }
 
 func (m *MockQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task) error {
@@ -68,16 +64,10 @@ func (m *MockQueue) PlaylistTaskHandler(ctx context.Context, task *asynq.Task) e
 }
 
 func (m *MockQueue) PlaylistHandler(uid, shorturl string, info *blueprint.LinkInfo, appId string) error {
-	if m.mockPlaylistHandler != nil {
-		return m.mockPlaylistHandler(uid, shorturl, info, appId)
-	}
 	return nil
 }
 
 func (m *MockQueue) SendEmail(emailData *blueprint.EmailTaskData) error {
-	if m.mockSendEmail != nil {
-		return m.mockSendEmail(emailData)
-	}
 	return nil
 }
 
@@ -91,16 +81,15 @@ func NewMockQueue(asynqClient *asynq.Client, db *sqlx.DB, red *redis.Client, rou
 }
 
 func (m *MockQueue) WithMockNewTask(fn func(taskType, queue string, retry int, payload []byte) (*asynq.Task, error)) *MockQueue {
-	m.mockNewTask = fn
-	return m
+	// m.mockNewTask = fn
+	// return m
+	return nil
 }
 
 func (m *MockQueue) WithMockEnqueueTask(fn func(task *asynq.Task, queue, taskId string, processIn time.Duration) error) *MockQueue {
-	m.mockEnqueueTask = fn
-	return m
+	return nil
 }
 
 func (m *MockQueue) WithMockPlaylistHandler(fn func(uid, shorturl string, info *blueprint.LinkInfo, appId string) error) *MockQueue {
-	m.mockPlaylistHandler = fn
-	return m
+	return nil
 }
