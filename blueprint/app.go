@@ -274,3 +274,7 @@ type Webhook struct {
 	VerifyToken string    `json:"verify_token" db:"verify_token"`
 	UID         uuid.UUID `json:"uuid" db:"uuid"`
 }
+
+type CreateNewDevAppResponse struct {
+	AppId string `json:"app_id"`
+}

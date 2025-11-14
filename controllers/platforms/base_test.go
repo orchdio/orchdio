@@ -2,6 +2,7 @@ package platforms_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http/httptest"
@@ -19,8 +20,9 @@ import (
 
 type PlatformsTestSuite struct {
 	suite.Suite
-	App *fiber.App
-	DB  *sqlx.DB
+	App    *fiber.App
+	DB     *sqlx.DB
+	DevApp *blueprint.DeveloperApp
 }
 
 type TestUserController struct {
@@ -32,13 +34,70 @@ func (p *PlatformsTestSuite) SetupSuite() {
 
 	p.App = testDependencies.App
 	p.DB = testDependencies.DB
+	p.DevApp = testDependencies.DevApp
 }
 
 func TestPlatformsTestSuite(t *testing.T) {
 	suite.Run(t, &PlatformsTestSuite{})
 }
 
-func (p *PlatformsTestSuite) TestCreateNewOrg() {
+var orgId = ""
+var orgJwt = ""
+
+// Define response wrapper to match util.SuccessResponse structure
+type SuccessResponseWrapper[T any] struct {
+	Message string `json:"message"`
+	Status  int    `json:"status"`
+	Data    T      `json:"data"`
+}
+
+func (p *PlatformsTestSuite) TestB_CreateNewDevApp() {
+	newAppData := &blueprint.CreateNewDeveloperAppData{
+		Name:                 "test_app",
+		Description:          "Some description here",
+		WebhookURL:           "https://orchdio.com/test/webhook",
+		Organization:         orgId,
+		IntegrationAppSecret: "secret_abc",
+		// the app id from when the user creates a new app id on the platform of choice
+		IntegrationAppId:    "platform_id",
+		RedirectURL:         "https://orchdio.com/zoove/redirect",
+		IntegrationPlatform: "spotify",
+	}
+
+	serializedBody, err := json.Marshal(newAppData)
+	if err != nil {
+		log.Println("Could not serialize createNewDevApp ")
+		panic(err)
+	}
+
+	// endpoint is: /:orgId/app/new
+	routeUrl := fmt.Sprintf("/v1/org/%s/app/new", orgId)
+	bearerToken := fmt.Sprintf("Bearer %s", orgJwt)
+
+	req := httptest.NewRequest("POST", routeUrl, strings.NewReader(string(serializedBody)))
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Authorization", bearerToken)
+
+	res, err := p.App.Test(req)
+	if err != nil {
+		log.Println("Could not create new developer App")
+		panic(err)
+	}
+
+	defer res.Body.Close()
+	bod, err := io.ReadAll(res.Body)
+	if err != nil {
+		log.Println("Could not read IO utils body")
+	}
+
+	var response SuccessResponseWrapper[blueprint.CreateNewDevAppResponse]
+	err = json.Unmarshal(bod, &response)
+	p.Equal("Request Ok", response.Message)
+	p.NotEmpty(response.Data.AppId, "App ID should not be empty")
+	p.Equal(201, res.StatusCode)
+
+}
+func (p *PlatformsTestSuite) TestA_CreateNewOrg() {
 	// url is: /v1/org/new
 	createNewAppBody := &blueprint.CreateOrganizationData{
 		Name:          "TestOrg",
@@ -68,37 +127,23 @@ func (p *PlatformsTestSuite) TestCreateNewOrg() {
 		log.Println("Could not read IO utils body")
 	}
 
-	// Define response wrapper to match util.SuccessResponse structure
-	type SuccessResponseWrapper struct {
-		Message string                             `json:"message"`
-		Status  int                                `json:"status"`
-		Data    blueprint.OrchdioOrgCreateResponse `json:"data"`
-	}
-
-	var response SuccessResponseWrapper
+	var response SuccessResponseWrapper[blueprint.OrchdioOrgCreateResponse]
 	err = json.Unmarshal(bod, &response)
 	p.NoError(err, "Should be able to unmarshal response")
 
-	// Assert HTTP status code
 	p.Equal(201, res.StatusCode)
 
-	// Assert wrapper structure
 	p.Equal("Request Ok", response.Message)
 	p.Equal(201, response.Status)
 
-	// Assert OrchdioOrgCreateResponse data structure
 	p.NotEmpty(response.Data.OrgID, "OrgID should not be empty")
 	p.Equal("TestOrg", response.Data.Name)
 	p.Equal("some test organization", response.Data.Description)
 	p.NotEmpty(response.Data.Token, "JWT token should not be empty")
 
-	log.Printf("✅ Successfully created org with ID: %s", response.Data.OrgID)
-
-	// var respp = &blueprint.OrchdioOrgCreateResponse{}
-	// p.Equal(201, res.StatusCode)
-	// log.Println("created org info is...")
-
-	// spew.Dump(string(bod))
+	// set the orgId & token in the local variables, to be used by the other endpoints, namely the endpoint to create a new devApp
+	orgId = response.Data.OrgID
+	orgJwt = response.Data.Token
 }
 
 // func (p *PlatformsTestSuite) TestConvertTrack() {
@@ -118,7 +163,7 @@ func (p *PlatformsTestSuite) TestCreateNewOrg() {
 
 // 	req := httptest.NewRequest("POST", "/v1/track/convert", strings.NewReader(string(serConversion)))
 // 	req.Header.Add("Content-Type", "application/json")
-// 	req.Header.Add("x-orchdio-public-key", p.Pubkey)
+// 	req.Header.Add("x-orchdio-public-key", p.DevApp.PublicKey.String())
 
 // 	res, err := p.App.Test(req)
 // 	log.Printf("TEST SUITE TEST ERROR IS: %v", err)
@@ -134,6 +179,6 @@ func (p *PlatformsTestSuite) TearDownSuite() {
 	if err != nil {
 		log.Printf("ERROR TRUNCATING TABLES: %v", err)
 
-		p.T().Fatal(err) // Fail the test if cleanup fails
+		p.T().Fatal(err) // fail the test if cleanup fails
 	}
 }

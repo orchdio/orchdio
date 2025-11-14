@@ -11,25 +11,6 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// QueueService defines the interface for queue operations
-type QueueService interface {
-	// Task related operations
-	NewTask(taskType, queue string, retry int, payload []byte) (*asynq.Task, error)
-	EnqueueTask(task *asynq.Task, queue, taskId string, processIn time.Duration) error
-	RunTask(pattern string, handler func(context.Context, *asynq.Task) error)
-
-	// Playlist related operations
-	NewPlaylistQueue(entityID string, payload *blueprint.LinkInfo) (*asynq.Task, error)
-	PlaylistTaskHandler(ctx context.Context, task *asynq.Task) error
-	PlaylistHandler(uid, shorturl string, info *blueprint.LinkInfo, appId string) error
-
-	// Email related operations
-	SendEmail(emailData *blueprint.EmailTaskData) error
-	SendEmailHandler(ctx context.Context, task *asynq.Task) error
-}
-
-// type MockQueue struct{}
-
 type MockQueue struct {
 	mockNewTask          func(taskType, queue string, retry int, payload []byte) (*asynq.Task, error)
 	mockEnqueueTask      func(task *asynq.Task, queue, taskId string, processIn time.Duration) error

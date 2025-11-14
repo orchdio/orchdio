@@ -24,6 +24,24 @@ func intPtr64(v int64) *int64 {
 	return &v
 }
 
+// for lack of better naming.
+type SvixInterface interface {
+	CreateApp(name, uid string) (*svix.ApplicationOut, *svix.AppPortalAccessOut, error)
+	CreateEndpoint(appId, uid, endpoint string) (*svix.EndpointOut, error)
+
+	// CreateAppPortal(appId string) (*svix.AppPortalAccessOut, error)
+	// GetApp(appId string) (*svix.ApplicationOut, *svix.AppPortalAccessOut, error)
+	// DeleteApp(appId string) error
+	// GetEndpoint(appId, endpoint string) (*svix.EndpointOut, error)
+	// UpdateEndpoint(appId, endpointId, endpoint string) (*svix.EndpointOut, error)
+	// ListEndpoints(appId string) (*svix.ListResponseEndpointOut, error)
+	// DeleteEndpoint(appId, endpointId string) error
+	// SendEvent(appId, eventType string, payload interface{}) (*svix.MessageOut, error)
+	// CreateEventType(eventName, description string) (*svix.EventTypeOut, error)
+	// SendTrackEvent(appId string, out *blueprint.PlaylistConversionEventTrack) bool
+	// SendPlaylistMetadataEvent(info *blueprint.LinkInfo, result *blueprint.PlaylistConversionEventMetadata) bool
+}
+
 func New(authToken string, debug bool) *SvixWebhook {
 	c, err := svix.New(authToken, &svix.SvixOptions{
 		Debug: debug,

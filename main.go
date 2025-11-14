@@ -22,6 +22,7 @@ import (
 	"orchdio/queue"
 	follow2 "orchdio/services/follow"
 	"orchdio/util"
+	svixwebhook "orchdio/webhooks/svix"
 	"os"
 	"os/signal"
 	"strings"
@@ -377,10 +378,12 @@ func main() {
 		}
 	}
 
+	// svix stuff here...
+	svixInst := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
 	userController := account.NewUserController(dbase, redisClient, orchdioQueue)
 	authMiddleware := middleware.NewAuthMiddleware(dbase)
 	conversionController := conversion.NewConversionController(dbase, redisClient, asyncClient, asynqServer, asynqMux)
-	devAppController := developer.NewDeveloperController(dbase)
+	devAppController := developer.NewDeveloperController(dbase, svixInst)
 
 	platformsControllers := platforms.NewPlatform(redisClient, dbase, orchdioQueue)
 	/**
@@ -476,6 +479,7 @@ func main() {
 			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Authorization error", "Invalid or Expired token")
 		},
 	}), middleware.VerifyAppJWT)
+
 	// endpoints that require jwt tokens to be authenticated and authorized.
 	orgRouter.Post("/:orgId/app/new", devAppController.CreateApp)
 	orgRouter.Get("/:orgId/apps", devAppController.FetchAllDeveloperApps)

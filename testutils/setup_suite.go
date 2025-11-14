@@ -4,30 +4,37 @@ import (
 	"context"
 	"errors"
 	"log"
+	"orchdio/blueprint"
 	"orchdio/controllers/account"
+	"orchdio/controllers/developer"
 	"orchdio/controllers/platforms"
 	"orchdio/db"
 	"orchdio/middleware"
+	"os"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/gofiber/fiber/v2"
+	jwtware "github.com/gofiber/jwt/v3"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/jmoiron/sqlx"
 )
 
-type TestUserController struct {
-	*account.UserController
-}
-
 type TestSuite struct {
-	App *fiber.App
-	DB  *sqlx.DB
-	// Pubkey     string
-	// PrivateKey string
+	App    *fiber.App
+	DB     *sqlx.DB
+	DevApp *blueprint.DeveloperApp
 }
 
 func SetupTestSuite() *TestSuite {
+
+	// todo: use test env variables... from file, perhaps.
+	// set the env variable
+	os.Setenv("JWT_SECRET", "some-secret")
+	os.Setenv("ENCRYPTION_SECRET", "super-secure-secret-something-ff")
+	os.Setenv("SVIX_API_KEY", "some-keys-here")
+	os.Setenv("SVIX_API_URL", "https://api.eu.svix.com")
+
 	dbURL := "postgres://kauffman@localhost:5432/orchdio_test?sslmode=disable"
 	dbase, _ := db.ConnectDB(dbURL)
 
@@ -61,80 +68,40 @@ func SetupTestSuite() *TestSuite {
 		panic("Could not connect to redis. Please check your redis configuration.")
 	}
 
+	mockQueue := &MockQueue{}
+	svixInstance := &MockSvix{}
+
 	app := fiber.New()
 	authMiddleware := middleware.NewAuthMiddleware(dbase)
-	mockQueue := &MockQueue{}
-
 	platformsHandler := platforms.NewPlatform(redisClient, dbase, mockQueue)
-	userController := &TestUserController{
-		UserController: account.NewUserController(dbase, redisClient, mockQueue),
+	userController := account.NewUserController(dbase, redisClient, mockQueue)
+
+	orgsHandler := developer.NewDeveloperController(dbase, svixInstance)
+
+	// get JWT secret from environment or use test default
+	// todo: remove this when test .env is figured out
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		jwtSecret = "test-secret-key-for-testing-only"
+		log.Printf("⚠️  Using default test JWT secret")
 	}
-	//
-	// userController := account.NewUserController(dbase, redisClient, nil, nil)
-
-	// create a new user
-
-	// dbInst := db.NewDB{
-	// 	DB: dbase,
-	// }
-
-	// hashedPass, bErr := bcrypt.GenerateFromPassword([]byte("password"), bcrypt.DefaultCost)
-	// if bErr != nil {
-	// 	log.Println("COULD NOT HASH USER PASSWORD.")
-	// }
-
-	// userId := uuid.NewString()
-
-	// // this returns the ID
-	// _, newUserErr := dbInst.DB.Exec(queries.CreateNewOrgUser, "test@orchdio.com", userId, hashedPass)
-	// // now, create an org
-	// //
-	// orgId := uuid.NewString()
-	// if newUserErr != nil {
-	// 	log.Println("ERROR CREATING NEW TEST USER")
-	// }
-	// _, err = dbInst.CreateOrg(orgId, "TestOrg", "Sample test org", userId)
-	// if err != nil {
-	// 	log.Println("Could not create test org")
-	// }
-
-	// newAppData := &blueprint.CreateNewDeveloperAppData{
-	// 	Name:                 "test_app",
-	// 	Description:          "Some description here",
-	// 	WebhookURL:           "https://orchdio.com/test/webhook",
-	// 	Organization:         orgId,
-	// 	IntegrationAppSecret: "secret_abc",
-	// 	// the app id from when the user creates a new app id on the platform of choice
-	// 	IntegrationAppId:    "platform_id",
-	// 	RedirectURL:         "https://orchdio.com/zoove/redirect",
-	// 	IntegrationPlatform: "spotify",
-	// }
-
-	// pubKey := uuid.NewString()
-	// privateKey := uuid.NewString()
-	// verifySecret := "verify_verify"
-
-	// // now we want to create a new app so we can use the API key to make requests.
-	// _, err = dbInst.CreateNewApp(
-	// 	newAppData.Name,
-	// 	newAppData.Description,
-	// 	newAppData.RedirectURL,
-	// 	newAppData.WebhookURL,
-	// 	pubKey,
-	// 	userId,
-	// 	privateKey,
-	// 	verifySecret,
-	// 	orgId,
-	// 	"",
-	// )
-
-	// // then update the integration credentials
-	// if err != nil {
-	// 	log.Println("COULD NOT CREATE A NEW APP")
-	// }
 
 	app.Post("/v1/org/new", userController.CreateOrg)
 	app.Post("/v1/track/convert", authMiddleware.AddReadOnlyDeveloperToContext, middleware.ExtractLinkInfoFromBody, platformsHandler.ConvertTrack)
+
+	orgRouter := app.Group("/v1/org")
+	orgRouter.Use(jwtware.New(jwtware.Config{
+		SigningKey: []byte(jwtSecret),
+		Claims:     &blueprint.AppJWT{},
+		ContextKey: "appToken",
+		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
+			log.Printf("Test JWT validation error: %v", err)
+			return ctx.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "Invalid or expired token",
+			})
+		},
+	}), middleware.VerifyAppJWT)
+	orgRouter.Post("/:orgId/app/new", orgsHandler.CreateApp)
 
 	go func() {
 		app.Listen(":4200")

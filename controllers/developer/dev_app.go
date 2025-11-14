@@ -26,11 +26,12 @@ import (
 )
 
 type Controller struct {
-	DB *sqlx.DB
+	DB          *sqlx.DB
+	SvixService svixwebhook.SvixInterface
 }
 
-func NewDeveloperController(db *sqlx.DB) *Controller {
-	return &Controller{DB: db}
+func NewDeveloperController(db *sqlx.DB, webhookInterface svixwebhook.SvixInterface) *Controller {
+	return &Controller{DB: db, SvixService: webhookInterface}
 }
 
 // CreateApp creates a new app for the developer. An app is a way to access the API, there can be multiple apps per developer.
@@ -117,11 +118,9 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred and could not create developer app.")
 	}
 
-	// create a new instance of svix service
-	svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
 	webhookName := fmt.Sprintf("%s:%s", body.Name, string(uid))
 	webhookAppUID := svixwebhook.FormatSvixAppUID(string(uid))
-	whResponse, _, whErr := svixInstance.CreateApp(webhookName, webhookAppUID)
+	whResponse, _, whErr := d.SvixService.CreateApp(webhookName, webhookAppUID)
 
 	if whErr != nil {
 		log.Printf("[controllers][CreateApp] developer -  error: could not create developer app: %v\n", whErr)
@@ -129,7 +128,7 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 	}
 
 	endpointUniqID := svixwebhook.FormatSvixEndpointUID(string(uid))
-	_, epErr := svixInstance.CreateEndpoint(whResponse.Id, endpointUniqID, body.WebhookURL)
+	_, epErr := d.SvixService.CreateEndpoint(whResponse.Id, endpointUniqID, body.WebhookURL)
 	if epErr != nil {
 		log.Printf("[controller][CreateApp] developer -  error: could not create developer app: %v\n", epErr)
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, epErr, "An internal error occurred and could not create developer app.")
@@ -143,10 +142,10 @@ func (d *Controller) CreateApp(ctx *fiber.Ctx) error {
 
 	err = database.UpdateIntegrationCredentials(encryptedAppData, string(uid), body.IntegrationPlatform, body.RedirectURL, body.WebhookURL, whResponse.Id)
 	log.Printf("[controllers][CreateApp] developer -  new app created: %s\n", body.Name)
-	res := map[string]string{
-		"app_id": string(uid),
-	}
 
+	res := &blueprint.CreateNewDevAppResponse{
+		AppId: string(uid),
+	}
 	return util.SuccessResponse(ctx, fiber.StatusCreated, res)
 }
 

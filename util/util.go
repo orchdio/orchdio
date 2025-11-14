@@ -118,6 +118,7 @@ func SignOrgLoginJWT(claims *blueprint.AppJWT) ([]byte, error) {
 		},
 	})
 
+	log.Println("DEBUG:: SIGN LOGIN TOKEN", os.Getenv("JWT_SECRET"))
 	token, err := to.SignedString([]byte(os.Getenv("JWT_SECRET")))
 	if err != nil {
 		log.Printf("[util]: [SignOrgLoginJWT] error -  could not sign token %v", err)
