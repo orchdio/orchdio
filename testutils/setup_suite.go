@@ -17,6 +17,7 @@ import (
 	jwtware "github.com/gofiber/jwt/v3"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -34,6 +35,7 @@ func SetupTestSuite() *TestSuite {
 	os.Setenv("ENCRYPTION_SECRET", "super-secure-secret-something-ff")
 	os.Setenv("SVIX_API_KEY", "some-keys-here")
 	os.Setenv("SVIX_API_URL", "https://api.eu.svix.com")
+	os.Setenv("DEEZER_API_BASE", "https://api.deezer.com")
 
 	dbURL := "postgres://kauffman@localhost:5432/orchdio_test?sslmode=disable"
 	dbase, _ := db.ConnectDB(dbURL)
@@ -44,7 +46,7 @@ func SetupTestSuite() *TestSuite {
 		panic(dErr)
 	}
 
-	dbDriver, dbErr := migrate.NewWithDatabaseInstance("file://../../db/migration", "postgres", drver)
+	dbDriver, dbErr := migrate.NewWithDatabaseInstance("file://../db/migration", "postgres", drver)
 	if dbErr != nil {
 		log.Println("Error running migrations....")
 		panic(dbErr)
@@ -73,10 +75,10 @@ func SetupTestSuite() *TestSuite {
 
 	app := fiber.New()
 	authMiddleware := middleware.NewAuthMiddleware(dbase)
-	platformsHandler := platforms.NewPlatform(redisClient, dbase, mockQueue)
+	platformsHandler := platforms.NewPlatform(redisClient, dbase, mockQueue, svixInstance)
 	userController := account.NewUserController(dbase, redisClient, mockQueue)
 
-	orgsHandler := developer.NewDeveloperController(dbase, svixInstance)
+	devAppHandler := developer.NewDeveloperController(dbase, svixInstance)
 
 	// get JWT secret from environment or use test default
 	// todo: remove this when test .env is figured out
@@ -101,7 +103,23 @@ func SetupTestSuite() *TestSuite {
 			})
 		},
 	}), middleware.VerifyAppJWT)
-	orgRouter.Post("/:orgId/app/new", orgsHandler.CreateApp)
+
+	orgRouter.Post("/:orgId/app/new", devAppHandler.CreateApp)
+	appRouter := app.Group("/v1/app")
+
+	appRouter.Use(jwtware.New(jwtware.Config{
+		SigningKey: []byte(jwtSecret),
+		Claims:     &blueprint.AppJWT{},
+		ContextKey: "appToken",
+		ErrorHandler: func(ctx *fiber.Ctx, err error) error {
+			log.Printf("Test JWT validation error: %v", err)
+			return ctx.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "Invalid or expired token",
+			})
+		},
+	}), middleware.VerifyAppJWT)
+
+	appRouter.Patch("/:appId", devAppHandler.UpdateApp)
 
 	go func() {
 		app.Listen(":4200")

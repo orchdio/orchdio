@@ -122,7 +122,7 @@ func FetchLibraryAlbums(platform, refreshToken, appId string, pg *sqlx.DB, red *
 }
 
 // ConvertTrack fetches all the tracks converted from all the supported platforms
-func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*blueprint.TrackConversion, error) {
+func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB, webhookSender svixwebhook.SvixInterface) (*blueprint.TrackConversion, error) {
 	database := db.NewDB{DB: pg}
 	app, err := database.FetchAppByAppId(info.App)
 	if err != nil {
@@ -136,7 +136,7 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB) (*bl
 		targetPlatform = "all"
 	}
 
-	webhookSender := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
+	// webhookSender := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
 	platformsServiceFactory := platforminternal.NewPlatformServiceFactory(pg, red, app, webhookSender)
 	serviceFactory := serviceinternal.NewServiceFactory(platformsServiceFactory)
 

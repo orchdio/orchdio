@@ -279,6 +279,7 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 		}
 	}()
 
+	wg.Add(1)
 	go func() {
 		for result := range resultChan {
 
@@ -375,7 +376,6 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 		wg.Done()
 	}()
 
-	wg.Add(1)
 	wg.Wait()
 
 	_, whErr := pc.factory.WebhookSender.SendEvent(pc.factory.App.WebhookAppID, blueprint.PlaylistConversionDoneEvent, &blueprint.PlaylistConversionDoneEventMetadata{

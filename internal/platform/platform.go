@@ -34,10 +34,10 @@ type PlatformServiceFactory struct {
 	Pg            *sqlx.DB
 	Red           *redis.Client
 	App           *blueprint.DeveloperApp
-	WebhookSender *svixwebhook.SvixWebhook
+	WebhookSender svixwebhook.SvixInterface
 }
 
-func NewPlatformServiceFactory(pg *sqlx.DB, red *redis.Client, app *blueprint.DeveloperApp, webhookSender *svixwebhook.SvixWebhook) *PlatformServiceFactory {
+func NewPlatformServiceFactory(pg *sqlx.DB, red *redis.Client, app *blueprint.DeveloperApp, webhookSender svixwebhook.SvixInterface) *PlatformServiceFactory {
 	return &PlatformServiceFactory{pg, red, app, webhookSender}
 }
 
@@ -47,20 +47,20 @@ func (pf *PlatformServiceFactory) GetPlatformService(platform string) (PlatformS
 		log.Printf("%v\n", err)
 		return nil, err
 	}
-	webhookSender := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
+	// webhookSender := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
 
 	switch platform {
 	case spotify.IDENTIFIER:
-		return spotify.NewService(credentials, pf.Pg, pf.Red, pf.App, webhookSender), nil
+		return spotify.NewService(credentials, pf.Pg, pf.Red, pf.App, pf.WebhookSender), nil
 
 	case deezer.IDENTIFIER:
-		return deezer.NewService(credentials, pf.Pg, pf.Red, pf.App, webhookSender), nil
+		return deezer.NewService(credentials, pf.Pg, pf.Red, pf.App, pf.WebhookSender), nil
 
 	case applemusic.IDENTIFIER:
 		return applemusic.NewService(credentials, pf.Pg, pf.Red, pf.App), nil
 
 	case tidal.IDENTIFIER:
-		return tidal.NewService(credentials, pf.Pg, pf.Red, pf.App, webhookSender), nil
+		return tidal.NewService(credentials, pf.Pg, pf.Red, pf.App, pf.WebhookSender), nil
 
 	case ytmusic.IDENTIFIER:
 		// note: ytmusic does not require credentials (yet)

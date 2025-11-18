@@ -11,6 +11,7 @@ import (
 	"orchdio/queue"
 	"orchdio/universal"
 	"orchdio/util"
+	svixwebhook "orchdio/webhooks/svix"
 	"os"
 	"strings"
 	"time"
@@ -27,8 +28,9 @@ type Platforms struct {
 	DB    *sqlx.DB
 	// AsynqClient  *asynq.Client
 	// AsynqMux     *asynq.ServeMux
-	Logger *blueprint.OrchdioLoggerOptions
-	Queue  queue.QueueService
+	Logger        *blueprint.OrchdioLoggerOptions
+	Queue         queue.QueueService
+	WebhookSender svixwebhook.SvixInterface
 }
 
 // func NewPlatform(r *redis.Client, db *sqlx.DB, asynqClient *asynq.Client, asynqMux *asynq.ServeMux) *Platforms {
@@ -36,8 +38,8 @@ type Platforms struct {
 // }
 //
 
-func NewPlatform(r *redis.Client, db *sqlx.DB, queue queue.QueueService) *Platforms {
-	return &Platforms{Redis: r, DB: db, Queue: queue}
+func NewPlatform(r *redis.Client, db *sqlx.DB, queue queue.QueueService, webhookSender svixwebhook.SvixInterface) *Platforms {
+	return &Platforms{Redis: r, DB: db, Queue: queue, WebhookSender: webhookSender}
 }
 
 func (p *Platforms) ConvertTrack(ctx *fiber.Ctx) error {
@@ -51,8 +53,7 @@ func (p *Platforms) ConvertTrack(ctx *fiber.Ctx) error {
 	}
 
 	if strings.Contains(linkInfo.Entity, "track") {
-		log.Printf("\n[controllers][platforms][%s][ConvertTrack] [info] - It is a track URL", linkInfo.Platform)
-		conversion, conversionError := universal.ConvertTrack(linkInfo, p.Redis, p.DB)
+		conversion, conversionError := universal.ConvertTrack(linkInfo, p.Redis, p.DB, p.WebhookSender)
 		if conversionError != nil {
 			if errors.Is(conversionError, blueprint.ErrNotImplemented) {
 				log.Printf("\n[controllers][platforms][deezer][ConvertTrack] error - %v\n", "Not implemented")
@@ -70,7 +71,7 @@ func (p *Platforms) ConvertTrack(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusInternalServerError, conversionError, "An internal error occurred")
 		}
 
-		log.Printf("\n[controllers][platforms][ConvertPlaylist] - converted %v with URL %v\n", linkInfo.Entity, linkInfo.TargetLink)
+		log.Printf("\n[controllers][platforms][ConvertTrack] - converted %v with URL %v\n", linkInfo.Entity, linkInfo.TargetLink)
 
 		// HACK: insert a new task in the DB directly and return the ID as part of the
 		// conversion response. We are saving directly because for playlists, we run them in asynq job queue

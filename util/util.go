@@ -600,7 +600,6 @@ func CacheTrackByArtistTitle(track *blueprint.TrackSearchResult, red *redis.Clie
 func ContainsElement(collections []string, element string) bool {
 	cpy := collections
 	for _, elem := range cpy {
-		log.Printf("Original: %v, Check: %v", elem, element)
 		if strings.Contains(element, elem) {
 			return true
 		}
@@ -609,7 +608,6 @@ func ContainsElement(collections []string, element string) bool {
 	return false
 }
 
-// TODO: move this to a util file or somewhere more useful.
 const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 
 func GenerateCodeVerifierAndChallenge() (string, string, error) {
@@ -628,7 +626,7 @@ func GenerateCodeVerifierAndChallenge() (string, string, error) {
 	// write the code verifier bytes to the hash
 	hash.Write([]byte(codeVerifier.String()))
 
-	// Get the final hash sum
+	// get the final hash sum
 	hashed := hash.Sum(nil)
 	codeChallenge := base64.RawURLEncoding.EncodeToString(hashed)
 
@@ -636,16 +634,10 @@ func GenerateCodeVerifierAndChallenge() (string, string, error) {
 }
 
 func HasTokenExpired(expiresIn string) (bool, error) {
-	// Parse the expiry time string
 	expiryTime, err := time.Parse(time.RFC3339, expiresIn)
 	if err != nil {
 		return true, fmt.Errorf("failed to parse expiry time: %v", err)
 	}
-
-	// Get current time
 	now := time.Now()
-
-	// Compare if current time is after expiry time
-	// If now is after expiry time, the token has expired
 	return now.After(expiryTime), nil
 }

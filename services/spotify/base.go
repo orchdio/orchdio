@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"orchdio/blueprint"
 	"orchdio/util"
+	svixwebhook "orchdio/webhooks/svix"
 	"strings"
 	"time"
 
@@ -28,14 +29,14 @@ type Service struct {
 	RedisClient          *redis.Client
 	PgClient             *sqlx.DB
 	App                  *blueprint.DeveloperApp
-	WebhookSender        WebhookSender
+	WebhookSender        svixwebhook.SvixInterface
 }
 
 type WebhookSender interface {
 	SendTrackEvent(appID string, event *blueprint.PlaylistConversionEventTrack) bool
 }
 
-func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client, devApp *blueprint.DeveloperApp, webhookSender WebhookSender) *Service {
+func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client, devApp *blueprint.DeveloperApp, webhookSender svixwebhook.SvixInterface) *Service {
 	return &Service{
 		IntegrationAppID:     credentials.AppID,
 		IntegrationAppSecret: credentials.AppSecret,

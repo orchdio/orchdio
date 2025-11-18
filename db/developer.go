@@ -448,7 +448,7 @@ func (d *NewDB) UpdateWebhookAppID(devAppId, webhookAppId string) error {
 		return err
 	}
 	//d.Logger.Info("[db][UpdateWebhookAppID] developer -  convoy webhook id updated for app", zap.String("app_id", appId))
-	log.Println("[db][UpdateWebhookAppID] developer -  convoy webhook id updated for app", devAppId)
+	log.Println("[db][UpdateWebhookAppID] developer - webhook id updated for app", devAppId)
 	return nil
 }
 
