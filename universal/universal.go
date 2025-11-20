@@ -136,7 +136,6 @@ func ConvertTrack(info *blueprint.LinkInfo, red *redis.Client, pg *sqlx.DB, webh
 		targetPlatform = "all"
 	}
 
-	// webhookSender := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
 	platformsServiceFactory := platforminternal.NewPlatformServiceFactory(pg, red, app, webhookSender)
 	serviceFactory := serviceinternal.NewServiceFactory(platformsServiceFactory)
 

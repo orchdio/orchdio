@@ -349,8 +349,6 @@ func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.Pl
 // FetchTracksForSourcePlatform fetches the tracks for a given playlist (with playlistID). Its the method used
 // to fetch the tracks in a playlist if the user is trying to convert from spotify to another platform.
 func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlistMeta *blueprint.PlaylistMetadata, resultChan chan blueprint.TrackSearchResult) error {
-	log.Println("Going to asynchronously fetch the tracks from spotify now and send each result to the channel as they come in")
-
 	token := s.NewAuthToken()
 	if token == nil {
 		log.Printf("\n[services][spotify][base][SearchPlaylistWithID] error - could not fetch token\n")
