@@ -415,7 +415,7 @@ func (s *Service) CreateNewPlaylist(title, description, musicToken string, track
 }
 
 // FetchUserPlaylists fetches the user's playlists
-func (s *Service) FetchUserPlaylists(token string) ([]UserPlaylistResponse, error) {
+func (s *Service) FetchLibraryPlaylists(token string) ([]blueprint.UserPlaylist, error) {
 	log.Printf("[services][applemusic][FetchUserPlaylists] Fetching user playlists\n")
 	tp := applemusic.Transport{Token: s.IntegrationAPIKey, MusicUserToken: token}
 	client := applemusic.NewClient(tp.Client())
@@ -515,7 +515,29 @@ func (s *Service) FetchUserPlaylists(token string) ([]UserPlaylistResponse, erro
 		}
 		playlists = append(playlists, r)
 	}
-	return playlists, nil
+
+	if playlists == nil {
+		log.Printf("[platforms][FetchPlatformPlaylists] error - error fetching apple music playlists %v\n", err)
+		return nil, blueprint.ErrUnknown
+	}
+
+	// create a slice of UserLibraryPlaylists
+	var userPlaylists []blueprint.UserPlaylist
+	for _, playlist := range playlists {
+		userPlaylists = append(userPlaylists, blueprint.UserPlaylist{
+			ID:            playlist.ID,
+			Title:         playlist.Title,
+			Public:        playlist.Public,
+			Collaborative: playlist.Collaborative,
+			Description:   playlist.Description,
+			URL:           playlist.URL,
+			Cover:         playlist.Cover,
+			CreatedAt:     playlist.CreatedAt,
+			NbTracks:      playlist.NbTracks,
+			Owner:         playlist.Owner,
+		})
+	}
+	return userPlaylists, nil
 }
 
 // FetchUserArtists fetches the user's artists
@@ -602,11 +624,11 @@ func (s *Service) FetchUserArtists(token string) (*blueprint.UserLibraryArtists,
 }
 
 // FetchLibraryAlbums fetches the user's library albums
-func FetchLibraryAlbums(apikey, token string) ([]blueprint.LibraryAlbum, error) {
+func (s *Service) FetchLibraryAlbums(token string) ([]blueprint.LibraryAlbum, error) {
 	inst := axios.NewInstance(&axios.InstanceConfig{
 		BaseURL: "https://api.music.apple.com/v1",
 		Headers: http.Header{
-			"Authorization":         []string{fmt.Sprintf("Bearer %s", apikey)},
+			"Authorization":         []string{fmt.Sprintf("Bearer %s", s.IntegrationAPIKey)},
 			"Music-User-MusicToken": []string{token},
 		},
 	})
@@ -684,11 +706,11 @@ func FetchLibraryAlbums(apikey, token string) ([]blueprint.LibraryAlbum, error) 
 }
 
 // FetchTrackListeningHistory fetches all the recently listened to tracks for a user
-func FetchTrackListeningHistory(apikey, token string) ([]blueprint.TrackSearchResult, error) {
+func (s *Service) FetchListeningHistory(token string) ([]blueprint.TrackSearchResult, error) {
 	inst := axios.NewInstance(&axios.InstanceConfig{
 		BaseURL: "https://api.music.apple.com/v1",
 		Headers: http.Header{
-			"Authorization":         []string{fmt.Sprintf("Bearer %s", apikey)},
+			"Authorization":         []string{fmt.Sprintf("Bearer %s", s.IntegrationAPIKey)},
 			"Music-User-MusicToken": []string{token},
 		},
 	})
@@ -707,7 +729,7 @@ func FetchTrackListeningHistory(apikey, token string) ([]blueprint.TrackSearchRe
 	}
 
 	// limit it to 10 iterations. that should fetch about 100 and a few tracks
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		if historyResponse.Next == "" {
 			break
 		}
@@ -748,4 +770,8 @@ func FetchTrackListeningHistory(apikey, token string) ([]blueprint.TrackSearchRe
 	}
 
 	return tracks, nil
+}
+
+func (s *Service) FetchUserInfo(refreshToken string) (*blueprint.UserPlatformInfo, error) {
+	return nil, blueprint.ErrNotImplemented
 }

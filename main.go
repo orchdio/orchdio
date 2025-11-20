@@ -17,10 +17,12 @@ import (
 	"orchdio/controllers/conversion"
 	"orchdio/controllers/developer"
 	"orchdio/controllers/platforms"
+	"orchdio/db"
 	"orchdio/middleware"
 	"orchdio/queue"
 	follow2 "orchdio/services/follow"
 	"orchdio/util"
+	svixwebhook "orchdio/webhooks/svix"
 	"os"
 	"os/signal"
 	"strings"
@@ -43,7 +45,6 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/hibiken/asynq"
-	"github.com/jmoiron/sqlx"
 	"github.com/joho/godotenv"
 	"github.com/robfig/cron/v3"
 )
@@ -86,22 +87,29 @@ func main() {
 
 	log.Printf("✅🔱 Port: %v", port)
 	port = fmt.Sprintf(":%s", port)
-	db, err := sqlx.Open("postgres", dbURL)
-	if err != nil {
-		log.Printf("⛔ Error connecting to postgresql db")
-		panic(err)
+
+	dbase, dErr := db.ConnectDB(dbURL)
+
+	if dErr != nil {
+		log.Println("COULD NOT CONNECT TO THE DATABASE....")
+		panic(dErr)
 	}
-	defer func(db *sqlx.DB) {
-		err := db.Close()
-		if err != nil {
-			log.Printf("Error closing")
-		}
-	}(db)
-	err = db.Ping()
-	if err != nil {
-		log.Println("⛔ Error connecting to postgresql db")
-		panic(err)
-	}
+	// db, err := sqlx.Open("postgres", dbURL)
+	// if err != nil {
+	// 	log.Printf("⛔ Error connecting to postgresql db")
+	// 	panic(err)
+	// }
+	// defer func(db *sqlx.DB) {
+	// 	err := db.Close()
+	// 	if err != nil {
+	// 		log.Printf("Error closing")
+	// 	}
+	// }(db)
+	// err = db.Ping()
+	// if err != nil {
+	// 	log.Println("⛔ Error connecting to postgresql db")
+	// 	panic(err)
+	// }
 
 	log.Println("✅ Connected to Postgresql database")
 
@@ -124,7 +132,7 @@ func main() {
 		log.Printf("\n[main] [info] - Running in production mode. Connecting to authenticated redis")
 	}
 
-	drver, iErr := postgres.WithInstance(db.DB, &postgres.Config{})
+	drver, iErr := postgres.WithInstance(dbase.DB, &postgres.Config{})
 	if iErr != nil {
 		log.Printf("Error instantiating db driver")
 		panic(iErr)
@@ -188,7 +196,7 @@ func main() {
 
 					if notFound != nil {
 						log.Printf("[main] [QueueErrorHandler] Going to retry the handler needed to be run")
-						emailQueue := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
+						emailQueue := queue.NewOrchdioQueue(asyncClient, dbase, redisClient, asynqMux)
 						var emailData blueprint.EmailTaskData
 						err = json.Unmarshal(task.Payload(), &emailData)
 						if err != nil {
@@ -239,7 +247,7 @@ func main() {
 					notFound := asynq.NotFound(context.Background(), task)
 					if notFound != nil {
 						log.Printf("[main] [QueueErrorHandler] Going to retry the handler needed to be run")
-						playlistQueue := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
+						playlistQueue := queue.NewOrchdioQueue(asyncClient, dbase, redisClient, asynqMux)
 						// schedule the playlist conversion
 						var playlistData blueprint.PlaylistTaskData
 						err = json.Unmarshal(task.Payload(), &playlistData)
@@ -255,7 +263,7 @@ func main() {
 						}
 					}
 
-					taskHandler := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
+					taskHandler := queue.NewOrchdioQueue(asyncClient, dbase, redisClient, asynqMux)
 					err = taskHandler.PlaylistHandler(task.ResultWriter().TaskID(), taskData.ShortURL, taskData.LinkInfo, taskData.App.UID.String())
 					if err != nil {
 						log.Printf("[main] [QueueErrorHandler] Error processing task %v", err)
@@ -268,7 +276,7 @@ func main() {
 		})
 
 	asynqMux.Use(queue.CheckForOrphanedTasksMiddleware)
-	orchdioQueue := queue.NewOrchdioQueue(asyncClient, db, redisClient, asynqMux)
+	orchdioQueue := queue.NewOrchdioQueue(asyncClient, dbase, redisClient, asynqMux)
 	asynqMux.HandleFunc(blueprint.EmailQueueTaskTypePattern, orchdioQueue.SendEmailHandler)
 	asynqMux.HandleFunc(blueprint.PlaylistConversionTaskTypePattern, orchdioQueue.PlaylistTaskHandler)
 	asynqMux.HandleFunc(blueprint.SendResetPasswordTaskPattern, orchdioQueue.SendEmailHandler)
@@ -370,12 +378,14 @@ func main() {
 		}
 	}
 
-	userController := account.NewUserController(db, redisClient, asyncClient, asynqMux)
-	authMiddleware := middleware.NewAuthMiddleware(db)
-	conversionController := conversion.NewConversionController(db, redisClient, asyncClient, asynqServer, asynqMux)
-	devAppController := developer.NewDeveloperController(db)
+	// svix stuff here...
+	svixInst := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
+	userController := account.NewUserController(dbase, redisClient, orchdioQueue)
+	authMiddleware := middleware.NewAuthMiddleware(dbase)
+	conversionController := conversion.NewConversionController(dbase, redisClient, asyncClient, asynqServer, asynqMux)
+	devAppController := developer.NewDeveloperController(dbase, svixInst)
 
-	platformsControllers := platforms.NewPlatform(redisClient, db, asyncClient, asynqMux)
+	platformsControllers := platforms.NewPlatform(redisClient, dbase, orchdioQueue, svixInst)
 	/**
 	 ==================================================================
 	+
@@ -415,14 +425,14 @@ func main() {
 	})
 	app.Get("/vermont/info", monitor.New(monitor.Config{Title: "Orchdio-Core health info"}))
 
-	authController := auth.NewAuthController(db, asyncClient, asynqServer, asynqMux, redisClient)
+	authController := auth.NewAuthController(dbase, asyncClient, asynqServer, asynqMux, redisClient)
 	// Auth related endpoints. full endpoint scheme is: "/v1/auth/..."
 	// connect endpoints
-	orchRouter.Get("/auth/:platform/connect", authMiddleware.AddRequestPlatformToCtx, authController.AppAuthRedirect)
+	orchRouter.Get("/auth/:platform/connect", authMiddleware.AddRequestPlatformWithPubKeyToCtx, authController.AppAuthRedirect)
 	// the callback that the auth platform will redirect to and this is where we handle the redirect and generate an auth token for the user, as response
-	orchRouter.Get("/auth/:platform/callback", authMiddleware.AddRequestPlatformToCtx, authController.HandleAppAuthRedirect)
+	orchRouter.Get("/auth/:platform/callback", authMiddleware.AddRequestPlatformWithPubKeyToCtx, authController.HandleAppAuthRedirect)
 	// this is for the apple music auth. its a POST as it carries a body
-	orchRouter.Post("/auth/:platform/callback", authMiddleware.AddRequestPlatformToCtx, authController.HandleAppAuthRedirect)
+	orchRouter.Post("/auth/:platform/callback", authMiddleware.AddRequestPlatformWithPubKeyToCtx, authController.HandleAppAuthRedirect)
 
 	// entity and task related controllers.
 	// entity is the type of action the user is trying to do. for example. converting a deezer link to tidal
@@ -442,12 +452,12 @@ func main() {
 	// this is the account of the *DEVELOPER* not the user,
 	orchRouter.Get("/account", authMiddleware.AddReadWriteDeveloperToContext, userController.FetchUserInfoByIdentifier)
 	orchRouter.Get("/me", authMiddleware.AddReadWriteDeveloperToContext, userController.FetchUserProfile)
-	orchRouter.Get("/account/:userId/:platform/playlists", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformPlaylists)
+	orchRouter.Get("/account/:userId/:platform/playlists", authMiddleware.AddRequestPlatformWithPrivateKeyToCtx, authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformPlaylists)
 	// todo: add nb_artists to data response
-	orchRouter.Get("/account/:userId/:platform/artists", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformArtists)
-	orchRouter.Get("/account/:userId/:platform/albums", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, authMiddleware.VerifyUserActionApp, platformsControllers.FetchPlatformAlbums)
+	orchRouter.Get("/account/:userId/:platform/artists", authMiddleware.AddRequestPlatformWithPrivateKeyToCtx, authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformArtists)
+	orchRouter.Get("/account/:userId/:platform/albums", authMiddleware.AddRequestPlatformWithPrivateKeyToCtx, authMiddleware.AddReadWriteDeveloperToContext, platformsControllers.FetchPlatformAlbums)
 	// TODO: implement for tidal
-	orchRouter.Get("/account/:userId/:platform/history/tracks", authMiddleware.AddRequestPlatformToCtx, authMiddleware.AddReadWriteDeveloperToContext, authMiddleware.VerifyUserActionApp, platformsControllers.FetchTrackListeningHistory)
+	orchRouter.Get("/account/:userId/:platform/history/tracks", authMiddleware.AddRequestPlatformWithPrivateKeyToCtx, authMiddleware.AddReadWriteDeveloperToContext, authMiddleware.VerifyUserActionApp, platformsControllers.FetchTrackListeningHistory)
 
 	orchRouter.Post("/follow", authMiddleware.AddReadWriteDeveloperToContext, userController.FollowPlaylist)
 	orchRouter.Post("/waitlist/add", authMiddleware.AddReadWriteDeveloperToContext, userController.AddToWaitlist)
@@ -469,6 +479,7 @@ func main() {
 			return util.ErrorResponse(ctx, http.StatusUnauthorized, "Authorization error", "Invalid or Expired token")
 		},
 	}), middleware.VerifyAppJWT)
+
 	// endpoints that require jwt tokens to be authenticated and authorized.
 	orgRouter.Post("/:orgId/app/new", devAppController.CreateApp)
 	orgRouter.Get("/:orgId/apps", devAppController.FetchAllDeveloperApps)
@@ -532,7 +543,7 @@ func main() {
 	c := cron.New()
 	entryId, cErr := c.AddFunc("@every 1m", func() {
 		log.Printf("\n[main] [info] - :🚂 ⏲️ Process background tasks")
-		follow2.SyncFollowsHandler(db, redisClient, asyncClient, asynqMux)
+		follow2.SyncFollowsHandler(dbase, redisClient, asyncClient, asynqMux)
 	})
 
 	if cErr != nil {

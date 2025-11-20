@@ -59,7 +59,7 @@ func (u *UserDevApp) CreateOrUpdateUserApp(body *blueprint.CreateNewUserAppData)
 		log.Printf("[controllers][developer][user_app] - user app does not exist for platform %s", body.Platform)
 		// it means the user app does not exist as we check above if the error is not sql.ErrNoRows
 		row := database.DB.QueryRowx(queries.CreateUserApp, uniqueID, body.RefreshToken,
-			pq.Array(body.Scopes), body.User, body.Platform, body.App)
+			pq.Array(body.Scopes), body.User, body.Platform, body.App, body.ExpiresIn, body.AccessToken)
 		err := row.Scan(&userAppID)
 		if err != nil {
 			log.Printf("[controllers][developer][user_app] - error creating user app: %v", err)
@@ -76,15 +76,12 @@ func (u *UserDevApp) CreateOrUpdateUserApp(body *blueprint.CreateNewUserAppData)
 	// hack?: the query will return a row with all the fields as their default values. in this case, the UUID
 	// will be 00000000-0000-0000-0000-000000000000. the error returned is errNoRows. so we check if the UUID
 	// is the default value and if it is, we know that the user app does not exist and we can create it
-	//if userApp.UUID.String() == "00000000-0000-0000-0000-000000000000" {
-	//
-	//}
 
 	if userApp.UUID.String() != "00000000-0000-0000-0000-000000000000" {
 		log.Printf("[controllers][developer][user_app] - updating user %s app and scopes", body.Platform)
 		var appId []byte
 		row := database.DB.QueryRowx(queries.UpdateUserAppTokensAndScopes,
-			body.RefreshToken, strings.Join(body.Scopes, ", "), body.App, body.User, body.Platform, userApp.UUID.String())
+			body.RefreshToken, strings.Join(body.Scopes, ", "), body.App, body.User, body.Platform, userApp.UUID.String(), body.ExpiresIn, body.AccessToken)
 		uErr := row.Scan(&appId)
 		if uErr != nil {
 			log.Printf("[controllers][developer][user_app] - error updating user app tokens and scopes: %v", uErr)

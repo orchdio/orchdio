@@ -1,6 +1,8 @@
 package blueprint
 
 import (
+	"database/sql"
+
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
@@ -97,13 +99,15 @@ type UserInfo struct {
 }
 
 type UserAppAndPlatformInfo struct {
-	AppID        string `json:"app_id" db:"app_id"`
-	Platform     string `json:"platform" db:"platform"`
-	PlatformID   string `json:"platform_id" db:"platform_id"`
-	RefreshToken []byte `json:"refresh_token" db:"refresh_token"`
-	Username     string `json:"username" db:"username"`
-	Email        string `json:"email" db:"email"`
-	UserID       string `json:"user_id" db:"user_id"`
+	AppID        string         `json:"app_id" db:"app_id"`
+	Platform     string         `json:"platform" db:"platform"`
+	PlatformID   string         `json:"platform_id" db:"platform_id"`
+	RefreshToken []byte         `json:"refresh_token" db:"refresh_token"`
+	Username     string         `json:"username" db:"username"`
+	Email        string         `json:"email" db:"email"`
+	UserID       string         `json:"user_id" db:"user_id"`
+	AccessToken  string         `json:"access_token" db:"access_token"`
+	ExpiresIn    sql.NullString `json:"expires_in" db:"expires_in"`
 }
 
 type User struct {
@@ -133,6 +137,9 @@ type CreateNewUserAppData struct {
 	LastAuthedAt string    `json:"last_authed_at"`
 	App          uuid.UUID `json:"app"`
 	Platform     string    `json:"platform"`
+	AccessToken  string    `json:"access_token"`
+	// fixme: convert this to use a type of time.
+	ExpiresIn string `json:"expires_in"`
 }
 
 type IntegrationCredentials struct {
@@ -159,6 +166,8 @@ type AppInfo struct {
 	// due to the weird nature of deezer auth, we add the deezer state for the app here
 	// to be visible to the developer
 	DeezerState string `json:"deezer_state,omitempty"`
+
+	WebhookPortalURL string `json:"webhook_portal_url,omitempty"`
 }
 
 type AppTaskData struct {
@@ -264,4 +273,8 @@ type Webhook struct {
 	UpdatedAt   string    `json:"updated_at" db:"updated_at"`
 	VerifyToken string    `json:"verify_token" db:"verify_token"`
 	UID         uuid.UUID `json:"uuid" db:"uuid"`
+}
+
+type CreateNewDevAppResponse struct {
+	AppId string `json:"app_id"`
 }

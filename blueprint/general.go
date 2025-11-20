@@ -79,6 +79,8 @@ var (
 
 	ErrDeezerAccessDenied = "access_denied"
 	ErrFreeServiceClosed  = "free service is closed"
+	ErrForbiddenAccess    = "forbidden"
+	ErrUnauthorizedAccess = "unauthorized"
 )
 
 const (

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"orchdio/blueprint"
 	"orchdio/util"
+	svixwebhook "orchdio/webhooks/svix"
 	"strings"
 	"time"
 
@@ -28,14 +29,14 @@ type Service struct {
 	RedisClient          *redis.Client
 	PgClient             *sqlx.DB
 	App                  *blueprint.DeveloperApp
-	WebhookSender        WebhookSender
+	WebhookSender        svixwebhook.SvixInterface
 }
 
 type WebhookSender interface {
 	SendTrackEvent(appID string, event *blueprint.PlaylistConversionEventTrack) bool
 }
 
-func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client, devApp *blueprint.DeveloperApp, webhookSender WebhookSender) *Service {
+func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client, devApp *blueprint.DeveloperApp, webhookSender svixwebhook.SvixInterface) *Service {
 	return &Service{
 		IntegrationAppID:     credentials.AppID,
 		IntegrationAppSecret: credentials.AppSecret,
@@ -184,8 +185,8 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*
 		Released:      fullSpotifyTrack.Album.ReleaseDate,
 		URL:           fullSpotifyTrack.SimpleTrack.ExternalURLs["spotify"],
 		Artists:       spTrackContributors,
-		Duration:      util.GetFormattedDuration(fullSpotifyTrack.Duration / 1000),
-		DurationMilli: fullSpotifyTrack.Duration,
+		Duration:      util.GetFormattedDuration(int(fullSpotifyTrack.Duration) / 1000),
+		DurationMilli: int(fullSpotifyTrack.Duration),
 		Explicit:      fullSpotifyTrack.Explicit,
 		Title:         fullSpotifyTrack.Name,
 		Preview:       fullSpotifyTrack.PreviewURL,
@@ -243,8 +244,8 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 			URL:           results.ExternalURLs["spotify"],
 			Artists:       lo.Uniq(artistes),
 			Released:      results.Album.ReleaseDate,
-			Duration:      util.GetFormattedDuration(results.Duration / 1000),
-			DurationMilli: results.Duration,
+			Duration:      util.GetFormattedDuration(int(results.Duration) / 1000),
+			DurationMilli: int(results.Duration),
 			Explicit:      results.Explicit,
 			Title:         results.Name,
 			Preview:       results.PreviewURL,
@@ -348,8 +349,6 @@ func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.Pl
 // FetchTracksForSourcePlatform fetches the tracks for a given playlist (with playlistID). Its the method used
 // to fetch the tracks in a playlist if the user is trying to convert from spotify to another platform.
 func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlistMeta *blueprint.PlaylistMetadata, resultChan chan blueprint.TrackSearchResult) error {
-	log.Println("Going to asynchronously fetch the tracks from spotify now and send each result to the channel as they come in")
-
 	token := s.NewAuthToken()
 	if token == nil {
 		log.Printf("\n[services][spotify][base][SearchPlaylistWithID] error - could not fetch token\n")
@@ -418,8 +417,8 @@ func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlis
 				URL:           track.Track.Track.ExternalURLs["spotify"],
 				Artists:       artistes,
 				Released:      track.Track.Track.Album.ReleaseDate,
-				Duration:      util.GetFormattedDuration(track.Track.Track.Duration / 1000),
-				DurationMilli: track.Track.Track.Duration,
+				Duration:      util.GetFormattedDuration(int(track.Track.Track.Duration) / 1000),
+				DurationMilli: int(track.Track.Track.Duration),
 				Explicit:      track.Track.Track.Explicit,
 				Title:         track.Track.Track.Name,
 				Preview:       track.Track.Track.PreviewURL,
@@ -448,8 +447,6 @@ func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlis
 // FetchPlaylistHash fetches the hash of a playlist.
 // DEPRECATED: remove reference to this function in (services/HasPlaylistBeenUpdated)
 func (s *Service) FetchPlaylistHash(token, playlistId string) []byte {
-	//httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), token)
-	//client := spotify.New(httpClient)
 	t := s.NewAuthToken()
 	client := s.NewClient(context.Background(), t)
 	opts := spotify.Fields("snapshot_id")
@@ -463,38 +460,9 @@ func (s *Service) FetchPlaylistHash(token, playlistId string) []byte {
 	return []byte(info.SnapshotID)
 }
 
-// FetchUserPlaylist fetches the user's playlist
-func (s *Service) FetchUserPlaylist(token string) (*spotify.SimplePlaylistPage, error) {
-	client := s.NewClient(context.Background(), &oauth2.Token{RefreshToken: token})
-	//httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), &oauth2.MusicToken{RefreshToken: token})
-	//client := spotify.New(httpClient)
-	playlists, err := client.CurrentUsersPlaylists(context.Background())
-	if err != nil {
-		log.Printf("\n[services][spotify][base][FetchUserPlaylist] error - could not fetch playlist: %v\n", err)
-		return nil, err
-	}
-	for {
-		out := spotify.SimplePlaylistPage{}
-		paginationErr := client.NextPage(context.Background(), &out)
-		if paginationErr == spotify.ErrNoMorePages {
-			log.Printf("\n[services][spotify][base][FetchUserPlaylist] - no more pages. User's full playlist retrieved\n")
-			break
-		}
-		if paginationErr != nil {
-			log.Printf("\n[services][spotify][base][FetchUserPlaylist] error - could not fetch playlist: %v\n", err)
-			return nil, paginationErr
-		}
-		playlists.Playlists = append(playlists.Playlists, out.Playlists...)
-	}
-
-	return playlists, nil
-}
-
-func (s *Service) FetchUserArtists(token string) (*blueprint.UserLibraryArtists, error) {
+func (s *Service) FetchUserArtists(refreshToken string) (*blueprint.UserLibraryArtists, error) {
 	log.Printf("\n[services][spotify][base][FetchUserArtists] - fetching user's libraryArtists\n")
-	//httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), &oauth2.MusicToken{RefreshToken: token})
-	//client := spotify.New(httpClient)
-	client := s.NewClient(context.Background(), &oauth2.Token{RefreshToken: token})
+	client := s.NewClient(context.Background(), &oauth2.Token{RefreshToken: refreshToken})
 	values := url.Values{}
 	values.Set("limit", "50")
 	libraryArtists, err := client.CurrentUsersFollowedArtists(context.Background(), spotify.Limit(50))
@@ -537,18 +505,16 @@ func (s *Service) FetchUserArtists(token string) (*blueprint.UserLibraryArtists,
 
 	response := blueprint.UserLibraryArtists{
 		Payload: artists,
-		Total:   libraryArtists.Total,
+		Total:   int(libraryArtists.Total),
 	}
 	return &response, nil
 }
 
-func (s *Service) FetchTrackListeningHistory(token string) ([]blueprint.TrackSearchResult, error) {
-	//httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), &oauth2.MusicToken{RefreshToken: token})
-	//client := spotify.New(httpClient)
+func (s *Service) FetchListeningHistory(token string) ([]blueprint.TrackSearchResult, error) {
 	client := s.NewClient(context.Background(), &oauth2.Token{RefreshToken: token})
-	values := url.Values{}
-	values.Set("limit", "50")
-	libraryArtists, err := client.CurrentUsersTopTracks(context.Background(), spotify.Limit(50), spotify.Timerange("short_term"))
+	recentlyPlayed, err := client.PlayerRecentlyPlayedOpt(context.Background(), &spotify.RecentlyPlayedOptions{
+		Limit: 50,
+	})
 	if err != nil {
 		log.Printf("\n[services][spotify][base][FetchUserArtists] error - could not fetch libraryArtists: %v\n", err)
 		if strings.Contains(err.Error(), "401") {
@@ -562,45 +528,29 @@ func (s *Service) FetchTrackListeningHistory(token string) ([]blueprint.TrackSea
 		return nil, err
 	}
 
-	// each page returns 50 items. so theoretically, this should return the 250 tracks. this is similar to deezer's implementation so
-	// 250 can be considered the default limit for this endpoint
-	for i := 0; i < 5; i++ {
-		out := spotify.FullTrackPage{}
-		paginationErr := client.NextPage(context.Background(), &out)
-		if paginationErr == spotify.ErrNoMorePages {
-			log.Printf("\n[services][spotify][base][FetchUserArtists] - no more pages. User's full artist list retrieved\n")
-			break
-		}
-		if paginationErr != nil {
-			log.Printf("\n[services][spotify][base][FetchUserArtists] error - could not fetch libraryArtists: %v\n", err)
-			return nil, err
-		}
-		libraryArtists.Tracks = append(libraryArtists.Tracks, out.Tracks...)
-	}
-
 	var tracks []blueprint.TrackSearchResult
-	for _, track := range libraryArtists.Tracks {
+	for _, track := range recentlyPlayed {
 		var artists []string
-		for _, artist := range track.Artists {
+		for _, artist := range track.Track.Artists {
 			artists = append(artists, artist.Name)
 		}
 
 		cover := ""
-		if len(track.Album.Images) > 0 {
-			cover = track.Album.Images[0].URL
+		if len(track.Track.Album.Images) > 0 {
+			cover = track.Track.Album.Images[0].URL
 		}
 
 		tracks = append(tracks, blueprint.TrackSearchResult{
-			URL:           track.ExternalURLs["spotify"],
+			URL:           track.Track.Album.ExternalURLs["spotify"],
 			Artists:       artists,
-			Released:      track.Album.ReleaseDate,
-			Duration:      util.GetFormattedDuration(track.Duration / 1000),
-			DurationMilli: track.Duration,
-			Explicit:      track.Explicit,
-			Title:         track.Name,
-			Preview:       track.PreviewURL,
-			Album:         track.Album.Name,
-			ID:            track.ID.String(),
+			Released:      track.Track.Album.ReleaseDate,
+			Duration:      util.GetFormattedDuration(int(track.Track.Duration) / 1000),
+			DurationMilli: int(track.Track.Duration),
+			Explicit:      track.Track.Explicit,
+			Title:         track.Track.Name,
+			Preview:       track.Track.PreviewURL,
+			Album:         track.Track.Album.Name,
+			ID:            track.Track.ID.String(),
 			Cover:         cover,
 		})
 	}

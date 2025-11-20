@@ -12,6 +12,6 @@ type LibraryAlbum struct {
 }
 
 type UserLibraryAlbums struct {
-	Payload []LibraryAlbum `json:"payload"`
-	Total   int            `json:"total"`
+	Data  []LibraryAlbum `json:"data"`
+	Total int            `json:"total"`
 }

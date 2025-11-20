@@ -197,7 +197,6 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*
 
 // FetchTracksForSourcePlatform fetches tracks for a given source platform and sends them to the result channel.
 func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlistMeta *blueprint.PlaylistMetadata, resultChan chan blueprint.TrackSearchResult) error {
-	log.Println("Going to asynchronously fetch the tracks from spotify now and send each result to the channel as they come in")
 	cachedSnapshot, cacheErr := s.RedisClient.Get(context.Background(), util.FormatPlatformConversionCacheKey(info.EntityID, IDENTIFIER)).Result()
 	if cacheErr != nil && !errors.Is(cacheErr, redis.Nil) {
 		log.Printf("\n[services][deezer][SearchPlaylistWithID] error - Could not get cached snapshot for playlist %v\n", info.EntityID)
@@ -320,11 +319,6 @@ func (s *Service) CreateNewPlaylist(title, userDeezerId, token string, tracks []
 	p := url.Values{}
 	p.Add("title", title)
 	out := &PlaylistCreationResponse{}
-	_ = axios.NewInstance(&axios.InstanceConfig{
-		Headers: map[string][]string{
-			"Content-Type": {"application/json"},
-		},
-	})
 
 	resp, err := axios.Get(reqURL, p)
 	if err != nil {
@@ -364,9 +358,9 @@ func (s *Service) CreateNewPlaylist(title, userDeezerId, token string, tracks []
 	updatePlaylistURL := fmt.Sprintf("%s/playlist/%d/tracks?access_token=%s&request_method=post", deezerAPIBase, out.ID, token)
 	p = url.Values{}
 	p.Add("songs", allTracks)
-	resp, err = axios.Get(updatePlaylistURL, p)
-	if err != nil {
-		log.Printf("\n[services][deezer][CreateNewPlaylist] error - Could not update playlist: %v\n", err)
+	resp, rErr := axios.Get(updatePlaylistURL, p)
+	if rErr != nil {
+		log.Printf("\n[services][deezer][CreateNewPlaylist] error - Could not update playlist: %v\n", rErr)
 		return nil, err
 	}
 
@@ -388,24 +382,6 @@ func (s *Service) CreateNewPlaylist(title, userDeezerId, token string, tracks []
 	log.Printf("\n[services][deezer][CreateNewPlaylist] created playlist: %v\n", string(resp.Data))
 
 	return playlistIDBytes, nil
-}
-
-// FetchUserPlaylists fetches all the playlists for a user
-func (s *Service) FetchUserPlaylists(token string) (*UserPlaylistsResponse, error) {
-	deezerAPIBase := os.Getenv("DEEZER_API_BASE")
-	// DEEZER PLAYLIST LIMIT IS 250 FOR NOW. THIS IS ORCHDIO IMPOSED AND IT IS
-	// 1. TO EASE IMPLEMENTATION
-	// 2. TO MAKE IT "PREMIUM" IN THE FUTURE  (i.e. if we want to charge for more playlists), makes it easier to enforce/assimilate from now
-	reqURL := fmt.Sprintf("%s/user/me/playlists?access_token=%s&limit=250", deezerAPIBase, token)
-
-	out := &UserPlaylistsResponse{}
-	err := s.MakeRequest(reqURL, out)
-	if err != nil {
-		log.Printf("\n[services][deezer][FetchUserPlaylists] error - Could not fetch user playlists: %v\n", err)
-		return nil, err
-	}
-
-	return out, nil
 }
 
 // FetchUserArtists fetches all the artists for a user
@@ -439,34 +415,6 @@ func (s *Service) FetchUserArtists(token string) (*blueprint.UserLibraryArtists,
 	return &response, nil
 }
 
-// FetchLibraryAlbums fetches all the deezer library albums for a user
-func (s *Service) FetchLibraryAlbums(token string) ([]blueprint.LibraryAlbum, error) {
-	log.Printf("\n[services][deezer][FetchLibraryAlbums] Fetching user deezer albums\n")
-	deezerApiBase := os.Getenv("DEEZER_API_BASE")
-	reqURL := fmt.Sprintf("%s/user/me/albums?access_token=%s", deezerApiBase, token)
-	var albumsResponse UserLibraryAlbumResponse
-
-	err := s.MakeRequest(reqURL, &albumsResponse)
-	if err != nil {
-		log.Printf("\n[services][deezer][FetchLibraryAlbums] error - Could not fetch user albums: %v\n", err)
-	}
-	var albums []blueprint.LibraryAlbum
-	for _, album := range albumsResponse.Data {
-		albums = append(albums, blueprint.LibraryAlbum{
-			ID:          strconv.Itoa(album.Id),
-			Title:       album.Title,
-			URL:         album.Link,
-			ReleaseDate: album.ReleaseDate,
-			Explicit:    album.ExplicitLyrics,
-			TrackCount:  album.NbTracks,
-			Artists:     []string{album.Artist.Name},
-			Cover:       album.Cover,
-		})
-	}
-
-	return albums, nil
-}
-
 func (s *Service) MakeRequest(url string, result interface{}) error {
 	deezerApiBase := os.Getenv("DEEZER_API_BASE")
 	instance := axios.NewInstance(&axios.InstanceConfig{
@@ -481,6 +429,11 @@ func (s *Service) MakeRequest(url string, result interface{}) error {
 		return err
 	}
 
+	// deezer returns a status 200 but its technically an error because we cant access the data we need on free tier
+	containsFreeErr := strings.Contains(string(resp.Data), "free service is closed")
+	if resp.Status == 200 && containsFreeErr {
+		return errors.New(blueprint.ErrFreeServiceClosed)
+	}
 	if resp.Status >= 201 {
 		log.Printf("\n[services][deezer][MakeRequest] error - Could not fetch result. Bad request: %v\n", err)
 		return err
@@ -495,8 +448,9 @@ func (s *Service) MakeRequest(url string, result interface{}) error {
 }
 
 // FetchTracksListeningHistory fetches all the deezer tracks listening history for a user
-func (s *Service) FetchTracksListeningHistory(token string) ([]blueprint.TrackSearchResult, error) {
+func (s *Service) FetchListeningHistory(token string) ([]blueprint.TrackSearchResult, error) {
 	log.Printf("\n[services][deezer][FetchTracksListeningHistory] Fetching user deezer tracks listening history\n")
+	log.Println("ACCESS TOKEN FOR THIS IS...", token)
 	link := fmt.Sprintf("user/me/history?access_token=%s", token)
 	var history UserTrackListeningHistoryResponse
 	err := s.MakeRequest(link, &history)

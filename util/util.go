@@ -10,6 +10,7 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -117,6 +118,7 @@ func SignOrgLoginJWT(claims *blueprint.AppJWT) ([]byte, error) {
 		},
 	})
 
+	log.Println("DEBUG:: SIGN LOGIN TOKEN", os.Getenv("JWT_SECRET"))
 	token, err := to.SignedString([]byte(os.Getenv("JWT_SECRET")))
 	if err != nil {
 		log.Printf("[util]: [SignOrgLoginJWT] error -  could not sign token %v", err)
@@ -598,11 +600,44 @@ func CacheTrackByArtistTitle(track *blueprint.TrackSearchResult, red *redis.Clie
 func ContainsElement(collections []string, element string) bool {
 	cpy := collections
 	for _, elem := range cpy {
-		log.Printf("Original: %v, Check: %v", elem, element)
 		if strings.Contains(element, elem) {
 			return true
 		}
 		continue
 	}
 	return false
+}
+
+const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+
+func GenerateCodeVerifierAndChallenge() (string, string, error) {
+	randomBytes := make([]byte, 64)
+	if _, err := rand.Read(randomBytes); err != nil {
+		return "", "", err
+	}
+
+	var codeVerifier strings.Builder
+	codeVerifier.Grow(64)
+	for _, b := range randomBytes {
+		codeVerifier.WriteByte(possible[b%byte(len(possible))])
+	}
+
+	hash := sha256.New()
+	// write the code verifier bytes to the hash
+	hash.Write([]byte(codeVerifier.String()))
+
+	// get the final hash sum
+	hashed := hash.Sum(nil)
+	codeChallenge := base64.RawURLEncoding.EncodeToString(hashed)
+
+	return codeVerifier.String(), codeChallenge, nil
+}
+
+func HasTokenExpired(expiresIn string) (bool, error) {
+	expiryTime, err := time.Parse(time.RFC3339, expiresIn)
+	if err != nil {
+		return true, fmt.Errorf("failed to parse expiry time: %v", err)
+	}
+	now := time.Now()
+	return now.After(expiryTime), nil
 }

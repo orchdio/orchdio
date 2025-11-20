@@ -104,11 +104,16 @@ const FetchUserAppByPlatform = `SELECT uuid, refresh_token, "user", coalesce(aut
 WHERE platform = $1 AND "user" = $2 and app = $3`
 
 const CreateUserApp = `INSERT INTO user_apps (
-                       uuid, refresh_token, scopes, "user", platform, app, last_authed_at
-) VALUES ($1, $2, ARRAY[$3], $4, $5, $6, now()) RETURNING uuid`
+                       uuid, refresh_token, scopes, "user", platform, app, last_authed_at, expires_in, access_token
+) VALUES ($1, $2, ARRAY[$3], $4, $5, $6, now(), $7, $8) RETURNING uuid`
 
 const UpdateUserAppTokensAndScopes = `UPDATE user_apps SET
                      refresh_token = $1::bytea,
+                     expires_in = CASE
+                           WHEN $7::text = '' THEN NULL
+                           ELSE $7::timestamptz
+                         END,
+                     access_token = $8,
                      scopes = (CASE WHEN $2 = '' THEN scopes ELSE ARRAY[$2] END)
                  where app = $3 AND "user" = $4 AND platform = $5 and uuid = $6 returning uuid`
 
@@ -139,7 +144,8 @@ and uapps.app = $2
 // const UserAppsInfo = `select platform, username, platform_id from user_apps where "user" = $1`
 
 const UserAppsInfoByUserUUID = `SELECT uapps.uuid as app_id, uapps.platform, coalesce(uapps.platform_id, '') as platform_id,
-uapps.refresh_token, coalesce(uapps.username, '') as username, u.email, "user" as user_id
+uapps.refresh_token, coalesce(uapps.username, '') as username, u.email, "user" as user_id, coalesce(uapps.access_token, '') as access_token,
+coalesce(uapps.expires_in, null) || '' as expires_in
 	FROM user_apps uapps JOIN users u on uapps."user" = u.uuid AND uapps.app = $2
 	WHERE (CASE WHEN $3 = 'id' THEN u.uuid::text = $1 ELSE u.email = $1 END) AND platform = $4`
 
@@ -158,7 +164,12 @@ const FetchUserAppAndInfoByPlatform = `SELECT distinct uapps.uuid as app_id, uap
 //                platform_ids = COALESCE(platform_ids::JSONB, '{}') || $3 WHERE email = $1;`
 
 const UpdatePlatformUserNameIdAndToken = `UPDATE user_apps SET username = $1,
-platform_id = $2, refresh_token = $3, last_authed_at = now() WHERE "user" = $4 AND platform = $5 AND uuid = $6`
+platform_id = $2, refresh_token = $3, last_authed_at = now(), expires_in = CASE
+      WHEN $7::text = '' THEN NULL
+      ELSE $7::timestamptz
+    END, access_token = $8 WHERE "user" = $4 AND platform = $5 AND uuid = $6`
+
+const UpdateOAuthTokens = `UPDATE user_apps SET refresh_token = $1, expires_in = $2, access_token = $3 WHERE "user" = $4 AND platform = $5`
 
 const DeletePlatformIntegrationCredentials = `UPDATE apps SET
 deezer_credentials = ( CASE WHEN $2 = 'deezer' THEN NULL ELSE deezer_credentials END ),
@@ -167,3 +178,5 @@ spotify_credentials = ( CASE WHEN $2 = 'spotify' THEN NULL ELSE spotify_credenti
 applemusic_credentials = ( CASE WHEN $2 = 'applemusic' THEN NULL ELSE applemusic_credentials END ) WHERE uuid = $1 AND developer = $3`
 
 const UpdateConvoyEndpointID = `UPDATE apps SET webhook_app_id = $1 WHERE uuid = $2`
+
+const UpdateWebhookSecret = `UPDATE apps SET verify_secret = $1 WHERE uuid = $2`

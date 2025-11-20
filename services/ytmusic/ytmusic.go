@@ -223,3 +223,25 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 func FetchPlaylistTracklist(id string, red *redis.Client) (*[]blueprint.TrackSearchResult, error) {
 	return nil, nil
 }
+
+func (s *Service) FetchLibraryAlbums(refreshToken string) ([]blueprint.LibraryAlbum, error) {
+	return nil, blueprint.ErrNotImplemented
+}
+
+func (s *Service) FetchListeningHistory(refreshToken string) ([]blueprint.TrackSearchResult, error) {
+	return nil, blueprint.ErrNotImplemented
+}
+
+func (s *Service) FetchUserArtists(refreshToken string) (*blueprint.UserLibraryArtists, error) {
+
+	return nil, blueprint.ErrNotImplemented
+}
+
+func (s *Service) FetchLibraryPlaylists(refreshToken string) ([]blueprint.UserPlaylist, error) {
+
+	return nil, blueprint.ErrNotImplemented
+}
+
+func (s *Service) FetchUserInfo(refreshToken string) (*blueprint.UserPlatformInfo, error) {
+	return nil, blueprint.ErrNotImplemented
+}

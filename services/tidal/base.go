@@ -603,7 +603,7 @@ func (s *Service) CreateNewPlaylist(title, description, musicToken string, track
 }
 
 // FetchUserPlaylists - fetches the user's playlists
-func (s *Service) FetchUserPlaylists() (*UserPlaylistResponse, error) {
+func (s *Service) FetchLibraryPlaylists(refreshToken string) ([]blueprint.UserPlaylist, error) {
 	log.Printf("\n[services][tidal][FetchUserPlaylists] - fetching user playlists\n")
 
 	accessToken, err := s.FetchNewAuthToken(s.IntegrationCredentials.AppID, s.IntegrationCredentials.AppSecret, s.IntegrationCredentials.AppRefreshToken)
@@ -629,7 +629,7 @@ func (s *Service) FetchUserPlaylists() (*UserPlaylistResponse, error) {
 	p.Add("orderDirection", "DESC")
 	p.Add("folderId", "root")
 
-	endpoint := fmt.Sprintf("/v2/my-collection/playlists/folders?folderId=root&countryCode=US&locale=en_US&deviceType=BROWSER&limit=50&order=DATE&orderDirection=DESC")
+	endpoint := "/v2/my-collection/playlists/folders?folderId=root&countryCode=US&locale=en_US&deviceType=BROWSER&limit=50&order=DATE&orderDirection=DESC"
 
 	inst, err := instance.Get(endpoint, p)
 	if err != nil {
@@ -675,7 +675,33 @@ func (s *Service) FetchUserPlaylists() (*UserPlaylistResponse, error) {
 		playlists.Items = append(playlists.Items, resp.Items...)
 	}
 	log.Printf("\n[services][tidal][FetchUserPlaylists] - fetched %d playlists\n", len(playlists.Items))
-	return playlists, nil
+	if playlists == nil {
+		log.Printf("[platforms][tidal][FetchUserPlaylists] error - error fetching tidal playlists %v\n", err)
+	}
+
+	log.Printf("[platforms][FetchPlatformPlaylists] tidal playlists fetched successfully")
+	// create a slice of UserLibraryPlaylists
+	var userPlaylists []blueprint.UserPlaylist
+	for _, playlist := range playlists.Items {
+		if playlist.ItemType != "PLAYLIST" {
+			log.Printf("[platforms][FetchPlatformPlaylists] Item is not a playlist data, skipping...\n")
+			continue
+		}
+
+		data := playlist.Data
+		userPlaylists = append(userPlaylists, blueprint.UserPlaylist{
+			ID:            data.UUID,
+			Title:         data.Title,
+			Public:        util.TidalIsPrivate(data.SharingLevel),
+			Collaborative: util.TidalIsCollaborative(data.ContentBehavior),
+			NbTracks:      data.NumberOfTracks,
+			URL:           playlist.Data.URL,
+			Cover:         playlist.Data.Image,
+			CreatedAt:     data.Created,
+			Owner:         playlist.Data.Creator.Name,
+		})
+	}
+	return userPlaylists, nil
 }
 
 // FetchUserArtists - fetches the user's artists
@@ -712,4 +738,13 @@ func (s *Service) FetchUserArtists(userId string) (*blueprint.UserLibraryArtists
 		Total:   artistResponse.TotalNumberOfItems,
 	}
 	return &response, nil
+}
+
+func (s *Service) FetchListeningHistory(refreshToken string) ([]blueprint.TrackSearchResult, error) {
+
+	return nil, blueprint.ErrNotImplemented
+}
+
+func (s *Service) FetchUserInfo(refreshToken string) (*blueprint.UserPlatformInfo, error) {
+	return nil, blueprint.ErrNotImplemented
 }

@@ -162,8 +162,8 @@ type UserPlaylist struct {
 }
 
 type UserLibraryPlaylists struct {
-	Total   int            `json:"total"`
-	Payload []UserPlaylist `json:"data"`
+	Total int            `json:"total"`
+	Data  []UserPlaylist `json:"data"`
 }
 
 // PlaylistTaskData represents the payload of a playlist task

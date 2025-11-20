@@ -1,0 +1,131 @@
+package integration_test
+
+var MockedSpotifyTrack = map[string]interface{}{
+	"id":   "01z2fBGB8Hl3Jd3zXe4IXR",
+	"name": "Test Track Name",
+	"artists": []map[string]interface{}{
+		{
+			"id":   "artist123",
+			"name": "Test Artist",
+			"uri":  "spotify:artist:artist123",
+			"external_urls": map[string]string{
+				"spotify": "https://open.spotify.com/artist/artist123",
+			},
+		},
+	},
+	"album": map[string]interface{}{
+		"id":         "album123",
+		"name":       "Test Album",
+		"uri":        "spotify:album:album123",
+		"album_type": "album",
+		"artists": []map[string]interface{}{
+			{
+				"id":   "artist123",
+				"name": "Test Artist",
+				"uri":  "spotify:artist:artist123",
+			},
+		},
+		"images": []map[string]interface{}{
+			{
+				"url":    "https://i.scdn.co/image/mock-image-url",
+				"height": 640,
+				"width":  640,
+			},
+		},
+		"release_date":           "2023-01-01",
+		"release_date_precision": "day",
+		"external_urls": map[string]string{
+			"spotify": "https://open.spotify.com/album/album123",
+		},
+	},
+	"duration_ms": 240000,
+	"explicit":    false,
+	"external_ids": map[string]string{
+		"isrc": "USTEST1234567",
+	},
+	"external_urls": map[string]string{
+		"spotify": "https://open.spotify.com/track/01z2fBGB8Hl3Jd3zXe4IXR",
+	},
+	"href":         "https://api.spotify.com/v1/tracks/01z2fBGB8Hl3Jd3zXe4IXR",
+	"uri":          "spotify:track:01z2fBGB8Hl3Jd3zXe4IXR",
+	"popularity":   75,
+	"track_number": 1,
+	"type":         "track",
+	"is_playable":  true,
+}
+
+var MockDeezerTrack = map[string]interface{}{
+	"data": []map[string]interface{}{
+		{
+			"id":                      916424,
+			"readable":                true,
+			"title":                   "One More Time",
+			"title_short":             "One More Time",
+			"title_version":           "",
+			"link":                    "https://www.deezer.com/track/916424",
+			"duration":                320,
+			"rank":                    891234,
+			"explicit_lyrics":         false,
+			"explicit_content_lyrics": 0,
+			"explicit_content_cover":  0,
+			"preview":                 "https://cdns-preview-e.dzcdn.net/stream/c-e77d23e0c8ed7567a507a6d1b6a9ca1b-7.mp3",
+			"md5_image":               "2e018122cb56986277102d2041a592c8",
+			"artist": map[string]interface{}{
+				"id":        27,
+				"name":      "Daft Punk",
+				"link":      "https://www.deezer.com/artist/27",
+				"tracklist": "https://api.deezer.com/artist/27/top?limit=50",
+				"type":      "artist",
+			},
+			"album": map[string]interface{}{
+				"id":           302127,
+				"title":        "Discovery",
+				"cover":        "https://api.deezer.com/album/302127/image",
+				"cover_small":  "https://e-cdns-images.dzcdn.net/images/cover/2e018122cb56986277102d2041a592c8/56x56-000000-80-0-0.jpg",
+				"cover_medium": "https://e-cdns-images.dzcdn.net/images/cover/2e018122cb56986277102d2041a592c8/250x250-000000-80-0-0.jpg",
+				"cover_big":    "https://e-cdns-images.dzcdn.net/images/cover/2e018122cb56986277102d2041a592c8/500x500-000000-80-0-0.jpg",
+				"cover_xl":     "https://e-cdns-images.dzcdn.net/images/cover/2e018122cb56986277102d2041a592c8/1000x1000-000000-80-0-0.jpg",
+				"md5_image":    "2e018122cb56986277102d2041a592c8",
+				"tracklist":    "https://api.deezer.com/album/302127/tracks",
+				"type":         "album",
+			},
+			"type": "track",
+		},
+		{
+			"id":                      3135556,
+			"readable":                true,
+			"title":                   "Harder, Better, Faster, Stronger",
+			"title_short":             "Harder, Better, Faster, Stronger",
+			"title_version":           "",
+			"link":                    "https://www.deezer.com/track/3135556",
+			"duration":                224,
+			"rank":                    878543,
+			"explicit_lyrics":         false,
+			"explicit_content_lyrics": 0,
+			"explicit_content_cover":  0,
+			"preview":                 "https://cdns-preview-d.dzcdn.net/stream/c-deda7fa9316d9e9e880d2c6207e92260-8.mp3",
+			"md5_image":               "2e018122cb56986277102d2041a592c8",
+			"artist": map[string]interface{}{
+				"id":        27,
+				"name":      "Daft Punk",
+				"link":      "https://www.deezer.com/artist/27",
+				"tracklist": "https://api.deezer.com/artist/27/top?limit=50",
+				"type":      "artist",
+			},
+			"album": map[string]interface{}{
+				"id":           302127,
+				"title":        "Discovery",
+				"cover":        "https://api.deezer.com/album/302127/image",
+				"cover_small":  "https://e-cdns-images.dzcdn.net/images/cover/2e018122cb56986277102d2041a592c8/56x56-000000-80-0-0.jpg",
+				"cover_medium": "https://e-cdns-images.dzcdn.net/images/cover/2e018122cb56986277102d2041a592c8/250x250-000000-80-0-0.jpg",
+				"cover_big":    "https://e-cdns-images.dzcdn.net/images/cover/2e018122cb56986277102d2041a592c8/500x500-000000-80-0-0.jpg",
+				"cover_xl":     "https://e-cdns-images.dzcdn.net/images/cover/2e018122cb56986277102d2041a592c8/1000x1000-000000-80-0-0.jpg",
+				"md5_image":    "2e018122cb56986277102d2041a592c8",
+				"tracklist":    "https://api.deezer.com/album/302127/tracks",
+				"type":         "album",
+			},
+			"type": "track",
+		},
+	},
+	"total": 2,
+}

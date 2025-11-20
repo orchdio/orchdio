@@ -8,6 +8,7 @@ import (
 	xlogger "orchdio/logger"
 
 	svix "github.com/svix/svix-webhooks/go"
+	"go.uber.org/zap"
 )
 
 type SvixWebhook struct {
@@ -15,14 +16,41 @@ type SvixWebhook struct {
 	Client    *svix.Svix
 }
 
-//type WebhookProvider interface {
-//	SendTrackEvent(appId string, payload *blueprint.PlaylistConversionEventTrack) bool
-//}
+func uintPtr(v uint64) *uint64 {
+	return &v
+}
+
+func intPtr64(v int64) *int64 {
+	return &v
+}
+
+// for lack of better naming.
+type SvixInterface interface {
+	CreateApp(name, uid string) (*svix.ApplicationOut, *svix.AppPortalAccessOut, error)
+	CreateEndpoint(appId, uid, endpoint string) (*svix.EndpointOut, error)
+	SendPlaylistMetadataEvent(info *blueprint.LinkInfo, result *blueprint.PlaylistConversionEventMetadata) bool
+	SendEvent(appId, eventType string, payload interface{}) (*svix.MessageOut, error)
+	SendTrackEvent(appId string, out *blueprint.PlaylistConversionEventTrack) bool
+	GetEndpoint(appId, endpoint string) (*svix.EndpointOut, error)
+	UpdateEndpoint(appId, endpointId, endpoint string) (*svix.EndpointOut, error)
+
+	// CreateAppPortal(appId string) (*svix.AppPortalAccessOut, error)
+	// GetApp(appId string) (*svix.ApplicationOut, *svix.AppPortalAccessOut, error)
+	// DeleteApp(appId string) error
+	// ListEndpoints(appId string) (*svix.ListResponseEndpointOut, error)
+	// DeleteEndpoint(appId, endpointId string) error
+	// CreateEventType(eventName, description string) (*svix.EventTypeOut, error)
+}
 
 func New(authToken string, debug bool) *SvixWebhook {
-	c := svix.New(authToken, &svix.SvixOptions{
+	c, err := svix.New(authToken, &svix.SvixOptions{
 		Debug: debug,
 	})
+
+	if err != nil {
+		log.Println("Could not instantiate Svix")
+		return nil
+	}
 
 	return &SvixWebhook{
 		AuthToken: authToken,
@@ -30,35 +58,70 @@ func New(authToken string, debug bool) *SvixWebhook {
 	}
 }
 
-func (s *SvixWebhook) CreateApp(name, uid string) (*svix.ApplicationOut, error) {
+func (s *SvixWebhook) CreateApp(name, uid string) (*svix.ApplicationOut, *svix.AppPortalAccessOut, error) {
 	loggerOpts := &blueprint.OrchdioLoggerOptions{}
 	logger := xlogger.NewZapSentryLogger(loggerOpts)
 
 	// todo: configure application options, including context argument (and other places using ctx)
-	whApp, err := s.Client.Application.Create(context.TODO(), &svix.ApplicationIn{
+	whApp, err := s.Client.Application.Create(context.TODO(), svix.ApplicationIn{
 		Name: name,
 		Uid:  &uid,
-	})
+	}, nil)
 
 	if err != nil {
 		logger.Error("[webhooks][svix-webhook] error - could not create new svix app.")
-		return nil, err
+		return nil, nil, err
+	}
+	appPortal, err := s.Client.Authentication.AppPortalAccess(context.TODO(), whApp.Id, svix.AppPortalAccessIn{
+		Capabilities: []svix.AppPortalCapability{"ViewBase", "ViewEndpointSecret"},
+		Expiry:       uintPtr(600),
+	}, nil)
+
+	if err != nil {
+		log.Println("[webhooks][svix-webhook] error - could not create app portal access")
+		return nil, nil, err
 	}
 
-	return whApp, err
+	return whApp, appPortal, err
 }
 
-func (s *SvixWebhook) GetApp(appId string) (*svix.ApplicationOut, error) {
+func (s *SvixWebhook) CreateAppPortal(appId string) (*svix.AppPortalAccessOut, error) {
+	loggerOpts := &blueprint.OrchdioLoggerOptions{}
+	logger := xlogger.NewZapSentryLogger(loggerOpts)
+
+	appPortal, svErr := s.Client.Authentication.AppPortalAccess(context.TODO(), appId, svix.AppPortalAccessIn{
+		Capabilities: []svix.AppPortalCapability{"ViewBase", "ViewEndpointSecret"},
+	}, nil)
+
+	if svErr != nil {
+		logger.Error("[webhooks][svix-webhook] error - could not fetch developer app portal...", zap.Error(svErr))
+		return nil, svErr
+	}
+
+	return appPortal, nil
+}
+
+func (s *SvixWebhook) GetApp(appId string) (*svix.ApplicationOut, *svix.AppPortalAccessOut, error) {
 	loggerOpts := &blueprint.OrchdioLoggerOptions{}
 	logger := xlogger.NewZapSentryLogger(loggerOpts)
 
 	whApp, err := s.Client.Application.Get(context.TODO(), appId)
 	if err != nil {
 		logger.Error("[webhooks][svix-webhook] error - could not get svix app.")
-		return nil, err
+		return nil, nil, err
 	}
 
-	return whApp, err
+	appPortal, err := s.Client.Authentication.AppPortalAccess(context.TODO(), whApp.Id, svix.AppPortalAccessIn{
+		Capabilities: []svix.AppPortalCapability{"ViewBase", "ViewEndpointSecret"},
+		Expiry:       uintPtr(600),
+	}, nil)
+
+	if err != nil {
+		logger.Error("[webhooks][svix-webhook] error - could not create app portal access")
+		return nil, nil, err
+	}
+
+	return whApp, appPortal, err
 }
 
 func (s *SvixWebhook) DeleteApp(appId string) error {
@@ -77,12 +140,12 @@ func (s *SvixWebhook) CreateEndpoint(appId, uid, endpoint string) (*svix.Endpoin
 	loggerOpts := &blueprint.OrchdioLoggerOptions{}
 	logger := xlogger.NewZapSentryLogger(loggerOpts)
 
-	whEnd, err := s.Client.Endpoint.Create(context.Background(), appId, &svix.EndpointIn{
+	whEnd, err := s.Client.Endpoint.Create(context.Background(), appId, svix.EndpointIn{
 		Url: endpoint,
 		// todo: add more events.
 		FilterTypes: []string{blueprint.PlaylistConversionMetadataEvent, blueprint.PlaylistConversionTrackEvent, blueprint.PlaylistConversionDoneEvent},
 		Uid:         &uid,
-	})
+	}, nil)
 
 	if err != nil {
 		logger.Error("[webhooks][svix-webhook] error - could not create new endpoint.")
@@ -110,7 +173,7 @@ func (s *SvixWebhook) UpdateEndpoint(appId, endpointId, endpoint string) (*svix.
 	loggerOpts := &blueprint.OrchdioLoggerOptions{}
 	logger := xlogger.NewZapSentryLogger(loggerOpts)
 
-	whResponse, err := s.Client.Endpoint.Update(context.TODO(), appId, endpointId, &svix.EndpointUpdate{
+	whResponse, err := s.Client.Endpoint.Update(context.TODO(), appId, endpointId, svix.EndpointUpdate{
 		Url: endpoint,
 		Uid: &endpointId,
 	})
@@ -128,7 +191,7 @@ func (s *SvixWebhook) ListEndpoints(appId string) (*svix.ListResponseEndpointOut
 	logger := xlogger.NewZapSentryLogger(loggerOpts)
 
 	whEndpoints, err := s.Client.Endpoint.List(context.Background(), appId, &svix.EndpointListOptions{
-		Limit: svix.Int32(250),
+		Limit: uintPtr(250),
 	})
 
 	if err != nil {
@@ -156,13 +219,13 @@ func (s *SvixWebhook) SendEvent(appId, eventType string, payload interface{}) (*
 	loggerOpts := &blueprint.OrchdioLoggerOptions{}
 	logger := xlogger.NewZapSentryLogger(loggerOpts)
 
-	whMsg, err := s.Client.Message.Create(context.TODO(), appId, &svix.MessageIn{
+	whMsg, err := s.Client.Message.Create(context.TODO(), appId, svix.MessageIn{
 		// todo: use constant event types.
 		EventType: eventType,
 		Payload: map[string]interface{}{
 			"data": payload,
 		},
-	})
+	}, nil)
 
 	if err != nil {
 		logger.Error("[webhooks][svix-webhook] error - could not send event.")
@@ -176,10 +239,10 @@ func (s *SvixWebhook) CreateEventType(eventName, description string) (*svix.Even
 	loggerOpts := &blueprint.OrchdioLoggerOptions{}
 	logger := xlogger.NewZapSentryLogger(loggerOpts)
 
-	whEType, err := s.Client.EventType.Create(context.TODO(), &svix.EventTypeIn{
+	whEType, err := s.Client.EventType.Create(context.TODO(), svix.EventTypeIn{
 		Name:        eventName,
 		Description: description,
-	})
+	}, nil)
 
 	if err != nil {
 		logger.Error("[webhooks][svix-webhook] error - could not create new event type.")
