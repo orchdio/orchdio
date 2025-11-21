@@ -1,0 +1,13 @@
+.git
+.gitignore
+.secrets
+.idea
+.zed
+__debug_bin*
+*.log
+*.md
+README.md
+todo
+scratch.txt
+misc.json
+track-conversion.png
