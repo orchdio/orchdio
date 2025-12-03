@@ -277,12 +277,12 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 		if fErr != nil {
 			log.Printf("Error fetching tracks... %v\n\n", fErr)
 		}
+		log.Printf("Fetched tracks from source platform: %s", info.Platform)
 	}()
 
 	wg.Add(1)
 	go func() {
 		for result := range resultChan {
-
 			// cache source track
 			ok := util.CacheTrackByArtistTitle(&result, pc.factory.Red, info.Platform)
 			if !ok {
@@ -410,7 +410,6 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 		log.Printf("[service][AsynqConvertPlaylist] - FATAL: could not build target platform result struct")
 		return nil, targetPlatformResultsErr
 	}
-
 	finalResult.OmittedTracks = &omittedTracks
 	finalResult.Meta = *playlistMeta
 	finalResult.Status = blueprint.TaskStatusCompleted

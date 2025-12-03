@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/jmoiron/sqlx"
 
 	"github.com/go-redis/redis/v8"
@@ -290,6 +291,7 @@ func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlis
 	infoHash := fmt.Sprintf("tidal:snapshot:%s", info)
 
 	if s.Redis.Exists(context.Background(), identifierHash).Val() == 1 {
+		log.Println("Could not find tidal track from cache")
 		// fetch the playlist playlistInfo from redis
 		cachedInfo, gErr := s.Redis.Get(context.Background(), infoHash).Result()
 		if gErr != nil && !errors.Is(gErr, redis.Nil) {
@@ -359,6 +361,7 @@ func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlis
 			"Authorization": {"Bearer " + accessToken},
 		},
 	})
+
 	// implement pagination fetching
 	for page := 0; page <= pages; page++ {
 		response, err := instance.Get(fmt.Sprintf("/playlists/%s/items?offset=%d&limit=100&countryCode=US", info, page*100))
@@ -367,16 +370,22 @@ func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlis
 			return err
 		}
 
+		log.Println("Tried to get something here")
+
 		res := &PlaylistTracks{}
 		err = json.Unmarshal(response.Data, res)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not deserialize playlist result from tidal - %v\n", err)
 			return err
 		}
+
+		log.Println("Body response from tidal")
+		spew.Dump(string(response.Data))
 		if len(res.Items) == 0 {
 			break
 		}
 
+		log.Printf("The tidal pages are: %v", playlistResult)
 		for _, item := range playlistResult.Items {
 			var artistes []string
 			for _, artist := range item.Item.Artists {
@@ -742,9 +751,5 @@ func (s *Service) FetchUserArtists(userId string) (*blueprint.UserLibraryArtists
 
 func (s *Service) FetchListeningHistory(refreshToken string) ([]blueprint.TrackSearchResult, error) {
 
-	return nil, blueprint.ErrNotImplemented
-}
-
-func (s *Service) FetchUserInfo(refreshToken string) (*blueprint.UserPlatformInfo, error) {
 	return nil, blueprint.ErrNotImplemented
 }
