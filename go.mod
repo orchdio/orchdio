@@ -63,6 +63,7 @@ require (
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/tinylib/msgp v1.2.5 // indirect
 	github.com/tkuchiki/go-timezone v0.2.3 // indirect
+	github.com/tomjowitt/gotidal v0.4.0-alpha // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.60.0 // indirect
 	github.com/vicanso/http-trace v1.2.0 // indirect

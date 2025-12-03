@@ -23,7 +23,8 @@ func FetchAuthURL(state, redirectURL string, scopes []string,
 	integrationCredentials *blueprint.IntegrationCredentials, verifier string) ([]byte, error) {
 
 	var auth = spotifyauth.New(spotifyauth.WithRedirectURL(redirectURL),
-		spotifyauth.WithScopes(scopes...), spotifyauth.WithClientID(integrationCredentials.AppID),
+		spotifyauth.WithScopes(scopes...),
+		spotifyauth.WithClientID(integrationCredentials.AppID),
 		spotifyauth.WithClientSecret(integrationCredentials.AppSecret))
 	url := auth.AuthURL(state)
 	return []byte(url), nil
