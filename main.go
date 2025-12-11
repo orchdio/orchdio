@@ -94,22 +94,6 @@ func main() {
 		log.Println("COULD NOT CONNECT TO THE DATABASE....")
 		panic(dErr)
 	}
-	// db, err := sqlx.Open("postgres", dbURL)
-	// if err != nil {
-	// 	log.Printf("⛔ Error connecting to postgresql db")
-	// 	panic(err)
-	// }
-	// defer func(db *sqlx.DB) {
-	// 	err := db.Close()
-	// 	if err != nil {
-	// 		log.Printf("Error closing")
-	// 	}
-	// }(db)
-	// err = db.Ping()
-	// if err != nil {
-	// 	log.Println("⛔ Error connecting to postgresql db")
-	// 	panic(err)
-	// }
 
 	log.Println("✅ Connected to Postgresql database")
 
