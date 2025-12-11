@@ -138,25 +138,24 @@ func (a *Controller) AppAuthRedirect(ctx *fiber.Ctx) error {
 
 	logger.Info("[controllers][AppAuthRedirect] developer -  fetched developer app", zap.String("app_name", developerApp.Name))
 
-	// create new AppAuthToken action
-	var redirectToken = blueprint.AppAuthToken{
-		App: developerApp.UID.String(),
-	}
-
 	// create new action
 	action := blueprint.Action{
 		Payload: nil,
 		Action:  "app_auth",
 	}
 
-	response := fiber.Map{
-		"url": "",
+	response := blueprint.AppAuthConnectResponse{
+		URL: "",
 	}
 
-	redirectToken.Action = action
-	redirectToken.RedirectURL = redirectURL
-	redirectToken.Platform = platform
-	redirectToken.Scopes = authScopes
+	// create new AppAuthToken action
+	var redirectToken = blueprint.AppAuthToken{
+		App:         developerApp.UID.String(),
+		Action:      action,
+		RedirectURL: redirectURL,
+		Scopes:      authScopes,
+		Platform:    platform,
+	}
 
 	switch platform {
 	case spotify.IDENTIFIER:
@@ -189,7 +188,7 @@ func (a *Controller) AppAuthRedirect(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", fErr.Error())
 		}
 
-		response["url"] = string(authURL)
+		response.URL = string(authURL)
 		return util.SuccessResponse(ctx, fiber.StatusOK, response)
 
 	case tidal.IDENTIFIER:
@@ -215,13 +214,6 @@ func (a *Controller) AppAuthRedirect(ctx *fiber.Ctx) error {
 			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to sign tidal auth jwt", zap.Error(sErr))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
-
-		// todo: move this to an appropriate place
-		// update: 3 dec 2025
-		// apparently, collections.write breaks things. tidal returns an internal error when this is added to the auth url. so i am going to remove it for now
-		// from the final scopes but keeping around for documentation reasons
-		// var tidalScopes = []string{"user.read", "collection.read", "playlists.write", "playlists.read", "collections.write", "recommendations.read"}
-		// tidalScopes := []string{"user.read", "collection.read", "playlists.write", "playlists.read", "recommendations.read", "collection.write"}
 		authURL, fErr := tidal.FetchAuthURL(string(encryptedToken), redirectURL, strings.Split(appScopes, ","), &decryptedCredentials, rawVerifier)
 
 		if fErr != nil {
@@ -229,7 +221,7 @@ func (a *Controller) AppAuthRedirect(ctx *fiber.Ctx) error {
 			log.Println(fErr)
 		}
 
-		response["url"] = string(authURL)
+		response.URL = string(authURL)
 		return util.SuccessResponse(ctx, fiber.StatusOK, response)
 
 	case deezer.IDENTIFIER:
@@ -260,12 +252,39 @@ func (a *Controller) AppAuthRedirect(ctx *fiber.Ctx) error {
 		// hardcoding deezer auth scopes
 		scopes := deezer.ValidScopes
 		authURL := deezerAuth.FetchAuthURL(scopes)
-		response["url"] = authURL
+		response.URL = authURL
 		return util.SuccessResponse(ctx, fiber.StatusOK, response)
 	// TODO: handle apple music auth
 	case applemusic.IDENTIFIER:
-		logger.Warn("[controllers][AppAuthRedirect] developer -  error: apple music auth not implemented yet")
-		return util.ErrorResponse(ctx, fiber.StatusNotImplemented, "not supported", "Apple music auth not implemented yet")
+
+		if string(developerApp.AppleMusicCredentials) == "" {
+			logger.Error("[controllers][AppAuthRedirect] developer -  error: applemusic integration is not enabled for this app")
+			return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Apple Music integration is not enabled for this app. Please make sure you update the app with your Deezer credentials")
+		}
+
+		var decryptedAppleCredentials blueprint.IntegrationCredentials
+		credentials, decErr := util.Decrypt(developerApp.AppleMusicCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if decErr != nil {
+			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to decrypt apple music integrationCredentials", zap.Error(decErr))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+		}
+
+		dErr := json.Unmarshal(credentials, &decryptedAppleCredentials)
+		if dErr != nil {
+			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to deserialize deezer integrationCredentials", zap.Error(dErr))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+		}
+
+		encryptedToken, sErr := util.SignAuthJwt(&redirectToken)
+		if sErr != nil {
+			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to sign apple music auth jwt", zap.Error(sErr))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+		}
+
+		// get the auth url
+		redirectURL, _ := applemusic.FetchAuthURL(string(encryptedToken), redirectURL, authScopes, &decryptedAppleCredentials)
+		response.URL = string(redirectURL)
+		return util.SuccessResponse(ctx, http.StatusOK, response)
 	}
 
 	return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred in auth. perhaps not implemented yet")

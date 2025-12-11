@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"orchdio/blueprint"
 	"orchdio/util"
-	svixwebhook "orchdio/webhooks/svix"
 	"os"
 	"strings"
 	"sync"
@@ -152,14 +151,15 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData, re
 
 	if s.IntegrationAPIKey != "" {
 		log.Printf("[services][applemusic][SearchTrackWithTitle] Apple music API key is empty on decoded credentials\n")
-	} else {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] Apple music API key is not empty on decoded credentials\n")
 	}
 
 	tp := applemusic.Transport{Token: s.IntegrationAPIKey}
 	client := applemusic.NewClient(tp.Client())
+
+	searchTerm := fmt.Sprintf("%s %s", searchData.Title, strings.Join(searchData.Artists, " "))
 	results, response, err := client.Catalog.Search(context.Background(), "us", &applemusic.SearchOptions{
-		Term: fmt.Sprintf("%s+%s", searchData.Artists[0], strippedTitleInfo.Title),
+		Term:  searchTerm,
+		Types: "songs",
 	})
 
 	if err != nil {
@@ -225,19 +225,6 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData, re
 		}
 	}
 
-	// send webhook event
-	svixInstance := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
-	payload := &blueprint.PlaylistConversionEventTrack{
-		EventType: blueprint.PlaylistConversionTrackEvent,
-		Platform:  IDENTIFIER,
-		TaskId:    searchData.Meta.PlaylistID,
-		Track:     track,
-	}
-
-	ok := svixInstance.SendTrackEvent(s.App.WebhookAppID, payload)
-	if !ok {
-		log.Printf("[services][applemusic][SearchTrackWithTitle] Could not send webhook event\n")
-	}
 	return track, nil
 }
 
@@ -255,7 +242,6 @@ func (s *Service) SearchTrackWithTitleChan(searchData *blueprint.TrackSearchData
 	defer wg.Done()
 	c <- track
 	wg.Add(1)
-	return
 }
 
 // FetchTracks asynchronously fetches a list of tracks using the track id

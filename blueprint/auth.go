@@ -86,3 +86,7 @@ type UserAuthInfoForRequests struct {
 	AppID        string
 	UserAppID    string
 }
+
+type AppAuthConnectResponse struct {
+	URL string `json:"url"`
+}
