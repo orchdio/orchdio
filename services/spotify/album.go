@@ -42,7 +42,8 @@ func (s *Service) RefreshToken(refreshToken, accessToken, userId string) (*oauth
 
 	expiresIn := time.Now().Add(time.Hour).Format(time.RFC3339)
 	// update the refreshtoken in the database
-	_, err = s.PgClient.Exec(queries.UpdateOAuthTokens, encryptedRefreshToken, expiresIn, refTok.AccessToken, userId, "spotifty")
+	// todo: use the db method for saving auth tokens.
+	_, err = s.PgClient.Exec(queries.UpdateOAuthTokens, encryptedRefreshToken, expiresIn, refTok.AccessToken, userId, "spotify")
 
 	if err != nil {
 		log.Println("Could not update refresh token in DB")

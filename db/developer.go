@@ -6,11 +6,8 @@ import (
 	"errors"
 	"log"
 	"orchdio/blueprint"
+	"orchdio/constants"
 	"orchdio/db/queries"
-	"orchdio/services/applemusic"
-	"orchdio/services/deezer"
-	"orchdio/services/spotify"
-	"orchdio/services/tidal"
 	"orchdio/util"
 	"os"
 
@@ -136,13 +133,13 @@ func (d *NewDB) UpdateApp(appId, platform, developer string, app blueprint.Updat
 	var outByte []byte
 
 	switch platform {
-	case applemusic.IDENTIFIER:
+	case constants.AppleMusicIdentifier:
 		outByte = devApp.AppleMusicCredentials
-	case spotify.IDENTIFIER:
+	case constants.SpotifyIdentifier:
 		outByte = devApp.SpotifyCredentials
-	case deezer.IDENTIFIER:
+	case constants.DeezerIdentifier:
 		outByte = devApp.DeezerCredentials
-	case tidal.IDENTIFIER:
+	case constants.TidalIdentifier:
 		outByte = devApp.TidalCredentials
 	}
 
@@ -176,7 +173,7 @@ func (d *NewDB) UpdateApp(appId, platform, developer string, app blueprint.Updat
 	// so we abort if its so.
 	// Apple music uses a credential called API_KEY which is a JWT, like TIDAL's developer refresh token. so we encode
 	// both as RefreshToken but in apple music service, we refer to it as API_KEY
-	if !lo.Contains([]string{applemusic.IDENTIFIER, tidal.IDENTIFIER}, platform) {
+	if !lo.Contains([]string{constants.TidalIdentifier, constants.AppleMusicIdentifier}, platform) {
 		if app.IntegrationRefreshToken != "" {
 			log.Printf("[db][UpdateApp] warning - App has refreshtoken credentials but is not a platform that requires it. Only TIDAL and Apple Music do.")
 			return nil, blueprint.ErrBadCredentials
@@ -449,6 +446,18 @@ func (d *NewDB) UpdateWebhookAppID(devAppId, webhookAppId string) error {
 	}
 	//d.Logger.Info("[db][UpdateWebhookAppID] developer -  convoy webhook id updated for app", zap.String("app_id", appId))
 	log.Println("[db][UpdateWebhookAppID] developer - webhook id updated for app", devAppId)
+	return nil
+}
+
+func (d *NewDB) UpdateUserAppAuthTokens(userId, accessToken, expiry, platform string, encryptedRefreshToken []byte) error {
+	_, err := d.DB.Exec(queries.UpdateOAuthTokens, encryptedRefreshToken, expiry, accessToken, userId, platform)
+
+	if err != nil {
+		log.Println("Could not update refresh token in DB")
+		return err
+	}
+
+	log.Println("DEBUG::: updated user app auth tokens")
 	return nil
 }
 

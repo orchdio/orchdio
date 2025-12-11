@@ -24,19 +24,12 @@ import (
 
 // Platforms represents the structure for the platforms
 type Platforms struct {
-	Redis *redis.Client
-	DB    *sqlx.DB
-	// AsynqClient  *asynq.Client
-	// AsynqMux     *asynq.ServeMux
+	Redis         *redis.Client
+	DB            *sqlx.DB
 	Logger        *blueprint.OrchdioLoggerOptions
 	Queue         queue.QueueService
 	WebhookSender svixwebhook.SvixInterface
 }
-
-// func NewPlatform(r *redis.Client, db *sqlx.DB, asynqClient *asynq.Client, asynqMux *asynq.ServeMux) *Platforms {
-// 	return &Platforms{Redis: r, DB: db, AsynqClient: asynqClient, AsynqMux: asynqMux}
-// }
-//
 
 func NewPlatform(r *redis.Client, db *sqlx.DB, queue queue.QueueService, webhookSender svixwebhook.SvixInterface) *Platforms {
 	return &Platforms{Redis: r, DB: db, Queue: queue, WebhookSender: webhookSender}

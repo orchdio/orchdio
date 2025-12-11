@@ -17,6 +17,7 @@ import (
 	"orchdio/services/deezer"
 	orchdioFollow "orchdio/services/follow"
 	"orchdio/services/spotify"
+	"orchdio/services/tidal"
 	"orchdio/universal"
 	"orchdio/util"
 	"os"
@@ -200,7 +201,7 @@ func (u *UserController) FollowPlaylist(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "Already followed", "playlist already followed")
 	}
 
-	res := map[string]interface{}{"follow_id": string(followId)}
+	res := map[string]any{"follow_id": string(followId)}
 	return util.SuccessResponse(ctx, http.StatusOK, res)
 }
 
@@ -253,7 +254,7 @@ func (u *UserController) FetchUserInfoByIdentifier(ctx *fiber.Ctx) error {
 		var refreshToken string
 		// if the user refresh token is nil, the user has not connected this platform to Orchdio.
 		// this is because everytime a user connects a platform to Orchdio, the refresh token is updated for the platform the user connected
-		if user.RefreshToken == nil && user.Platform != "tidal" {
+		if user.RefreshToken == nil {
 			log.Printf("[platforms][FetchUserPlatformsInfo] error - user's refresh token is empty %v\n", err)
 			return util.ErrorResponse(ctx, http.StatusUnauthorized, "no access", "User has not connected this platform to Orchdio")
 		}
@@ -268,11 +269,35 @@ func (u *UserController) FetchUserInfoByIdentifier(ctx *fiber.Ctx) error {
 			refreshToken = string(r)
 		}
 
-		info, err := universal.FetchUserPlatformsInfo(user.Platform, refreshToken, app.UID.String(), u.DB, u.Redis)
+		authInfo := blueprint.UserAuthInfoForRequests{
+			RefreshToken: refreshToken,
+			AccessToken:  user.AccessToken,
+			// ExpiresIn:    expiresInString,
+			Platform: user.Platform,
+			UserID:   user.UserID,
+		}
 
+		if user.ExpiresIn.String != "" {
+			t, pErr := time.Parse("2006-01-02 15:04:05-07", user.ExpiresIn.String)
+			if pErr != nil {
+				log.Printf("[platforms][FetchUserPlatformsInfo] - error: could not parse expires in for platform %s - %v", user.Platform, pErr)
+			}
+			expiresInString := t.Format(time.RFC3339)
+			authInfo.ExpiresIn = expiresInString
+		}
+
+		var info *blueprint.UserPlatformInfo
+		if user.Platform == tidal.IDENTIFIER {
+			info1, err := universal.FetchUserPlatformsInfo(authInfo, app.UID.String(), u.DB, u.Redis)
+			if err != nil {
+				log.Println("Error fetching the user information from TIDAL.. could be token issue")
+			} else {
+				info = info1
+			}
+		}
+		info, err := universal.FetchUserPlatformsInfo(authInfo, app.UID.String(), u.DB, u.Redis)
 		if err != nil {
 			log.Printf("[platforms][FetchUserPlatformsInfo] error - could not fetch user info on %s platform", user.Platform)
-			return util.ErrorResponse(ctx, http.StatusInternalServerError, "internal error", "An unexpected error occured while fetching user info")
 		}
 
 		switch user.Platform {
@@ -281,6 +306,9 @@ func (u *UserController) FetchUserInfoByIdentifier(ctx *fiber.Ctx) error {
 
 		case deezer.IDENTIFIER:
 			userInfo.Deezer = info
+
+		case tidal.IDENTIFIER:
+			userInfo.Tidal = info
 		}
 	}
 
@@ -362,7 +390,7 @@ func (u *UserController) ResetPassword(ctx *fiber.Ctx) error {
 	taskData := &blueprint.EmailTaskData{
 		From: os.Getenv("ALERT_EMAIL"),
 		To:   body.Email,
-		Payload: map[string]interface{}{
+		Payload: map[string]any{
 			"RESETLINK": fmt.Sprintf("%s/change-password?token=%s", os.Getenv("ORCHDIO_DASHBOARD_URL"), resetToken),
 		},
 		TaskID:     taskID,

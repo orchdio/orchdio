@@ -38,14 +38,14 @@ type trackJob struct {
 	info *blueprint.LinkInfo
 }
 
-func (pc *Service) FetchUserInfo(platform, refreshToken string) (*blueprint.UserPlatformInfo, error) {
-	platformService, sErr := pc.factory.GetPlatformService(platform)
+func (pc *Service) FetchUserInfo(authInfo blueprint.UserAuthInfoForRequests) (*blueprint.UserPlatformInfo, error) {
+	platformService, sErr := pc.factory.GetPlatformService(authInfo.Platform)
 	if sErr != nil {
 		log.Println(sErr)
 		return nil, sErr
 	}
 
-	user, err := platformService.FetchUserInfo(refreshToken)
+	user, err := platformService.FetchUserInfo(authInfo)
 	if err != nil {
 		log.Println(err)
 		return nil, err
@@ -153,6 +153,22 @@ func (pc *Service) ConvertTrack(info *blueprint.LinkInfo) (*blueprint.TrackConve
 		},
 	}
 
+	// build the request auth info here... in the case where we need to fetch private
+	// data and we need to fetch the user auth info, we could do it here after attaching
+	// the user's info (user id) probably on the linkInfo and then fetching "user_app" data here
+	// which is what contains the individual auth details.
+	//
+	// for now, we simply get the developer app's auth data using the credentials.
+
+	authInfo := blueprint.UserAuthInfoForRequests{
+		// RefreshToken: refreshToken,
+		// AccessToken:  user.AccessToken,
+		// ExpiresIn:    expiresInString,
+		Platform: info.Platform,
+		AppID:    info.App,
+		// UserID:   user.UserID,
+	}
+
 	// fixme: magic string? — improve this.
 	if info.TargetPlatform == "all" {
 		// get all targetPlatforms services apart from the current "from"
@@ -174,7 +190,8 @@ func (pc *Service) ConvertTrack(info *blueprint.LinkInfo) (*blueprint.TrackConve
 		// todo: run this concurrently.
 		for i := range targetPlats {
 			instance := allTargetPlatformServiceFactories[i]
-			platformSearchResult, spErr := instance.SearchTrackWithTitle(searchData)
+
+			platformSearchResult, spErr := instance.SearchTrackWithTitle(searchData, authInfo)
 			if spErr != nil {
 				// note: for some reason, the platform could not convert the track.
 				// in the final result, this will be nil and the platform would simply be
@@ -200,7 +217,7 @@ func (pc *Service) ConvertTrack(info *blueprint.LinkInfo) (*blueprint.TrackConve
 		return nil, tErr
 	}
 
-	targetTrackResult, ssErr := targetPlatformService.SearchTrackWithTitle(searchData)
+	targetTrackResult, ssErr := targetPlatformService.SearchTrackWithTitle(searchData, authInfo)
 	if ssErr != nil {
 		log.Println(ssErr)
 		return nil, ssErr
@@ -277,12 +294,12 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 		if fErr != nil {
 			log.Printf("Error fetching tracks... %v\n\n", fErr)
 		}
+		log.Printf("Fetched tracks from source platform: %s", info.Platform)
 	}()
 
 	wg.Add(1)
 	go func() {
 		for result := range resultChan {
-
 			// cache source track
 			ok := util.CacheTrackByArtistTitle(&result, pc.factory.Red, info.Platform)
 			if !ok {
@@ -298,12 +315,29 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 				Platform: info.TargetPlatform,
 				Title:    result.Title,
 				Artists:  result.Artists,
+				Album:    result.Album,
 				Meta: &blueprint.TrackSearchMeta{
 					TaskID: info.TaskID,
 				},
 			}
 
-			targetPlatformTrack, sErr := toService.SearchTrackWithTitle(searchData)
+			// build the request auth info here... in the case where we need to fetch private
+			// data and we need to fetch the user auth info, we could do it here after attaching
+			// the user's info (user id) probably on the linkInfo and then fetching "user_app" data here
+			// which is what contains the individual auth details.
+			//
+			// for now, we simply get the developer app's auth data using the credentials.
+
+			authInfo := blueprint.UserAuthInfoForRequests{
+				// RefreshToken: refreshToken,
+				// AccessToken:  user.AccessToken,
+				// ExpiresIn:    expiresInString,
+				Platform: info.Platform,
+				AppID:    info.App,
+				// UserID:   user.UserID,
+			}
+
+			targetPlatformTrack, sErr := toService.SearchTrackWithTitle(searchData, authInfo)
 			if sErr == blueprint.EnoResult {
 				log.Printf("Error searching track... %v\n\n", sErr)
 				log.Printf("Should add to omitted track here, send omitted track event & then send webhook event for the available track")
@@ -336,6 +370,7 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 				}
 
 				omittedTracks = append(omittedTracks, *omittedTrack)
+				srcPlaylistTracks = append(srcPlaylistTracks, result)
 				continue
 			}
 
@@ -410,7 +445,6 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 		log.Printf("[service][AsynqConvertPlaylist] - FATAL: could not build target platform result struct")
 		return nil, targetPlatformResultsErr
 	}
-
 	finalResult.OmittedTracks = &omittedTracks
 	finalResult.Meta = *playlistMeta
 	finalResult.Status = blueprint.TaskStatusCompleted

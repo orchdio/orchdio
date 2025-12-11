@@ -255,8 +255,9 @@ type EmailTaskData struct {
 }
 
 type ExtractedTitleInfo struct {
-	Artists []string `json:"artists"`
-	Title   string   `json:"title"`
+	Artists  []string `json:"artists"`
+	Title    string   `json:"title"`
+	Subtitle string   `json:"subtitle"`
 }
 
 type OrchdioLoggerOptions struct {

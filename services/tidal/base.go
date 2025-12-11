@@ -8,12 +8,16 @@ import (
 	"log"
 	"net/url"
 	"orchdio/blueprint"
+	"orchdio/services/tidal/tidal_v2"
+	tidal_auth "orchdio/services/tidal/tidal_v2/auth"
 	"orchdio/util"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/jmoiron/sqlx"
+	"golang.org/x/oauth2/clientcredentials"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/nleeper/goment"
@@ -160,7 +164,7 @@ func (s *Service) FetchTrackWithID(id string) (*Track, error) {
 }
 
 // SearchTrackWithTitle will perform a search on tidal for the track we want
-func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error) {
+func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData, requestAuthInfo blueprint.UserAuthInfoForRequests) (*blueprint.TrackSearchResult, error) {
 	cleanedArtiste := strings.ToLower(fmt.Sprintf("tidal-%s-%s", util.NormalizeString(searchData.Artists[0]), searchData.Title))
 	cacheKey := util.FormatTargetPlaylistTrackByCacheKeyTitle(IDENTIFIER, cleanedArtiste, searchData.Title)
 
@@ -180,78 +184,121 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*
 		return &deserialized, nil
 	}
 
-	result, err := s.FetchSingleTrackByTitle(searchData.Title, searchData.Artists[0])
+	result, err := s.FetchSingleTrackByTitle(*searchData, requestAuthInfo)
 	if err != nil {
 		log.Printf("\n[controllers][platforms][tidal][SearchTrackWithTitle] - could not search track with title '%s' on tidal - %v\n", searchData.Title, err)
 		return nil, err
 	}
 
-	// here is where we select the best match. Right now, we just select the first result on the list
-	// but ideally if for example we want to filter more "generic" tracks, we can do that here
-	// etc.
-	if len(result.Tracks.Items) > 0 {
-		var track = result.Tracks.Items[0]
-		var artistes []string
-		for _, artist := range track.Artists {
-			artistes = append(artistes, artist.Name)
-		}
-
-		tidalTrack := &blueprint.TrackSearchResult{
-			URL:      track.Url,
-			Artists:  artistes,
-			Released: track.StreamStartDate,
-			Duration: util.GetFormattedDuration(track.Duration),
-			// format the duration in milliseconds. seems to be in seconds from TIDAL
-			DurationMilli: track.Duration * 1000,
-			Explicit:      track.Explicit,
-			Title:         track.Title,
-			Preview:       "",
-			Album:         track.Album.Title,
-			ID:            strconv.Itoa(track.Id),
-			Cover:         util.BuildTidalAssetURL(track.Album.Cover),
-		}
-		return tidalTrack, nil
-	}
-	return nil, blueprint.EnoResult
-
+	return result, nil
 }
 
 // FetchSingleTrackByTitle fetches a track from tidal by title and artist
-func (s *Service) FetchSingleTrackByTitle(title, artiste string) (*SearchResult, error) {
-	log.Printf("[controllers][platforms][tidal][FetchSingleTrackByTitle] - searching single track by title: %s %s\n", title, artiste)
-	accessToken, err := s.FetchNewAuthToken(s.IntegrationCredentials.AppID, s.IntegrationCredentials.AppSecret, s.IntegrationCredentials.AppRefreshToken)
+func (s *Service) FetchSingleTrackByTitle(searchData blueprint.TrackSearchData, authInfo blueprint.UserAuthInfoForRequests) (*blueprint.TrackSearchResult, error) {
+	log.Printf("[controllers][platforms][tidal][FetchSingleTrackByTitle] - searching single track by title: %s %s\n", searchData.Title, strings.Join(searchData.Artists, ","))
+	ctx := context.TODO()
+
+	config := &clientcredentials.Config{
+		ClientID:     s.IntegrationCredentials.AppID,
+		ClientSecret: s.IntegrationCredentials.AppSecret,
+		TokenURL:     tidal_auth.TokenURL,
+	}
+	token, err := config.Token(context.Background())
 	if err != nil {
-		log.Printf("\n[controllers][platforms][tidal][FetchSingleTrackByTitle] - error - %v\n", err)
+		log.Println("Could not fetch token URL for client credentials....")
 		return nil, err
 	}
 
-	instance := axios.NewInstance(&axios.InstanceConfig{
-		BaseURL:     ApiUrl,
-		EnableTrace: true,
-		Headers: map[string][]string{
-			"Accept":        {"application/json"},
-			"Authorization": {"Bearer " + accessToken},
-		},
-	})
-
-	strippedTrackTitleInfo := util.ExtractTitle(title)
-
-	query := url.QueryEscape(fmt.Sprintf("%s %s", artiste, strippedTrackTitleInfo.Title))
-
-	log.Printf("[controllers][[platforms][tidal][FetchSingleTrackByTitle]  - Search URL %s\n", fmt.Sprintf("%s %s", artiste, title))
-
-	response, err := instance.Get(fmt.Sprintf("/search/top-hits?query=%s&countryCode=US&limit=2&offset=0&types=TRACKS", query))
+	auth, err := tidal_auth.NewTidalAuthClient(s.IntegrationCredentials.AppID, s.IntegrationCredentials.AppSecret, s.App.RedirectURL)
 	if err != nil {
-		log.Printf("\n[controllers][platforms][tidal][FetchSingleTrackByTitle] - error - %v\n", err)
+		log.Println("Could not create a new instance of the TIDAL auth client", err)
 		return nil, err
 	}
-	searchResult := &SearchResult{}
-	err = json.Unmarshal(response.Data, searchResult)
+
+	authClient := auth.Client(ctx, token)
+	client := tidal_v2.NewTidalClient(authClient)
+
+	// first, try the search suggestion...
+	searchSuggestion, err := client.SearchSuggestions(ctx, fmt.Sprintf("%s %s", searchData.Title, strings.Join(searchData.Artists, " ")),
+		"US",
+		tidal_v2.IncludeInSearchSuggestion(tidal_v2.SearchIncludeDirectHits),
+	)
+
 	if err != nil {
-		log.Printf("\n[controllers][platforms][tidal][FetchSingleTrackByTitle] - could not deserialize search response from tidal - %v\n", err)
+		log.Println("Could not fetch the search suggestion...", err)
 		return nil, err
 	}
-	return searchResult, nil
+
+	var possibleMatchTrackId string
+	// inside the searchSuggestion, we want to get the ID of the first suggested track result id
+
+	for _, suggestion := range searchSuggestion.Data.Relationships.DirectHits.Data {
+		if suggestion.Type == "tracks" {
+			log.Println("Taking the first track result in the search suggestion", suggestion.ID)
+			possibleMatchTrackId = suggestion.ID
+			break
+		}
+	}
+	// then get the track with that id
+	singleTrack, err := client.GetTrack(ctx,
+		possibleMatchTrackId, "US",
+		tidal_v2.IncludeInTrack(
+			tidal_v2.TrackIncludeAlbum,
+			tidal_v2.TrackIncludeArtists,
+		))
+
+	if err != nil {
+		log.Println("Could not fetching single track from TIDAL", err)
+		return nil, err
+	}
+
+	var artists []string
+	var album string
+	for _, single := range singleTrack.Included {
+		if single.Type == "artists" {
+			artists = append(artists, single.Attributes.Name)
+		}
+
+		if single.Type == "albums" {
+			album = single.Attributes.Title
+		}
+	}
+
+	duration, err := tidal_v2.ParseISO8601Duration(singleTrack.Data.Attributes.Duration)
+	if err != nil {
+		log.Println("Could not parse ISO8601 Duration from TIDAL response")
+	}
+
+	durationMilli := int(duration.Milliseconds())
+
+	// get album coverArt. we're calling album again because weirdly unfortunately enough
+	// the TIDAL API does not return coverArt for single tracks.
+	// todo: improve the performance of this. maybe making the tracks and albums request concurrent.
+	trackAlbum, err := client.GetAlbum(
+		ctx, singleTrack.Data.Relationships.Albums.Data[0].ID,
+		tidal_v2.CountryCode("US"),
+		tidal_v2.IncludeInAlbum(tidal_v2.AlbumIncludeCoverArt),
+	)
+	if err != nil {
+		log.Println("Could not fetch track's album")
+	}
+
+	coverArt := trackAlbum.Included[0].Attributes.Files[0].Href
+	trackResult := &blueprint.TrackSearchResult{
+		URL:           singleTrack.Data.Attributes.ExternalLinks[0].Href,
+		Artists:       artists,
+		Released:      singleTrack.Data.Attributes.CreatedAt.Format(time.RFC3339),
+		Duration:      util.GetFormattedDuration(int(duration.Milliseconds())),
+		DurationMilli: durationMilli,
+		Explicit:      singleTrack.Data.Attributes.Explicit,
+		Title:         singleTrack.Data.Attributes.Title,
+		Preview:       "",
+		Album:         album,
+		ID:            singleTrack.Data.ID,
+		Cover:         coverArt,
+	}
+
+	return trackResult, nil
 }
 
 // fetchPlaylistInfo returns a playlist info. An internal method called in FetchPlaylistMetaInfo.
@@ -290,6 +337,7 @@ func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlis
 	infoHash := fmt.Sprintf("tidal:snapshot:%s", info)
 
 	if s.Redis.Exists(context.Background(), identifierHash).Val() == 1 {
+		log.Println("Could not find tidal track from cache")
 		// fetch the playlist playlistInfo from redis
 		cachedInfo, gErr := s.Redis.Get(context.Background(), infoHash).Result()
 		if gErr != nil && !errors.Is(gErr, redis.Nil) {
@@ -359,6 +407,7 @@ func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlis
 			"Authorization": {"Bearer " + accessToken},
 		},
 	})
+
 	// implement pagination fetching
 	for page := 0; page <= pages; page++ {
 		response, err := instance.Get(fmt.Sprintf("/playlists/%s/items?offset=%d&limit=100&countryCode=US", info, page*100))
@@ -367,16 +416,22 @@ func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlis
 			return err
 		}
 
+		log.Println("Tried to get something here")
+
 		res := &PlaylistTracks{}
 		err = json.Unmarshal(response.Data, res)
 		if err != nil {
 			log.Printf("\n[controllers][platforms][tidal][FetchPlaylistTracksInfo] - could not deserialize playlist result from tidal - %v\n", err)
 			return err
 		}
+
+		log.Println("Body response from tidal")
+		spew.Dump(string(response.Data))
 		if len(res.Items) == 0 {
 			break
 		}
 
+		log.Printf("The tidal pages are: %v", playlistResult)
 		for _, item := range playlistResult.Items {
 			var artistes []string
 			for _, artist := range item.Item.Artists {
@@ -742,9 +797,5 @@ func (s *Service) FetchUserArtists(userId string) (*blueprint.UserLibraryArtists
 
 func (s *Service) FetchListeningHistory(refreshToken string) ([]blueprint.TrackSearchResult, error) {
 
-	return nil, blueprint.ErrNotImplemented
-}
-
-func (s *Service) FetchUserInfo(refreshToken string) (*blueprint.UserPlatformInfo, error) {
 	return nil, blueprint.ErrNotImplemented
 }

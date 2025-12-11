@@ -76,3 +76,13 @@ type OrchdioLoginUserResponse struct {
 	Token       string     `json:"token"`
 	Apps        *[]AppInfo `json:"apps"`
 }
+
+type UserAuthInfoForRequests struct {
+	RefreshToken string
+	AccessToken  string
+	ExpiresIn    string
+	Platform     string
+	UserID       string
+	AppID        string
+	UserAppID    string
+}

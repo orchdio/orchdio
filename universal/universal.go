@@ -17,7 +17,7 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
-func FetchUserPlatformsInfo(platform, refreshToken, appId string, pg *sqlx.DB, red *redis.Client) (*blueprint.UserPlatformInfo, error) {
+func FetchUserPlatformsInfo(authInfo blueprint.UserAuthInfoForRequests, appId string, pg *sqlx.DB, red *redis.Client) (*blueprint.UserPlatformInfo, error) {
 	database := db.NewDB{DB: pg}
 	app, err := database.FetchAppByAppId(appId)
 
@@ -28,7 +28,7 @@ func FetchUserPlatformsInfo(platform, refreshToken, appId string, pg *sqlx.DB, r
 	webhookSender := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
 	platformsServiceFactory := platforminternal.NewPlatformServiceFactory(pg, red, app, webhookSender)
 	serviceFactory := serviceinternal.NewServiceFactory(platformsServiceFactory)
-	userInfo, err := serviceFactory.FetchUserInfo(platform, refreshToken)
+	userInfo, err := serviceFactory.FetchUserInfo(authInfo)
 
 	if err != nil {
 		log.Println("\n[controllers][platforms][universal][FetchLibraryArtists] error - could not fetch playlist libraries.", err)

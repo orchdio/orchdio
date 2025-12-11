@@ -20,6 +20,7 @@ import (
 	"orchdio/services/applemusic"
 	"orchdio/services/deezer"
 	"orchdio/services/spotify"
+	"orchdio/services/tidal"
 	"orchdio/util"
 	"os"
 	"strconv"
@@ -186,6 +187,46 @@ func (a *Controller) AppAuthRedirect(ctx *fiber.Ctx) error {
 		if fErr != nil {
 			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to fetch spotify auth url", zap.Error(fErr))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", fErr.Error())
+		}
+
+		response["url"] = string(authURL)
+		return util.SuccessResponse(ctx, fiber.StatusOK, response)
+
+	case tidal.IDENTIFIER:
+		if string(developerApp.TidalCredentials) == "" {
+			logger.Error("[controllers][AppAuthRedirect] developer -  error: tidal integration is not enabled for this app")
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+		}
+
+		credentials, decErr := util.Decrypt(developerApp.TidalCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if decErr != nil {
+			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to decrypt tidal integrationCredentials", zap.Error(decErr))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+		}
+		var decryptedCredentials blueprint.IntegrationCredentials
+		serErr := json.Unmarshal(credentials, &decryptedCredentials)
+		if serErr != nil {
+			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to deserialize tidal integrationCredentials", zap.Error(serErr))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+		}
+
+		encryptedToken, sErr := util.SignAuthJwt(&redirectToken)
+		if sErr != nil {
+			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to sign tidal auth jwt", zap.Error(sErr))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+		}
+
+		// todo: move this to an appropriate place
+		// update: 3 dec 2025
+		// apparently, collections.write breaks things. tidal returns an internal error when this is added to the auth url. so i am going to remove it for now
+		// from the final scopes but keeping around for documentation reasons
+		// var tidalScopes = []string{"user.read", "collection.read", "playlists.write", "playlists.read", "collections.write", "recommendations.read"}
+		// tidalScopes := []string{"user.read", "collection.read", "playlists.write", "playlists.read", "recommendations.read", "collection.write"}
+		authURL, fErr := tidal.FetchAuthURL(string(encryptedToken), redirectURL, strings.Split(appScopes, ","), &decryptedCredentials, rawVerifier)
+
+		if fErr != nil {
+			log.Println("[controllers][AppAuthRedirect] developer - could not fetch Auth URL for tidal auth")
+			log.Println(fErr)
 		}
 
 		response["url"] = string(authURL)
@@ -671,6 +712,105 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			authedUserEmail = userProfile.Email
 			// update the redirect url to the developer app redirect url. this is the final redirect url at the end of the auth flow
 			redirectURL = fmt.Sprintf("%s?token=%s", app.RedirectURL, string(authT))
+
+		case tidal.IDENTIFIER:
+			r, rErr := http.NewRequest("GET", string(ctx.Request().RequestURI()), nil)
+			if rErr != nil {
+				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to create new http request for tidal auth", zap.Error(rErr))
+				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+			}
+
+			if app.TidalCredentials == nil {
+				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: No tidal credentials found for app. Please add tidal credential", zap.String("app_pubkey", app.PublicKey.String()))
+				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+			}
+
+			decryptedIntegrationCredentials, dErr := util.Decrypt(app.TidalCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
+			if dErr != nil {
+				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to decrypt tidal credentials", zap.Error(dErr))
+				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+			}
+
+			integrationCredentials := &blueprint.IntegrationCredentials{}
+			err = json.Unmarshal(decryptedIntegrationCredentials, integrationCredentials)
+			if err != nil {
+				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to unmarshal tidal credentials", zap.Error(err))
+				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+			}
+
+			rawVerifier, err := a.Redis.Get(context.Background(), fmt.Sprintf("%s-verifier-raw", app.UID.String())).Result()
+			if err != nil {
+				log.Println("Error fetching rawVerifier from redis")
+				log.Println(err)
+				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+			}
+
+			tidalClient, oauthToken, cErr := tidal.CompleteUserAuth(ctx.Context(), r, redirectURL, integrationCredentials, rawVerifier)
+			if cErr != nil {
+				logger.Error("[controllers][HandleAppAuthRedirect] developer - error: could not complete user tidal auth", zap.Error(err))
+				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+			}
+
+			encryptedRefreshToken, rErr := util.Encrypt([]byte(oauthToken.RefreshToken), []byte(encryptionSecretKey))
+			if rErr != nil {
+				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to encrypt tidal refresh token", zap.Error(rErr))
+				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+			}
+
+			user, err := tidalClient.CurrentUser(context.TODO())
+			if err != nil {
+				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch tidal user", zap.Error(err))
+				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+			}
+
+			newUser := a.DB.QueryRowx(queries.CreateUserQuery, user.Data.Attributes.Email, uniqueId)
+			scErr := newUser.StructScan(userProfile)
+			if scErr != nil {
+				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to scan tidal user during final auth", zap.Error(scErr))
+				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+			}
+
+			// from development, its established that if the user doesnt have a username manually set in their TIDAL bio
+			// their username will be their email. in the API responses, this is probably not a good idea but at the same time
+			// trying to stay in standards with the developer guideline, we'd need to expose this to the API results
+			// consumed by 3rd party integrations.
+			// fixme: find a way around this user experience quagmire.
+			updatedUserCredentials.Username = user.Data.Attributes.Username
+			updatedUserCredentials.PlatformId = user.Data.ID
+			updatedUserCredentials.Platform = tidal.IDENTIFIER
+			updatedUserCredentials.Token = encryptedRefreshToken
+
+			// fixme: note this part until stable
+			userPlatformToken = encryptedRefreshToken
+			userPlatformAccessToken = oauthToken.AccessToken
+			expiresAt := time.Now().Add(time.Hour)
+			accessTokenExpiresIn = expiresAt.Format(time.RFC3339)
+
+			userAppsInfo, err := database.FetchUserAppsInfoByUserUUID(userProfile.UUID.String(), app.UID.String())
+			if err != nil {
+				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch user apps info", zap.Error(err), zap.String("platform", "spotify"))
+				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+			}
+
+			t := blueprint.OrchdioUserToken{
+				RegisteredClaims:   jwt.RegisteredClaims{},
+				Email:              userProfile.Email,
+				Username:           user.Data.Attributes.Username,
+				UUID:               userProfile.UUID,
+				Platforms:          userAppsInfo,
+				LastAuthedPlatform: spotify.IDENTIFIER,
+			}
+
+			authT, sErr := util.SignJwt(&t)
+			if sErr != nil {
+				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign tidal auth jwt", zap.Error(sErr))
+				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+			}
+			authedUserEmail = userProfile.Email
+			// update the redirect url to the developer app redirect url. this is the final redirect url at the end of the auth flow
+			redirectURL = fmt.Sprintf("%s?token=%s", app.RedirectURL, string(authT))
+
+			// todo: then get the current user, to test if the user part also works
 
 			// deezer auth flow
 		case deezer.IDENTIFIER:
