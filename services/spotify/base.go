@@ -115,7 +115,7 @@ func (s *Service) fetchSingleTrack(searchData *blueprint.TrackSearchData) *spoti
 // SearchTrackWithTitle searches spotify using the title of a track
 // This is typically expected to be used when the track we want to fetch is the one we just
 // want to search on. That is, the other platforms that the user is trying to convert to.
-func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error) {
+func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData, requestAuthInfo blueprint.UserAuthInfoForRequests) (*blueprint.TrackSearchResult, error) {
 	searchData.Artists[0] = extractArtiste(searchData.Artists[0])
 	cleanedArtiste := fmt.Sprintf("spotify-%s-%s", util.NormalizeString(searchData.Artists[0]), searchData.Title)
 
@@ -374,6 +374,8 @@ func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlis
 
 	if cacheErr != nil && errors.Is(cacheErr, redis.Nil) || cachedSnapshotID != playlistMeta.Checksum {
 
+		// playlist, cErr := client.GetPlaylistItems(ctx, spotify.ID(info.EntityID), spotify.Fields("tracks.items, album"))
+
 		playlist, cErr := client.GetPlaylistItems(ctx, spotify.ID(info.EntityID))
 		if cErr != nil {
 			log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - Could not fetch playlist from spotify: %v\n", cErr)
@@ -559,13 +561,16 @@ func (s *Service) FetchListeningHistory(token string) ([]blueprint.TrackSearchRe
 
 // FetchUserInfo fetches a user's profile information from spotify. This involves private information like the user's email so its not
 // for cases where public information is needed.
-func (s *Service) FetchUserInfo(token string) (*blueprint.UserPlatformInfo, error) {
+func (s *Service) FetchUserInfo(authInfo blueprint.UserAuthInfoForRequests) (*blueprint.UserPlatformInfo, error) {
 	log.Printf("\n[services][spotify][base][FetchUserInfo] - fetching user's info\n")
 
 	// first, we want to create the endpoint to fetch the user info
 	//httpClient := spotifyauth.New(spotifyauth.WithClientID(s.IntegrationAppID), spotifyauth.WithClientSecret(s.IntegrationAppSecret)).Client(context.Background(), &oauth2.MusicToken{RefreshToken: token})
 	//client := spotify.New(httpClient)
-	client := s.NewClient(context.Background(), &oauth2.Token{RefreshToken: token})
+	//
+	//
+	// todo: use refreshing accessToken using the refreshToken if its expired or use accessToken if it hasnt.
+	client := s.NewClient(context.Background(), &oauth2.Token{RefreshToken: authInfo.RefreshToken})
 	user, err := client.CurrentUser(context.Background())
 	if err != nil {
 		log.Printf("\n[services][spotify][base][FetchUserInfo] error - could not fetch user info: %v\n", err)

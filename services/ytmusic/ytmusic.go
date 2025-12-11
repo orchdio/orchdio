@@ -55,7 +55,7 @@ func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.Pl
 	return nil, nil
 }
 
-func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error) {
+func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData, requestAuthInfo blueprint.UserAuthInfoForRequests) (*blueprint.TrackSearchResult, error) {
 
 	cleanedArtiste := fmt.Sprintf("ytmusic-%s-%s", util.NormalizeString(searchData.Artists[0]), searchData.Title)
 
@@ -242,6 +242,6 @@ func (s *Service) FetchLibraryPlaylists(refreshToken string) ([]blueprint.UserPl
 	return nil, blueprint.ErrNotImplemented
 }
 
-func (s *Service) FetchUserInfo(refreshToken string) (*blueprint.UserPlatformInfo, error) {
+func (s *Service) FetchUserInfo(authInfo blueprint.UserAuthInfoForRequests) (*blueprint.UserPlatformInfo, error) {
 	return nil, blueprint.ErrNotImplemented
 }

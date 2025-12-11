@@ -19,7 +19,7 @@ import (
 )
 
 type PlatformService interface {
-	SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error)
+	SearchTrackWithTitle(searchData *blueprint.TrackSearchData, requestAuthInfo blueprint.UserAuthInfoForRequests) (*blueprint.TrackSearchResult, error)
 	SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackSearchResult, error)
 	FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.PlaylistMetadata, error)
 	FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlistMeta *blueprint.PlaylistMetadata, result chan blueprint.TrackSearchResult) error
@@ -27,7 +27,7 @@ type PlatformService interface {
 	FetchListeningHistory(refreshToken string) ([]blueprint.TrackSearchResult, error)
 	FetchUserArtists(refreshToken string) (*blueprint.UserLibraryArtists, error)
 	FetchLibraryPlaylists(refreshToken string) ([]blueprint.UserPlaylist, error)
-	FetchUserInfo(refreshToken string) (*blueprint.UserPlatformInfo, error)
+	FetchUserInfo(authInfo blueprint.UserAuthInfoForRequests) (*blueprint.UserPlatformInfo, error)
 }
 
 type PlatformServiceFactory struct {

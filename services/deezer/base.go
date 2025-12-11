@@ -122,7 +122,7 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 // SearchTrackWithTitle searches for a track using the title (and artiste) on deezer
 // This is typically expected to be used when the track we want to fetch is the one we just
 // want to search on. That is, the other platforms that the user is trying to convert to.
-func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error) {
+func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData, requestAuthInfo blueprint.UserAuthInfoForRequests) (*blueprint.TrackSearchResult, error) {
 	cacheKey := util.FormatTargetPlaylistTrackByCacheKeyTitle(IDENTIFIER, util.NormalizeString(searchData.Artists[0]), searchData.Title)
 
 	// get the cached track if track with title and belongs to artist has been searched before
@@ -479,9 +479,9 @@ func (s *Service) FetchListeningHistory(token string) ([]blueprint.TrackSearchRe
 }
 
 // FetchUserInfo fetches all the deezer user info for a user
-func (s *Service) FetchUserInfo(token string) (*blueprint.UserPlatformInfo, error) {
+func (s *Service) FetchUserInfo(authInfo blueprint.UserAuthInfoForRequests) (*blueprint.UserPlatformInfo, error) {
 	log.Printf("\n[services][deezer][FetchUserInfo] Fetching user deezer info\n")
-	link := fmt.Sprintf("user/me?access_token=%s", token)
+	link := fmt.Sprintf("user/me?access_token=%s", authInfo.RefreshToken)
 	var info ProfileInfo
 	err := s.MakeRequest(link, &info)
 	if err != nil {
@@ -494,7 +494,7 @@ func (s *Service) FetchUserInfo(token string) (*blueprint.UserPlatformInfo, erro
 	// fetch user's options. options are extra fields that provide information about the user but not part of
 	// the user's profile information
 	// https://developers.deezer.com/api/user/options
-	optionsLink := fmt.Sprintf("user/me/options?access_token=%s", token)
+	optionsLink := fmt.Sprintf("user/me/options?access_token=%s", authInfo.RefreshToken)
 	var options ProfileOptions
 	err = s.MakeRequest(optionsLink, &options)
 	if err != nil {

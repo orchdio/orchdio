@@ -135,7 +135,7 @@ FROM apps ap WHERE ap.uuid = uap.app
         AND uap.uuid = $2 AND "user" = $3 AND platform = $4 AND app = $5`
 
 const FetchUserAppAndInfo = `SELECT uapps.uuid as app_id, uapps.platform, coalesce(uapps.platform_id, '') as platform_id,
-       uapps.refresh_token, coalesce(uapps.username, '') as username, u.email, "user" as user_id FROM user_apps uapps JOIN users u on uapps."user" = u.uuid
+       uapps.refresh_token, coalesce(uapps.access_token, '') as access_token, coalesce(uapps.expires_in, null) || '' as expires_in, coalesce(uapps.username, '') as username, u.email, "user" as user_id FROM user_apps uapps JOIN users u on uapps."user" = u.uuid
 and uapps.app = $2
          WHERE ( CASE WHEN $3 = 'id' THEN u.uuid::text = $1 ELSE u.email = $1 END )
 	AND app IS NOT NULL`

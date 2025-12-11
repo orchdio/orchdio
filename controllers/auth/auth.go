@@ -136,12 +136,6 @@ func (a *Controller) AppAuthRedirect(ctx *fiber.Ctx) error {
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 	}
 
-	// saveErr = a.Redis.Set(context.Background(), fmt.Sprintf("%s-challenge", developerApp.UID.String()), rawChallenge, 0).Err()
-	// if saveErr != nil {
-	// 	log.Println("Could not save raw code challenge in redis")
-	// 	return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-	// }
-
 	logger.Info("[controllers][AppAuthRedirect] developer -  fetched developer app", zap.String("app_name", developerApp.Name))
 
 	// create new AppAuthToken action
@@ -769,7 +763,7 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
-			newUser := a.DB.QueryRowx(queries.CreateUserQuery, user.Attributes.Email, uniqueId)
+			newUser := a.DB.QueryRowx(queries.CreateUserQuery, user.Data.Attributes.Email, uniqueId)
 			scErr := newUser.StructScan(userProfile)
 			if scErr != nil {
 				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to scan tidal user during final auth", zap.Error(scErr))
@@ -781,8 +775,8 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			// trying to stay in standards with the developer guideline, we'd need to expose this to the API results
 			// consumed by 3rd party integrations.
 			// fixme: find a way around this user experience quagmire.
-			updatedUserCredentials.Username = user.Attributes.Username
-			updatedUserCredentials.PlatformId = user.ID
+			updatedUserCredentials.Username = user.Data.Attributes.Username
+			updatedUserCredentials.PlatformId = user.Data.ID
 			updatedUserCredentials.Platform = tidal.IDENTIFIER
 			updatedUserCredentials.Token = encryptedRefreshToken
 
@@ -801,7 +795,7 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			t := blueprint.OrchdioUserToken{
 				RegisteredClaims:   jwt.RegisteredClaims{},
 				Email:              userProfile.Email,
-				Username:           user.Attributes.Username,
+				Username:           user.Data.Attributes.Username,
 				UUID:               userProfile.UUID,
 				Platforms:          userAppsInfo,
 				LastAuthedPlatform: spotify.IDENTIFIER,

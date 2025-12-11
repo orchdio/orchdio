@@ -128,7 +128,7 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 }
 
 // SearchTrackWithTitle searches for a track using the query.
-func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*blueprint.TrackSearchResult, error) {
+func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData, requestAuthInfo blueprint.UserAuthInfoForRequests) (*blueprint.TrackSearchResult, error) {
 	strippedTitleInfo := util.ExtractTitle(searchData.Title)
 	// if the title is in the format of "title (feat. artiste)" then we search for the title without the feat. artiste
 	log.Printf("Apple music: Searching with stripped artiste: %s. Original artiste: %s", strippedTitleInfo.Title, searchData.Artists)
@@ -243,7 +243,8 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData) (*
 
 // SearchTrackWithTitleChan searches for tracks using title and artistes but do so asynchronously.
 func (s *Service) SearchTrackWithTitleChan(searchData *blueprint.TrackSearchData, c chan *blueprint.TrackSearchResult, wg *sync.WaitGroup) {
-	track, err := s.SearchTrackWithTitle(searchData)
+	// todo: pass the real value here when refactoring.
+	track, err := s.SearchTrackWithTitle(searchData, blueprint.UserAuthInfoForRequests{})
 	if err != nil {
 		log.Printf("[services][applemusic][SearchTrackWithTitleChan] Error fetching track: %v\n", err)
 		defer wg.Done()
@@ -772,6 +773,6 @@ func (s *Service) FetchListeningHistory(token string) ([]blueprint.TrackSearchRe
 	return tracks, nil
 }
 
-func (s *Service) FetchUserInfo(refreshToken string) (*blueprint.UserPlatformInfo, error) {
+func (s *Service) FetchUserInfo(authInfo blueprint.UserAuthInfoForRequests) (*blueprint.UserPlatformInfo, error) {
 	return nil, blueprint.ErrNotImplemented
 }

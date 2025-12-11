@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"slices"
 	"strconv"
 	"time"
@@ -96,16 +97,9 @@ func (tc *TidalClient) execute(req *http.Request, result interface{}, acceptedSt
 
 func (tc *TidalClient) get(ctx context.Context, url string, result interface{}) error {
 	for {
-		// tcToken, err := tc.Token()
-		// if err != nil {
-		// 	return err
-		// }
-
-		// spew.Dump("tcToken is", tcToken)
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		req.Header.Set("accept", "application/vnd.api+json")
 		req.Header.Set("content-type", "application/vnd.tidal.v1+json")
-		// req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", tcToken.AccessToken))
 
 		if err != nil {
 			log.Println("TIDAL error 12")
@@ -192,4 +186,43 @@ func retryDuration(resp *http.Response) time.Duration {
 	}
 
 	return time.Duration(seconds) * time.Second
+}
+
+// parseISO8601Duration parses an ISO 8601 format returned by TIDAL API.
+// A sample ISO 8601 looks like: PT11M27S.
+//   - P: means Period of Time. This is always the start of the duration string
+//   - T11: means 11 minutes
+//   - 27S: means 27 seconds
+//
+// https://docs.digi.com/resources/documentation/digidocs/90001488-13/reference/r_iso_8601_duration_format.htm
+func ParseISO8601Duration(iso8601 string) (time.Duration, error) {
+	// Regex to match PT{hours}H{minutes}M{seconds}S format
+	re := regexp.MustCompile(`^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$`)
+	matches := re.FindStringSubmatch(iso8601)
+
+	if matches == nil {
+		return 0, fmt.Errorf("invalid ISO 8601 duration format: %s", iso8601)
+	}
+
+	var duration time.Duration
+
+	// Hours
+	if matches[1] != "" {
+		hours, _ := strconv.Atoi(matches[1])
+		duration += time.Duration(hours) * time.Hour
+	}
+
+	// Minutes
+	if matches[2] != "" {
+		minutes, _ := strconv.Atoi(matches[2])
+		duration += time.Duration(minutes) * time.Minute
+	}
+
+	// Seconds (can be float)
+	if matches[3] != "" {
+		seconds, _ := strconv.ParseFloat(matches[3], 64)
+		duration += time.Duration(seconds * float64(time.Second))
+	}
+
+	return duration, nil
 }

@@ -211,6 +211,7 @@ func DeezerIsExplicit(v int) bool {
 }
 
 // GetFormattedDuration returns the duration of a track in format “hh:mm:ss“
+// the duration passed is given in milliseconds.
 func GetFormattedDuration(v int) string {
 	hour := 0
 	min := v / 60
@@ -403,53 +404,104 @@ func DeezerSubscriptionPlan(opts map[string]interface{}) string {
 	return "premium"
 }
 
-// ExtractTitle will extract the title from the track title. This is important because
-// it will remove the (feat. artiste) from the title and or normalize the title
-// in order to enhance search results.
 func ExtractTitle(text string) blueprint.ExtractedTitleInfo {
-	// TODO: improve artiste title having spaces in between and more than one word
-	//       implement supporting [track_title] (feat. [artiste_name]) [remix_name]
-	//       implement supporting [track_title] (with) [remix_name]
-	//       implement supporting [track_title] (with [artiste_name])
-	// remove the (feat. artiste) from the title
-	// this is a very naive way of doing it, but it works for now
+	// Enhanced version to extract title, artists, and subtitle (remix info)
+	// Handles formats like:
+	// - "I Don't Know Why - Manoo Remix"
+	// - "I Don't Know Why (Manoo Remix)"
+	// - "I Don't Know Why (feat. Beverly)"
+	// - "I Don't Know Why (feat. Beverly) - Manoo Remix"
 
-	// first extraction requirement is that we want to detect when the title contains
-	// a paranthesis and contains (feat. or (ft. or (ft). In any of these combinations
-	// (and similar, in the future), we want to remove the content of the paranthesis
-	// and also probably get the featured artiste name
-	// Define the regular expression pattern to match the track title and artistes
-	pattern := regexp.MustCompile(`^(?i)\s*\[\s*(.+?)\s*\]\s*([(\[]?\s*(?:with|feat\.?)[\s&]*([a-z0-9 .,;&]+)\s*[)\]]?)?\s*$`)
-	// Apply the regular expression to the track title string
-	matches := pattern.FindStringSubmatch(text)
-
-	// Check if the title was matched
-	if len(matches) < 2 {
-		// Return a fallback to the original title and an empty array of artists
-		res := blueprint.ExtractedTitleInfo{
-			Title:   strings.Trim(text, "[] "),
-			Artists: []string{},
-		}
-		return res
-	}
-
-	// Extract the title and artistes from the matches
-	title := strings.TrimSpace(matches[1])
+	title := text
 	artistes := make([]string, 0)
-	if matches[3] != "" {
-		// If there are artistes, split them by commas, semicolons, and/or ampersands
-		artistes = strings.FieldsFunc(matches[3], func(r rune) bool {
-			return r == ',' || r == ';' || r == '&'
-		})
-		for i, a := range artistes {
-			artistes[i] = strings.TrimSpace(a)
+	subtitle := ""
+
+	// Pattern 1: Extract content in parentheses or after hyphen
+	// This handles both (remix/feat) and - remix patterns
+	parenthesesPattern := regexp.MustCompile(`(?i)\s*[(\[]\s*(.+?)\s*[)\]]\s*`)
+	hyphenPattern := regexp.MustCompile(`(?i)\s*-\s*(.+?)\s*(?:remix|mix|edit|version|rework)\s*$`)
+
+	// First, check for hyphen-based remix (e.g., "- Manoo Remix")
+	hyphenMatches := hyphenPattern.FindStringSubmatch(title)
+	if len(hyphenMatches) > 1 {
+		subtitle = strings.TrimSpace(hyphenMatches[1] + " Remix")
+		// Remove the remix part from title
+		title = hyphenPattern.ReplaceAllString(title, "")
+	}
+
+	// Find all parentheses/bracket content
+	allMatches := parenthesesPattern.FindAllStringSubmatch(title, -1)
+
+	for _, match := range allMatches {
+		if len(match) < 2 {
+			continue
+		}
+
+		content := strings.TrimSpace(match[1])
+		lowerContent := strings.ToLower(content)
+
+		// Check if it's a featured artist pattern
+		featPattern := regexp.MustCompile(`(?i)^(?:feat\.?|ft\.?|featuring|with)\s+(.+)$`)
+		featMatches := featPattern.FindStringSubmatch(content)
+
+		if len(featMatches) > 1 {
+			// Extract featured artists
+			featArtists := parseFeaturedArtistes(featMatches[1])
+			artistes = append(artistes, featArtists...)
+			// Remove from title
+			title = strings.Replace(title, match[0], "", 1)
+		} else if strings.Contains(lowerContent, "remix") ||
+			strings.Contains(lowerContent, "mix") ||
+			strings.Contains(lowerContent, "edit") ||
+			strings.Contains(lowerContent, "version") ||
+			strings.Contains(lowerContent, "rework") {
+			// It's likely a remix/subtitle
+			if subtitle == "" {
+				subtitle = content
+			}
+			// Remove from title
+			title = strings.Replace(title, match[0], "", 1)
+		} else {
+			// Check if content contains "feat" or "ft" anywhere (not just at start)
+			if strings.Contains(lowerContent, "feat.") ||
+				strings.Contains(lowerContent, "feat ") ||
+				strings.Contains(lowerContent, "ft.") ||
+				strings.Contains(lowerContent, "ft ") ||
+				strings.Contains(lowerContent, "featuring") {
+				// Extract artists after feat/ft
+				afterFeatPattern := regexp.MustCompile(`(?i).*?(?:feat\.?|ft\.?|featuring)\s+(.+)`)
+				afterFeatMatches := afterFeatPattern.FindStringSubmatch(content)
+				if len(afterFeatMatches) > 1 {
+					featArtists := parseFeaturedArtistes(afterFeatMatches[1])
+					artistes = append(artistes, featArtists...)
+				}
+				title = strings.Replace(title, match[0], "", 1)
+			} else if subtitle == "" {
+				// Ambiguous content - could be subtitle
+				subtitle = content
+				title = strings.Replace(title, match[0], "", 1)
+			}
 		}
 	}
 
-	// Create the final map with title and artistes keys
+	// Clean up the title
+	title = strings.TrimSpace(title)
+	title = strings.Trim(title, "[] -")
+	title = strings.TrimSpace(title)
+
+	// Fallback: if no structured extraction worked, try simple bracket removal
+	if title == text {
+		simplePattern := regexp.MustCompile(`^(?i)\s*\[\s*(.+?)\s*\]\s*$`)
+		simpleMatches := simplePattern.FindStringSubmatch(text)
+		if len(simpleMatches) > 1 {
+			title = strings.TrimSpace(simpleMatches[1])
+		}
+	}
+
 	res := blueprint.ExtractedTitleInfo{
-		Title:   title,
-		Artists: artistes,
+		Title:    title,
+		Artists:  artistes,
+		Subtitle: subtitle,
 	}
 	return res
 }
@@ -458,7 +510,12 @@ func parseFeaturedArtistes(feat string) []string {
 	if feat == "" {
 		return nil
 	}
-	return regexp.MustCompile(`\s*&\s*|\s*,\s*|\s+and\s+`).Split(feat, -1)
+	result := regexp.MustCompile(`\s*&\s*|\s*,\s*|\s+and\s+`).Split(feat, -1)
+	// Trim whitespace from each artist
+	for i, artist := range result {
+		result[i] = strings.TrimSpace(artist)
+	}
+	return result
 }
 
 func FetchMethodFromInterface(service interface{}, method string) (reflect.Value, bool) {

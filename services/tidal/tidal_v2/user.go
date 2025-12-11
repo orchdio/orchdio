@@ -5,57 +5,38 @@ import (
 	"log"
 )
 
-type User struct {
-	Attributes UserAttributes `json:"attributes"`
+// UserData represents the main user data object
+type UserData struct {
 	ID         string         `json:"id"`
 	Type       string         `json:"type"`
+	Attributes UserAttributes `json:"attributes"`
 }
 
+// UserAttributes contains the user metadata
 type UserAttributes struct {
-	Country        string `json:"country"`
-	Email          string `json:"email"`
-	EmailVerified  bool   `json:"emailVerified"`
-	FirstName      string `json:"firstName"`
-	LastName       string `json:"lastName"`
-	NostrPublicKey string `json:"nostrPublicKey"`
-	Username       string `json:"username"`
+	Username      string `json:"username"`
+	Country       string `json:"country"`
+	Email         string `json:"email"`
+	EmailVerified bool   `json:"emailVerified"`
+	FirstName     string `json:"firstName"`
+	LastName      string `json:"lastName"`
 }
 
-type UserIncluded struct {
-	Attributes struct {
-		AccessType   string   `json:"accessType"`
-		Availability []string `json:"availability"`
-		BarcodeID    string   `json:"barcodeId"`
-		Copyright    struct {
-			Text string `json:"text"`
-		} `json:"copyright"`
-		Duration      string `json:"duration"`
-		Explicit      bool   `json:"explicit"`
-		ExternalLinks []struct {
-			Href string `json:"href"`
-			Meta struct {
-				Type string `json:"type"`
-			} `json:"meta"`
-		} `json:"externalLinks"`
-		MediaTags       []string `json:"mediaTags"`
-		NumberOfItems   int      `json:"numberOfItems"`
-		NumberOfVolumes int      `json:"numberOfVolumes"`
-		Popularity      float64  `json:"popularity"`
-		ReleaseDate     string   `json:"releaseDate"`
-		Title           string   `json:"title"`
-		Type            string   `json:"type"`
-		Version         string   `json:"version"`
-	} `json:"included"`
+// UserLinks represents the links object in the user response
+type UserLinks struct {
+	Self string `json:"self"`
 }
 
-func (tc *TidalClient) CurrentUser(ctx context.Context) (*User, error) {
+// UserResponse is the complete API response type for GET /users/me
+type UserProfile = SuccessResponse[UserData, any, UserLinks]
+
+func (tc *TidalClient) CurrentUser(ctx context.Context) (*UserProfile, error) {
 	userURL := tc.baseURL + "/users/me"
-	currUser := SuccessResponse[User, UserIncluded, Links]{}
+	var currUser UserProfile
 	err := tc.get(ctx, userURL, &currUser)
 	if err != nil {
 		log.Println("ERROR: could not fetch current user")
 		return nil, err
 	}
-
-	return &currUser.Data, nil
+	return &currUser, nil
 }
