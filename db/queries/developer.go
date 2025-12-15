@@ -13,7 +13,8 @@ applemusic_credentials = (CASE WHEN $3 = 'applemusic' AND length($1::bytea) > 0
     THEN $1::bytea ELSE applemusic_credentials END),
 spotify_credentials = (CASE WHEN $3 = 'spotify'
         AND length($1::bytea) > 0 THEN $1::bytea ELSE spotify_credentials END),
-tidal_credentials = (CASE WHEN $3 = 'tidal' AND length($3::bytea) > 0 THEN $1::bytea ELSE tidal_credentials END),
+tidal_credentials = (CASE WHEN $3 = 'tidal' AND length($1::bytea) > 0 THEN $1::bytea ELSE tidal_credentials END)
+soundcloud_credentials = (CASE WHEN $3 = 'soundcloud' AND length($1::bytea) > 0 THEN $1::bytea ELSE soundcloud_credentials END),
 
 webhook_url = $4, redirect_url = $5, authorized = true, webhook_app_id = $6, updated_at = now() WHERE uuid = $2`
 
@@ -25,11 +26,12 @@ webhook_url = $4, redirect_url = $5, authorized = true, webhook_app_id = $6, upd
 const FetchAppByAppID = `SELECT Id, uuid, name, description, developer, secret_key, public_key,  coalesce(webhook_url, '') as webhook_url,
        coalesce(redirect_url, '') as redirect_url, coalesce(verify_token, '') as verify_token, created_at, updated_at, coalesce(authorized, false) as authorized, organization,
        COALESCE(spotify_credentials, '') AS spotify_credentials, COALESCE(applemusic_credentials, '') AS applemusic_credentials, COALESCE(deezer_credentials, '') AS deezer_credentials, COALESCE(tidal_credentials, '') AS tidal_credentials,
+       COALESCE(soundcloud_credentials, '') AS soundcloud_credentials,
 		coalesce(deezer_state, '') AS deezer_state, coalesce(webhook_app_id, '') as webhook_app_id FROM apps WHERE uuid = $1`
 
 const FetchAppByAppIDWithoutDev = `SELECT Id, uuid, name, description,
        developer, secret_key, public_key,
-       spotify_credentials, applemusic_credentials, deezer_credentials, tidal_credentials,
+       spotify_credentials, applemusic_credentials, deezer_credentials, tidal_credentials, soundcloud_credentials,
 --            COALESCE(spotify_redirect_url, '') AS spotify_redirect_url, COALESCE(applemusic_redirect_url, '') AS applemusic_redirect_url, COALESCE(deezer_redirect_url, '') AS deezer_redirect_url, COALESCE(tidal_redirect_url, '') AS tidal_redirect_url,
        coalesce(redirect_url, '') as redirect_url, coalesce(webhook_url, '') as webhook_url, coalesce(verify_token, '') as verify_token,
     created_at, updated_at, coalesce(authorized, false) as authorized, organization, coalesce(deezer_state, '') AS deezer_state FROM apps WHERE uuid = $1;`
@@ -39,16 +41,22 @@ const FetchAppByPubKeyWithoutDev = `SELECT Id, uuid, name, description, develope
        coalesce(redirect_url, '') as redirect_url, coalesce(webhook_url, '') as webhook_url, coalesce(verify_token, '') as verify_token,
        COALESCE(spotify_credentials, '') AS spotify_credentials, COALESCE(applemusic_credentials, '') AS applemusic_credentials,
        COALESCE(deezer_credentials, '') AS deezer_credentials, COALESCE(tidal_credentials, '') AS tidal_credentials,
+       COALESCE(soundcloud_credentials, '') AS soundcloud_credentials,
        created_at, updated_at, coalesce(authorized, false) as authorized, organization,
        coalesce(deezer_state, '') AS deezer_state FROM apps WHERE public_key = $1`
 
 const FetchAppByPubKey = `SELECT Id, uuid, name, description, developer, secret_key, public_key,
        coalesce(redirect_url, '') as redirect_url, coalesce(verify_token, '') as verify_token, coalesce(webhook_url, '') as webhook_url,
-       COALESCE(spotify_credentials, '') AS spotify_credentials, COALESCE(applemusic_credentials, '') AS applemusic_credentials, COALESCE(deezer_credentials, '') AS deezer_credentials, COALESCE(tidal_credentials, '') AS tidal_credentials, created_at, updated_at, authorized, organization, coalesce(deezer_state, '') AS deezer_state FROM apps WHERE public_key = $1 AND developer = $2`
+       COALESCE(spotify_credentials, '') AS spotify_credentials, COALESCE(applemusic_credentials, '') AS applemusic_credentials,
+       COALESCE(deezer_credentials, '') AS deezer_credentials, COALESCE(tidal_credentials, '') AS tidal_credentials, COALESCE(soundcloud_credentials, '') AS soundcloud_credentials
+       created_at, updated_at, authorized, organization, coalesce(deezer_state, '') AS deezer_state FROM apps WHERE public_key = $1 AND developer = $2`
 
 const FetchAppBySecretKey = `SELECT Id, uuid, name, description, developer, secret_key, public_key,
        coalesce(redirect_url, '') as redirect_url, coalesce(verify_token, '') as verify_token, coalesce(webhook_url, '') as webhook_url,
-       COALESCE(spotify_credentials, '') AS spotify_credentials, COALESCE(applemusic_credentials, '') AS applemusic_credentials, COALESCE(deezer_credentials, '') AS deezer_credentials, COALESCE(tidal_credentials, '') AS tidal_credentials, created_at, updated_at, authorized, organization, coalesce(deezer_state, '') AS deezer_state FROM apps WHERE secret_key = $1`
+       COALESCE(spotify_credentials, '') AS spotify_credentials, COALESCE(applemusic_credentials, '') AS applemusic_credentials,
+       COALESCE(deezer_credentials, '') AS deezer_credentials, COALESCE(tidal_credentials, '') AS tidal_credentials,
+       COALESCE(soundcloud_credentials, '') AS soundcloud_credentials,
+       created_at, updated_at, authorized, organization, coalesce(deezer_state, '') AS deezer_state FROM apps WHERE secret_key = $1`
 
 const FetchAuthorizedAppDeveloperByPublicKey = `SELECT u.email, u.id, u.uuid, u.created_at, u.updated_at FROM apps a JOIN users u on a.developer = u.uuid WHERE a.public_key = $1 AND a.authorized = true`
 const FetchAuthorizedAppDeveloperBySecretKey = `SELECT u.email, u.id, u.uuid, u.created_at, u.updated_at FROM apps a JOIN users u on a.developer = u.uuid WHERE a.secret_key = $1 AND a.authorized = true`
@@ -63,10 +71,13 @@ deezer_credentials = (CASE WHEN $8 = 'deezer' AND length($7::bytea) > 0 THEN  $7
 applemusic_credentials = (CASE WHEN $8 = 'applemusic' AND length($7::bytea) > 0 THEN $7::bytea ELSE applemusic_credentials END),
 spotify_credentials = (CASE WHEN $8 = 'spotify' AND length($7::bytea) > 0 THEN $7::bytea ELSE spotify_credentials END),
 tidal_credentials = (CASE WHEN $8 = 'tidal' AND length($7::bytea) > 0 THEN $7::bytea ELSE tidal_credentials END),
+soundcloud_credentials = (CASE WHEN $8 = 'soundcloud' AND length($7::bytea) > 0 THEN $7::bytea ELSE soundcloud_credentials END),
 
 updated_at = now() WHERE uuid = $5 AND developer = $6 returning Id, uuid, name, description, developer, secret_key, public_key,  coalesce(webhook_url, '') as webhook_url,
        coalesce(redirect_url, '') as redirect_url, coalesce(verify_token, '') as verify_token, created_at, updated_at, coalesce(authorized, false) as authorized, organization,
-       COALESCE(spotify_credentials, '') AS spotify_credentials, COALESCE(applemusic_credentials, '') AS applemusic_credentials, COALESCE(deezer_credentials, '') AS deezer_credentials, COALESCE(tidal_credentials, '') AS tidal_credentials,
+       COALESCE(spotify_credentials, '') AS spotify_credentials, COALESCE(applemusic_credentials, '') AS applemusic_credentials,
+       COALESCE(deezer_credentials, '') AS deezer_credentials, COALESCE(tidal_credentials, '') AS tidal_credentials,
+       COALESCE(soundcloud_credentials, '') AS soundcloud_credentials,
 		coalesce(deezer_state, '') AS deezer_state, coalesce(webhook_app_id, '') as webhook_app_id;`
 
 const DeleteApp = `DELETE FROM apps WHERE uuid = $1 AND developer = $2`
@@ -81,6 +92,7 @@ const FetchAppsByDeveloper = `SELECT
  id, uuid, name, description, developer, secret_key, public_key,
  redirect_url, webhook_url, verify_token, spotify_credentials,
  applemusic_credentials, tidal_credentials, deezer_credentials,
+ soundcloud_credentials,
  created_at, updated_at, authorized, organization, coalesce(deezer_state, '') as deezer_state
 FROM apps WHERE developer = $1 and organization = $2`
 
@@ -128,6 +140,7 @@ const FetchAppByDeezerState = `SELECT Id, uuid, name, description,
 --            COALESCE(spotify_redirect_url, '') AS spotify_redirect_url, COALESCE(applemusic_redirect_url, '') AS applemusic_redirect_url, COALESCE(deezer_redirect_url, '') AS deezer_redirect_url, COALESCE(tidal_redirect_url, '') AS tidal_redirect_url,
 --        redirect_url, webhook_url, verify_token,
        coalesce(spotify_credentials, '') as spotify_credentials, coalesce(applemusic_credentials, '') as applemusic_credentials, coalesce(deezer_credentials, '') as deezer_credentials, coalesce(tidal_credentials, '') as tidal_credentials,
+       coalesce(soundcloud_credentials, '') as soundcloud_credentials,
     created_at, updated_at, authorized, organization, coalesce(deezer_state, '') AS deezer_state FROM apps WHERE deezer_state = $1`
 
 const UpdateUserAppScopes = `UPDATE user_apps uap SET scopes = ARRAY(SELECT distinct unnest(uap.scopes || $1))
@@ -175,7 +188,9 @@ const DeletePlatformIntegrationCredentials = `UPDATE apps SET
 deezer_credentials = ( CASE WHEN $2 = 'deezer' THEN NULL ELSE deezer_credentials END ),
 tidal_credentials = ( CASE WHEN $2 = 'tidal' THEN NULL ELSE tidal_credentials END ),
 spotify_credentials = ( CASE WHEN $2 = 'spotify' THEN NULL ELSE spotify_credentials END ),
-applemusic_credentials = ( CASE WHEN $2 = 'applemusic' THEN NULL ELSE applemusic_credentials END ) WHERE uuid = $1 AND developer = $3`
+applemusic_credentials = ( CASE WHEN $2 = 'applemusic' THEN NULL ELSE applemusic_credentials END ),
+soundcloud_credentials = ( CASE WHEN $2 = 'soundcloud' THEN NULL ELSE soundcloud_credentials END )
+WHERE uuid = $1 AND developer = $3`
 
 const UpdateConvoyEndpointID = `UPDATE apps SET webhook_app_id = $1 WHERE uuid = $2`
 

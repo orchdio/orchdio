@@ -41,6 +41,11 @@ type AppAuthToken struct {
 	Platform    string   `json:"platform"`
 	Action      Action   `json:"action,omitempty"`
 	Scopes      []string `json:"scopes,omitempty"`
+	// this is the email the user uses on a specific streaming platform.
+	// its specifically relevant for SoundCloud (see issue on github at: https://github.com/soundcloud/api/issues/492)
+	// As at this moment (dec 15 2025), its not relevant for other platforms, but the naming is kept more generic for legibility
+	// and type consistency purposes.
+	Email string `json:"email,omitempty"`
 }
 
 // OrchdioUserToken represents a parsed user JWT claim

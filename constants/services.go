@@ -6,4 +6,5 @@ const (
 	SpotifyIdentifier    = "spotify"
 	DeezerIdentifier     = "deezer"
 	TidalIdentifier      = "tidal"
+	SoundCloudIdentifier = "soundcloud"
 )
