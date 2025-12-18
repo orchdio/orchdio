@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log"
 	"orchdio/blueprint"
+	"orchdio/constants"
 	"orchdio/services/applemusic"
 	"orchdio/services/deezer"
+	"orchdio/services/soundcloud"
 	"orchdio/services/spotify"
 	"orchdio/services/tidal"
 	"orchdio/services/ytmusic"
@@ -42,7 +44,7 @@ func NewPlatformServiceFactory(pg *sqlx.DB, red *redis.Client, app *blueprint.De
 }
 
 func (pf *PlatformServiceFactory) GetPlatformService(platform string) (PlatformService, error) {
-	credentials, err := pf.getCredentials(platform)
+	credentials, err := pf.GetCredentials(platform)
 	if err != nil {
 		log.Printf("%v\n", err)
 		return nil, err
@@ -65,6 +67,9 @@ func (pf *PlatformServiceFactory) GetPlatformService(platform string) (PlatformS
 	case ytmusic.IDENTIFIER:
 		// note: ytmusic does not require credentials (yet)
 		return ytmusic.NewService(pf.Red, pf.App), nil
+
+	case constants.SoundCloudIdentifier:
+		return soundcloud.NewService(credentials, pf.Pg, pf.Red, pf.App, pf.WebhookSender), nil
 	default:
 		return nil, fmt.Errorf("platform service not found in platform service: %s", platform)
 	}
@@ -85,7 +90,7 @@ func (pf *PlatformServiceFactory) GetPlatformServices(platforms []string) ([]Pla
 	return platformServices, nil
 }
 
-func (pf *PlatformServiceFactory) getCredentials(platform string) (*blueprint.IntegrationCredentials, error) {
+func (pf *PlatformServiceFactory) GetCredentials(platform string) (*blueprint.IntegrationCredentials, error) {
 	// fixme(HACK): if the platform is ytmusic, we dont want to decrypt because its nil — no credentials to decrypt
 
 	if platform == ytmusic.IDENTIFIER {
@@ -114,6 +119,12 @@ func (pf *PlatformServiceFactory) getCredentials(platform string) (*blueprint.In
 			return nil, fmt.Errorf("applemusic credentials not initialized or does not exist")
 		}
 		encryptedCredentials = pf.App.AppleMusicCredentials
+
+	case constants.SoundCloudIdentifier:
+		if pf.App.SoundcloudCredentials == nil {
+			return nil, fmt.Errorf("soundcloud credentials not initialized or does not exist")
+		}
+		encryptedCredentials = pf.App.SoundcloudCredentials
 	default:
 		return nil, fmt.Errorf("unsupported platform %s", platform)
 	}

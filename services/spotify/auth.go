@@ -6,6 +6,9 @@ import (
 	"log"
 	"net/http"
 	"orchdio/blueprint"
+	"orchdio/constants"
+	"orchdio/util"
+	"os"
 
 	"strings"
 
@@ -32,10 +35,10 @@ func FetchAuthURL(state, redirectURL string, scopes []string,
 
 // CompleteUserAuth finishes authorizing a spotify user
 func CompleteUserAuth(ctx context.Context, request *http.Request, redirectURL string,
-	integrationCredentials *blueprint.IntegrationCredentials, rawCodeVerifier string) (*spotify.Client, *oauth2.Token, error) {
+	integrationCredentials *blueprint.IntegrationCredentials, rawCodeVerifier string) (*oauth2.Token, *spotify.PrivateUser, *blueprint.UserAuthCredentials, error) {
 	if redirectURL == "" {
 		log.Printf("[account][auth][spotify] error - Redirect URI is empty")
-		return nil, nil, errors.New("redirect URI is empty")
+		return nil, nil, nil, errors.New("redirect URI is empty")
 	}
 	state := request.FormValue("state")
 	auth := spotifyauth.New(
@@ -46,16 +49,41 @@ func CompleteUserAuth(ctx context.Context, request *http.Request, redirectURL st
 	token, err := auth.Token(ctx, state, request)
 	if err != nil {
 		// TODO: handle auth error here. instead of ending up throwing a 500, just return accordingly
-		log.Printf("[account][auth][spotify] error - Error getting user refresh and access tokens: %v", err.Error())
+		log.Printf("[services][auth][spotify] error - Error getting user refresh and access tokens: %v", err.Error())
 		if strings.Contains(err.Error(), "invalid_grant") {
-			return nil, nil, errors.New("invalid grant")
+			return nil, nil, nil, errors.New("invalid grant")
 		}
 		if strings.Contains(err.Error(), "invalid_client") {
-			return nil, nil, errors.New("invalid client")
+			return nil, nil, nil, errors.New("invalid client")
 		}
-		return nil, nil, blueprint.ErrInvalidAuthCode
+		return nil, nil, nil, blueprint.ErrInvalidAuthCode
 	}
 
 	client := spotify.New(auth.Client(request.Context(), token))
-	return client, token, nil
+	encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
+
+	encryptedRefreshToken, rErr := util.Encrypt([]byte(token.RefreshToken), []byte(encryptionSecretKey))
+	if rErr != nil {
+		log.Println("[controllers][CompleteUserAuth] developer -  error: unable to encrypt spotify refresh token", rErr)
+		return nil, nil, nil, errors.New("unable to encrypt refresh token")
+	}
+
+	user, uErr := client.CurrentUser(ctx)
+	if uErr != nil {
+		if strings.Contains(uErr.Error(), blueprint.ErrSpotifyUserNotRegistered) {
+			log.Println("[controllers][HandleAppAuthRedirect] developer -  error: user not registered", uErr)
+			return nil, nil, nil, uErr
+		}
+		log.Println("[controllers][HandleAppAuthRedirect] developer -  error: unable to get current user during auth", uErr)
+		return nil, nil, nil, uErr
+	}
+
+	userCreds := &blueprint.UserAuthCredentials{
+		Username:   user.DisplayName,
+		Platform:   constants.SpotifyIdentifier,
+		PlatformId: user.ID,
+		Token:      encryptedRefreshToken,
+	}
+
+	return token, user, userCreds, nil
 }

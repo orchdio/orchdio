@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/url"
 	"orchdio/blueprint"
+	"orchdio/constants"
 	"orchdio/services/tidal/tidal_v2"
 	tidal_auth "orchdio/services/tidal/tidal_v2/auth"
 	"orchdio/util"
@@ -34,6 +35,7 @@ type Service struct {
 	Base                   string
 	App                    *blueprint.DeveloperApp
 	WebhookSender          WebhookSender
+	Identifier             string
 }
 
 type WebhookSender interface {
@@ -48,6 +50,7 @@ func NewService(credentials *blueprint.IntegrationCredentials, DB *sqlx.DB, red 
 		Base:                   ApiUrl,
 		App:                    devApp,
 		WebhookSender:          webhookSender,
+		Identifier:             constants.TidalIdentifier,
 	}
 }
 

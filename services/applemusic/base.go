@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"orchdio/blueprint"
+	"orchdio/constants"
 	"orchdio/util"
 	"os"
 	"strings"
@@ -27,6 +28,7 @@ type Service struct {
 	App               *blueprint.DeveloperApp
 	RedisClient       *redis.Client
 	PgClient          *sqlx.DB
+	Identifier        string
 }
 
 func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client, devApp *blueprint.DeveloperApp) *Service {
@@ -40,6 +42,7 @@ func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB
 		RedisClient:       redisClient,
 		PgClient:          pgClient,
 		App:               devApp,
+		Identifier:        constants.AppleMusicIdentifier,
 	}
 }
 
