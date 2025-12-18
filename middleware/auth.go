@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"orchdio/blueprint"
+	"orchdio/constants"
 	"orchdio/db"
 	"orchdio/db/queries"
 	logger2 "orchdio/logger"
@@ -284,7 +285,7 @@ func (a *AuthMiddleware) AddRequestPlatformWithPubKeyToCtx(ctx *fiber.Ctx) error
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Missing platform")
 	}
 
-	platforms := []string{"spotify", "deezer", "tidal", "applemusic"}
+	platforms := []string{constants.SpotifyIdentifier, constants.DeezerIdentifier, constants.TidalIdentifier, constants.AppleMusicIdentifier, constants.SoundCloudIdentifier}
 	if !lo.Contains(platforms, platform) {
 		return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Invalid platform")
 	}

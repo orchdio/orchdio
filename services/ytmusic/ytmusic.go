@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"orchdio/blueprint"
+	"orchdio/constants"
 	"orchdio/util"
 	"strings"
 	"time"
@@ -33,12 +34,14 @@ type Service struct {
 	IntegrationAppSecret string
 	IntegrationAppID     string
 	App                  *blueprint.DeveloperApp
+	Identifier           string
 }
 
 func NewService(redisClient *redis.Client, devApp *blueprint.DeveloperApp) *Service {
 	return &Service{
 		RedisClient: redisClient,
 		App:         devApp,
+		Identifier:  constants.YoutubeMusicIdentifier,
 		// fixme(note): we dont need this for now.
 		//IntegrationAppID:     integrationAppID,
 		//IntegrationAppSecret: integrationAppSecret,

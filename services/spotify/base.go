@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/url"
 	"orchdio/blueprint"
+	"orchdio/constants"
 	"orchdio/util"
 	svixwebhook "orchdio/webhooks/svix"
 	"strings"
@@ -30,6 +31,7 @@ type Service struct {
 	PgClient             *sqlx.DB
 	App                  *blueprint.DeveloperApp
 	WebhookSender        svixwebhook.SvixInterface
+	Identifier           string
 }
 
 type WebhookSender interface {
@@ -45,6 +47,7 @@ func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB
 		PgClient:      pgClient,
 		App:           devApp,
 		WebhookSender: webhookSender,
+		Identifier:    constants.SpotifyIdentifier,
 	}
 }
 

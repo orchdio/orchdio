@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"orchdio/blueprint"
+	"orchdio/constants"
 	"orchdio/util"
 	"os"
 	"strconv"
@@ -28,6 +29,7 @@ type Service struct {
 	RedisClient       *redis.Client
 	App               *blueprint.DeveloperApp
 	WebhookSender     WebhookSender
+	Identifier        string
 }
 
 type WebhookSender interface {
@@ -42,6 +44,7 @@ func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB
 		RedisClient:       redisClient,
 		App:               devApp,
 		WebhookSender:     webhookSender,
+		Identifier:        constants.DeezerIdentifier,
 	}
 }
 

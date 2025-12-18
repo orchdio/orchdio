@@ -38,6 +38,10 @@ func FetchUserPlatformsInfo(authInfo blueprint.UserAuthInfoForRequests, appId st
 	return userInfo, nil
 }
 
+// func CompleteUserAuth() {
+
+// }
+
 func FetchLibraryPlaylists(platform, refreshToken, appId string, pg *sqlx.DB, red *redis.Client) ([]blueprint.UserPlaylist, error) {
 
 	database := db.NewDB{DB: pg}

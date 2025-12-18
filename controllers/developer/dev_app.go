@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"orchdio/blueprint"
+	"orchdio/constants"
 	"orchdio/db"
 	"orchdio/services/applemusic"
 	"orchdio/services/deezer"
@@ -336,10 +337,11 @@ func (d *Controller) FetchApp(ctx *fiber.Ctx) error {
 	var creds []blueprint.IntegrationCredentials
 
 	var credK = map[string][]byte{
-		spotify.IDENTIFIER:    app.SpotifyCredentials,
-		deezer.IDENTIFIER:     app.DeezerCredentials,
-		applemusic.IDENTIFIER: app.AppleMusicCredentials,
-		tidal.IDENTIFIER:      app.TidalCredentials,
+		constants.SpotifyIdentifier:    app.SpotifyCredentials,
+		constants.DeezerIdentifier:     app.DeezerCredentials,
+		constants.AppleMusicIdentifier: app.AppleMusicCredentials,
+		constants.TidalIdentifier:      app.TidalCredentials,
+		constants.SoundCloudIdentifier: app.SoundcloudCredentials,
 	}
 
 	for k, v := range credK {
