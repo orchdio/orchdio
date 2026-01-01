@@ -22,9 +22,9 @@ import (
 
 type PlatformService interface {
 	SearchTrackWithTitle(searchData *blueprint.TrackSearchData, requestAuthInfo blueprint.UserAuthInfoForRequests) (*blueprint.TrackSearchResult, error)
-	SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackSearchResult, error)
-	FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.PlaylistMetadata, error)
-	FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlistMeta *blueprint.PlaylistMetadata, result chan blueprint.TrackSearchResult) error
+	SearchTrackWithID(info *blueprint.LinkInfo, authInfo *blueprint.AuthToken) (*blueprint.TrackSearchResult, error)
+	FetchPlaylistMetaInfo(info *blueprint.LinkInfo, authToken *blueprint.AuthToken) (*blueprint.PlaylistMetadata, error)
+	FetchTracksForSourcePlatform(info *blueprint.LinkInfo, authToken *blueprint.AuthToken, playlistMeta *blueprint.PlaylistMetadata, result chan blueprint.TrackSearchResult) error
 	FetchLibraryAlbums(refreshToken string) ([]blueprint.LibraryAlbum, error)
 	FetchListeningHistory(refreshToken string) ([]blueprint.TrackSearchResult, error)
 	FetchUserArtists(refreshToken string) (*blueprint.UserLibraryArtists, error)

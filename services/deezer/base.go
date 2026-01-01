@@ -66,7 +66,7 @@ func (s *Service) fetchSingleTrack(link string) (*Track, error) {
 }
 
 // SearchTrackWithID fetches the deezer result for the track being searched using the URL
-func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackSearchResult, error) {
+func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo, authInfo *blueprint.AuthToken) (*blueprint.TrackSearchResult, error) {
 	// first, get the cached track
 	cacheKey := util.FormatPlaylistTrackByCacheKeyID(IDENTIFIER, info.EntityID)
 
@@ -199,7 +199,7 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData, re
 }
 
 // FetchTracksForSourcePlatform fetches tracks for a given source platform and sends them to the result channel.
-func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlistMeta *blueprint.PlaylistMetadata, resultChan chan blueprint.TrackSearchResult) error {
+func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, authToken *blueprint.AuthToken, playlistMeta *blueprint.PlaylistMetadata, resultChan chan blueprint.TrackSearchResult) error {
 	cachedSnapshot, cacheErr := s.RedisClient.Get(context.Background(), util.FormatPlatformConversionCacheKey(info.EntityID, IDENTIFIER)).Result()
 	if cacheErr != nil && !errors.Is(cacheErr, redis.Nil) {
 		log.Printf("\n[services][deezer][SearchPlaylistWithID] error - Could not get cached snapshot for playlist %v\n", info.EntityID)
@@ -266,7 +266,7 @@ func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlis
 	return nil
 }
 
-func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.PlaylistMetadata, error) {
+func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo, authToken *blueprint.AuthToken) (*blueprint.PlaylistMetadata, error) {
 	log.Printf("\n[services][deezer][SearchPlaylistWithID] Fetching playlist %v\n", info.EntityID)
 	// todo: implement fetching more pages. test if this covers cases with more than 100, 250, 500, 1000 tracks.
 	infoLink := "https://api.deezer.com/playlist/" + info.EntityID + "?limit=1"
@@ -484,7 +484,7 @@ func (s *Service) FetchListeningHistory(token string) ([]blueprint.TrackSearchRe
 // FetchUserInfo fetches all the deezer user info for a user
 func (s *Service) FetchUserInfo(authInfo blueprint.UserAuthInfoForRequests) (*blueprint.UserPlatformInfo, error) {
 	log.Printf("\n[services][deezer][FetchUserInfo] Fetching user deezer info\n")
-	link := fmt.Sprintf("user/me?access_token=%s", authInfo.RefreshToken)
+	link := fmt.Sprintf("user/me?access_token=%s", authInfo.Token.RefreshToken)
 	var info ProfileInfo
 	err := s.MakeRequest(link, &info)
 	if err != nil {
@@ -497,7 +497,7 @@ func (s *Service) FetchUserInfo(authInfo blueprint.UserAuthInfoForRequests) (*bl
 	// fetch user's options. options are extra fields that provide information about the user but not part of
 	// the user's profile information
 	// https://developers.deezer.com/api/user/options
-	optionsLink := fmt.Sprintf("user/me/options?access_token=%s", authInfo.RefreshToken)
+	optionsLink := fmt.Sprintf("user/me/options?access_token=%s", authInfo.Token.RefreshToken)
 	var options ProfileOptions
 	err = s.MakeRequest(optionsLink, &options)
 	if err != nil {

@@ -270,11 +270,13 @@ func (u *UserController) FetchUserInfoByIdentifier(ctx *fiber.Ctx) error {
 		}
 
 		authInfo := blueprint.UserAuthInfoForRequests{
-			RefreshToken: refreshToken,
-			AccessToken:  user.AccessToken,
+			Token: &blueprint.AuthToken{
+				RefreshToken: refreshToken,
+				AccessToken:  user.AccessToken,
+			},
 			// ExpiresIn:    expiresInString,
 			Platform: user.Platform,
-			UserID:   user.UserID,
+			User:     user.UserID,
 		}
 
 		if user.ExpiresIn.String != "" {
@@ -283,7 +285,7 @@ func (u *UserController) FetchUserInfoByIdentifier(ctx *fiber.Ctx) error {
 				log.Printf("[platforms][FetchUserPlatformsInfo] - error: could not parse expires in for platform %s - %v", user.Platform, pErr)
 			}
 			expiresInString := t.Format(time.RFC3339)
-			authInfo.ExpiresIn = expiresInString
+			authInfo.Token.ExpiresIn = expiresInString
 		}
 
 		var info *blueprint.UserPlatformInfo

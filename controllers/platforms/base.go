@@ -113,6 +113,13 @@ func (p *Platforms) ConvertPlaylist(ctx *fiber.Ctx) error {
 	linkInfo := ctx.Locals("linkInfo").(*blueprint.LinkInfo)
 	app := ctx.Locals("app").(*blueprint.DeveloperApp)
 
+	conversionBody := ctx.Locals("conversionBody").(blueprint.ConversionBody)
+
+	if conversionBody.User != "" {
+		log.Println("DEBUG: this request is a private user request.")
+		linkInfo.User = conversionBody.User
+	}
+
 	// we fetch the credentials for the platform we're converting to
 	// and then we pass it to the queue to be used by the worker
 	// to make the conversion

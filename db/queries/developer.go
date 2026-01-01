@@ -48,7 +48,7 @@ const FetchAppByPubKeyWithoutDev = `SELECT Id, uuid, name, description, develope
 const FetchAppByPubKey = `SELECT Id, uuid, name, description, developer, secret_key, public_key,
        coalesce(redirect_url, '') as redirect_url, coalesce(verify_token, '') as verify_token, coalesce(webhook_url, '') as webhook_url,
        COALESCE(spotify_credentials, '') AS spotify_credentials, COALESCE(applemusic_credentials, '') AS applemusic_credentials,
-       COALESCE(deezer_credentials, '') AS deezer_credentials, COALESCE(tidal_credentials, '') AS tidal_credentials, COALESCE(soundcloud_credentials, '') AS soundcloud_credentials
+       COALESCE(deezer_credentials, '') AS deezer_credentials, COALESCE(tidal_credentials, '') AS tidal_credentials, COALESCE(soundcloud_credentials, '') AS soundcloud_credentials,
        created_at, updated_at, authorized, organization, coalesce(deezer_state, '') AS deezer_state FROM apps WHERE public_key = $1 AND developer = $2`
 
 const FetchAppBySecretKey = `SELECT Id, uuid, name, description, developer, secret_key, public_key,

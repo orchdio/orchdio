@@ -302,7 +302,6 @@ func (d *NewDB) FetchTask(uid string) (*blueprint.TaskRecord, error) {
 		// shortid parsing/fetching logic
 		log.Printf("[controller][conversion][GetPlaylistTaskStatus] - not a valid uuid, fetching by shortid")
 		r := d.DB.QueryRowx(queries.FetchTaskByShortID, uid)
-
 		var res blueprint.TaskRecord
 		sErr := r.StructScan(&res)
 		// deserialize into a playlist conversion

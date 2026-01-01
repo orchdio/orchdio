@@ -140,7 +140,7 @@ type SearchResultsIncludedRelationships struct {
 
 // SearchResultsIncludedRelationship represents a single relationship in included resources
 type SearchResultsIncludedRelationship struct {
-	Links RelationshipLinks `json:"links,omitempty"`
+	Links Links `json:"links,omitempty"`
 }
 
 // SearchResponse is the complete API response type for search
@@ -160,17 +160,6 @@ func (tc *TidalClient) Search(ctx context.Context, query, countryCode string, op
 	// Build the options first
 	allOpts := append([]RequestOption{CountryCode(countryCode)}, opts...)
 	requestOpts := buildRequestOptions(allOpts...)
-
-	// Log the actual parameter values
-	log.Println("=== Search Parameters ===")
-	log.Println("Query:", query)
-	log.Println("URL Parameters:")
-	for key, values := range requestOpts.urlParams {
-		for _, value := range values {
-			log.Printf("  %s: %s", key, value)
-		}
-	}
-	log.Println("========================")
 
 	// Use customPathEscape instead of url.PathEscape
 	searchURL := fmt.Sprintf("%ssearchResults/%s", tc.baseURL, customPathEscape(query))

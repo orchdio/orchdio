@@ -112,7 +112,7 @@ func (a *AuthMiddleware) AddReadOnlyDeveloperToContext(ctx *fiber.Ctx) error {
 	app, err := database.FetchAppByPublicKey(pubKey, developer.UUID.String())
 	if err != nil {
 		log.Printf("[db][AddReadOnlyDevAccessToContext] developer -  error: could not fetch app with public key")
-		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, err, "An internal error occurred")
+		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 	}
 	// set the app to the context
 	ctx.Locals("app", app)

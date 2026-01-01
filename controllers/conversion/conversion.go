@@ -79,7 +79,7 @@ func (c *Controller) GetPlaylistTask(ctx *fiber.Ctx) error {
 
 		result := &blueprint.PlaylistTaskResponse{
 			TaskID:   taskRecord.UID.String(),
-			UniqueID: taskRecord.UniqueID,
+			UniqueID: taskId,
 			Status:   taskRecord.Status,
 			Payload:  res,
 		}

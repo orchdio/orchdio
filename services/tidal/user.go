@@ -27,7 +27,7 @@ func (s *Service) Tokens(authInfo blueprint.UserAuthInfoForRequests) (*tidal_aut
 		return nil, nil, err
 	}
 
-	hasExpired, err := util.HasTokenExpired(authInfo.ExpiresIn)
+	hasExpired, err := util.HasTokenExpired(authInfo.Token.ExpiresIn)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -37,7 +37,7 @@ func (s *Service) Tokens(authInfo blueprint.UserAuthInfoForRequests) (*tidal_aut
 	if hasExpired {
 		// refresh the token
 		refreshedTokens, err := auth.RefreshToken(context.TODO(), &oauth2.Token{
-			RefreshToken: authInfo.RefreshToken,
+			RefreshToken: authInfo.Token.RefreshToken,
 		})
 		if err != nil {
 			return nil, nil, err
@@ -51,14 +51,14 @@ func (s *Service) Tokens(authInfo blueprint.UserAuthInfoForRequests) (*tidal_aut
 			return nil, nil, err
 		}
 
-		updateErr := dbN.UpdateUserAppAuthTokens(authInfo.UserID, tokens.AccessToken, expiresIn, IDENTIFIER, encryptedRefreshToken)
+		updateErr := dbN.UpdateUserAppAuthTokens(authInfo.User, tokens.AccessToken, expiresIn, IDENTIFIER, encryptedRefreshToken)
 		if updateErr != nil {
 			return nil, nil, err
 		}
 	} else {
 		tokens = &oauth2.Token{
-			AccessToken:  authInfo.AccessToken,
-			RefreshToken: authInfo.RefreshToken,
+			AccessToken:  authInfo.Token.AccessToken,
+			RefreshToken: authInfo.Token.RefreshToken,
 		}
 	}
 

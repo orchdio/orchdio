@@ -18,6 +18,7 @@ type TrackConversion struct {
 		Tidal      *TrackSearchResult `json:"tidal,omitempty"`
 		YTMusic    *TrackSearchResult `json:"ytmusic,omitempty"`
 		AppleMusic *TrackSearchResult `json:"applemusic,omitempty"`
+		SoundCloud *TrackSearchResult `json:"soundcloud,omitempty"`
 	} `json:"platforms"`
 	// UniqueID is the same as taskId. also adding shortURL here because it's easier
 	// and (probably) makes more sense for the track conversion payload to carry it itself

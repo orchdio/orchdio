@@ -608,9 +608,8 @@ func FormatPlaylistTrackByCacheKeyID(platform, trackID string) string {
 }
 
 // fixme: perhaps pass "artists" and join
-
 func FormatTargetPlaylistTrackByCacheKeyTitle(platform, artist string, title string) string {
-	return fmt.Sprintf("%s:track:title-artist-%s:%s", platform, artist, title)
+	return fmt.Sprintf("%s:track:%s:artist-%s", platform, title, artist)
 }
 
 func FormatPlatformConversionCacheKey(playlistID, platform string) string {
@@ -621,38 +620,38 @@ func FormatPlatformPlaylistSnapshotID(platform, playlistID string) string {
 	return fmt.Sprintf("%s:snapshot:%s", platform, playlistID)
 }
 
-func CacheTrackByID(track *blueprint.TrackSearchResult, red *redis.Client, identifier string) bool {
+func CacheTrackByID(track *blueprint.TrackSearchResult, red *redis.Client, identifier string) (string, bool) {
 	key := FormatPlaylistTrackByCacheKeyID(identifier, track.ID)
 	value, err := json.Marshal(track)
 	if err != nil {
 		log.Printf("ERROR [services][spotify][CachePlaylistTracksWithID] json.Marshal error: %v\n", err)
-		return false
+		return "", false
 	}
 
 	// fixme(note): setting without expiry
 	mErr := red.Set(context.Background(), key, value, 0).Err()
 	if mErr != nil {
 		log.Printf("ERROR [services][%s][CachePlaylistTracksWithID] Set error: %v\n", identifier, mErr)
-		return false
+		return "", false
 	}
-	return true
+	return key, true
 }
 
-func CacheTrackByArtistTitle(track *blueprint.TrackSearchResult, red *redis.Client, identifier string) bool {
-	key := FormatTargetPlaylistTrackByCacheKeyTitle(identifier, track.Artists[0], track.Title)
+func CacheTrackByArtistTitle(track *blueprint.TrackSearchResult, red *redis.Client, identifier string) (string, bool) {
+	key := FormatTargetPlaylistTrackByCacheKeyTitle(identifier, strings.Join(track.Artists, "-"), track.Title)
 	value, err := json.Marshal(track)
 	if err != nil {
 		log.Printf("ERROR [services][spotify][CachePlaylistTracksWithID] json.Marshal error: %v\n", err)
-		return false
+		return "", false
 	}
 
 	// fixme(note): setting without expiry
 	mErr := red.Set(context.Background(), key, value, 0).Err()
 	if mErr != nil {
 		log.Printf("ERROR [services][spotify][CachePlaylistTracksWithID] Set error: %v\n", err)
-		return false
+		return "", false
 	}
-	return true
+	return key, true
 }
 
 func ContainsElement(collections []string, element string) bool {
@@ -692,10 +691,31 @@ func GenerateCodeVerifierAndChallenge() (string, string, error) {
 }
 
 func HasTokenExpired(expiresIn string) (bool, error) {
-	expiryTime, err := time.Parse(time.RFC3339, expiresIn)
+	if expiresIn == "" {
+		return true, nil
+	}
+
+	formats := []string{
+		time.RFC3339,                // "2006-01-02T15:04:05Z07:00"
+		"2006-01-02 15:04:05-07",    // "2025-12-16 17:29:20+01"
+		"2006-01-02 15:04:05-0700",  // "2025-12-16 17:29:20+0100"
+		"2006-01-02 15:04:05Z07:00", // "2025-12-16 17:29:20+01:00"
+		time.RFC1123Z,               // "Mon, 02 Jan 2006 15:04:05 -0700"
+	}
+
+	var expiryTime time.Time
+	var err error
+	for _, format := range formats {
+		expiryTime, err = time.Parse(format, expiresIn)
+		if err == nil {
+			break // Successfully parsed
+		}
+	}
+
 	if err != nil {
 		return true, fmt.Errorf("failed to parse expiry time: %v", err)
 	}
+
 	now := time.Now()
 	return now.After(expiryTime), nil
 }

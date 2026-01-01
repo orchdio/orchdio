@@ -109,7 +109,7 @@ func (sc *SoundcloudClient) decodeErrorResponse(resp *http.Response) error {
 	err = json.NewDecoder(buf).Decode(&e)
 
 	if err != nil {
-		return fmt.Errorf("soundcloud client: could not decode TIDAL error: (%d) [%s]", len(body), body)
+		return fmt.Errorf("soundcloud client: could not decode Soundcloud error: (%d) [%s]", len(body), body)
 	}
 	return nil
 }

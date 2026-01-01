@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"orchdio/blueprint"
+	"orchdio/constants"
+	"orchdio/db"
 	platforminternal "orchdio/internal/platform"
 	"orchdio/services/applemusic"
 	"orchdio/services/deezer"
@@ -12,6 +14,7 @@ import (
 	"orchdio/services/tidal"
 	"orchdio/services/ytmusic"
 	"orchdio/util"
+	"os"
 	"sync"
 
 	"github.com/samber/lo"
@@ -125,7 +128,7 @@ func (pc *Service) ConvertTrack(info *blueprint.LinkInfo) (*blueprint.TrackConve
 		return nil, sErr
 	}
 
-	srcTrackResult, stErr := srcPlatformService.SearchTrackWithID(info)
+	srcTrackResult, stErr := srcPlatformService.SearchTrackWithID(info, nil)
 	if stErr != nil {
 		log.Println(stErr)
 		return nil, stErr
@@ -141,6 +144,7 @@ func (pc *Service) ConvertTrack(info *blueprint.LinkInfo) (*blueprint.TrackConve
 
 	uErr := pc.updatePlatformTracks(info.Platform, trackConversion, srcTrackResult)
 	if uErr != nil {
+		log.Println("Could not update for src platform.")
 		log.Println(uErr)
 		return nil, uErr
 	}
@@ -166,7 +170,7 @@ func (pc *Service) ConvertTrack(info *blueprint.LinkInfo) (*blueprint.TrackConve
 		// ExpiresIn:    expiresInString,
 		Platform: info.Platform,
 		AppID:    info.App,
-		// UserID:   user.UserID,
+		User:     info.User,
 	}
 
 	// fixme: magic string? — improve this.
@@ -225,6 +229,7 @@ func (pc *Service) ConvertTrack(info *blueprint.LinkInfo) (*blueprint.TrackConve
 
 	ppErr := pc.updatePlatformTracks(info.TargetPlatform, trackConversion, targetTrackResult)
 	if ppErr != nil {
+		log.Println("Could not update for target platform...")
 		log.Println(ppErr)
 		return nil, ppErr
 	}
@@ -235,6 +240,52 @@ func (pc *Service) ConvertTrack(info *blueprint.LinkInfo) (*blueprint.TrackConve
 func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.PlaylistConversion, error) {
 	if info.TargetPlatform == "" {
 		return nil, errors.New("target platform is required")
+	}
+
+	authToken := &blueprint.AuthToken{}
+	// // fetch the attached user, if any
+	if info.User != "" {
+		dbInstance := db.NewDB{DB: pc.factory.Pg}
+
+		// get the user
+		srcPlatformAuthInfo, err := dbInstance.FetchPlatformAndUserInfoByIdentifier(info.User, info.App, info.Platform)
+		if err != nil {
+			// todo: handle this case
+			log.Printf("Source platform: Could not fetch user %s platform info", info.Platform)
+			log.Print(err)
+		}
+
+		// decrypt the refresh token
+		decryptedRefreshToken, dErr := util.Decrypt(srcPlatformAuthInfo.RefreshToken, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if dErr != nil {
+			// todo: handle this.
+			log.Println("Could not decrypt refresh token: ", dErr)
+		}
+
+		authToken = &blueprint.AuthToken{
+			RefreshToken: string(decryptedRefreshToken),
+			AccessToken:  srcPlatformAuthInfo.AccessToken,
+			ExpiresIn:    srcPlatformAuthInfo.ExpiresIn.String,
+		}
+
+	} else {
+		log.Println("DEBUG:: SERVICE CORE — REQUEST IS FOR PUBLIC PLAYLIST")
+		authToken = nil
+	}
+	//
+
+	// build the request auth info here... in the case where we need to fetch private
+	// data and we need to fetch the user auth info, we could do it here after attaching
+	// the user's info (user id) probably on the linkInfo and then fetching "user_app" data here
+	// which is what contains the individual auth details.
+	//
+	// for now, we simply get the developer app's auth data using the credentials.
+
+	authInfo := blueprint.UserAuthInfoForRequests{
+		Token:    nil,
+		Platform: info.Platform,
+		AppID:    info.App,
+		User:     info.User,
 	}
 
 	var finalResult = &blueprint.PlaylistConversion{}
@@ -251,7 +302,7 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 	}
 
 	// idSearchResult, sErr := fromService.SearchPlaylistWithID(info)
-	playlistMeta, sErr := fromService.FetchPlaylistMetaInfo(info)
+	playlistMeta, sErr := fromService.FetchPlaylistMetaInfo(info, authToken)
 	if sErr != nil {
 		log.Printf("[internal][platforms][platform_factory]: %v", sErr)
 		return nil, fmt.Errorf("error searching playlist: %v", sErr)
@@ -290,7 +341,8 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 		defer wg.Done()
 		defer close(resultChan)
 
-		fErr := fromService.FetchTracksForSourcePlatform(info, playlistMeta, resultChan)
+		// todo: pass user auth to this also, similar to the above
+		fErr := fromService.FetchTracksForSourcePlatform(info, authToken, playlistMeta, resultChan)
 		if fErr != nil {
 			log.Printf("Error fetching tracks... %v\n\n", fErr)
 		}
@@ -301,12 +353,12 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 	go func() {
 		for result := range resultChan {
 			// cache source track
-			ok := util.CacheTrackByArtistTitle(&result, pc.factory.Red, info.Platform)
+			_, ok := util.CacheTrackByArtistTitle(&result, pc.factory.Red, info.Platform)
 			if !ok {
 				log.Printf("[service][AsynqConvertPlaylist][track-result-cache-error] Error caching source playlist track")
 			}
 
-			ok2 := util.CacheTrackByID(&result, pc.factory.Red, info.Platform)
+			_, ok2 := util.CacheTrackByID(&result, pc.factory.Red, info.Platform)
 			if !ok2 {
 				log.Printf("[service][AsynqConvertPlaylist][track-result-cache-error] Error caching source playlist track")
 			}
@@ -319,22 +371,6 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 				Meta: &blueprint.TrackSearchMeta{
 					TaskID: info.TaskID,
 				},
-			}
-
-			// build the request auth info here... in the case where we need to fetch private
-			// data and we need to fetch the user auth info, we could do it here after attaching
-			// the user's info (user id) probably on the linkInfo and then fetching "user_app" data here
-			// which is what contains the individual auth details.
-			//
-			// for now, we simply get the developer app's auth data using the credentials.
-
-			authInfo := blueprint.UserAuthInfoForRequests{
-				// RefreshToken: refreshToken,
-				// AccessToken:  user.AccessToken,
-				// ExpiresIn:    expiresInString,
-				Platform: info.Platform,
-				AppID:    info.App,
-				// UserID:   user.UserID,
 			}
 
 			targetPlatformTrack, sErr := toService.SearchTrackWithTitle(searchData, authInfo)
@@ -375,12 +411,12 @@ func (pc *Service) AsynqConvertPlaylist(info *blueprint.LinkInfo) (*blueprint.Pl
 			}
 
 			// cache target track result
-			ok3 := util.CacheTrackByArtistTitle(targetPlatformTrack, pc.factory.Red, info.TargetPlatform)
+			_, ok3 := util.CacheTrackByArtistTitle(targetPlatformTrack, pc.factory.Red, info.TargetPlatform)
 			if !ok3 {
 				log.Printf("[service][AsynqConvertPlaylist][track-result-cache-error] Error caching target playlist track")
 			}
 
-			ok4 := util.CacheTrackByID(targetPlatformTrack, pc.factory.Red, info.TargetPlatform)
+			_, ok4 := util.CacheTrackByID(targetPlatformTrack, pc.factory.Red, info.TargetPlatform)
 			if !ok4 {
 				log.Printf("[service][AsynqConvertPlaylist][track-result-cache-error] Error caching target playlist track")
 			}
@@ -472,6 +508,8 @@ func (pc *Service) updatePlatformPlaylistTracks(
 		conversion.Platforms.AppleMusic = tracks
 	case tidal.IDENTIFIER:
 		conversion.Platforms.Tidal = tracks
+	case constants.SoundCloudIdentifier:
+		conversion.Platforms.SoundCloud = tracks
 	default:
 		return fmt.Errorf("unsupported platform: %s", platform)
 	}
@@ -490,6 +528,9 @@ func (pc *Service) updatePlatformTracks(platform string, conversion *blueprint.T
 		conversion.Platforms.Tidal = tracks
 	case ytmusic.IDENTIFIER:
 		conversion.Platforms.YTMusic = tracks
+
+	case constants.SoundCloudIdentifier:
+		conversion.Platforms.SoundCloud = tracks
 
 	default:
 		return fmt.Errorf("unsupported platform: %s", platform)
