@@ -8,8 +8,11 @@ import (
 	"log"
 	"net/url"
 	"orchdio/blueprint"
+	"orchdio/constants"
+	"orchdio/db"
 	"orchdio/util"
 	svixwebhook "orchdio/webhooks/svix"
+	"os"
 	"strings"
 	"time"
 
@@ -30,6 +33,7 @@ type Service struct {
 	PgClient             *sqlx.DB
 	App                  *blueprint.DeveloperApp
 	WebhookSender        svixwebhook.SvixInterface
+	Identifier           string
 }
 
 type WebhookSender interface {
@@ -45,28 +49,132 @@ func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB
 		PgClient:      pgClient,
 		App:           devApp,
 		WebhookSender: webhookSender,
+		Identifier:    constants.SpotifyIdentifier,
 	}
 }
 
-// NewAuthToken returns a new auth token for the spotify integration. This is to be called
-// everytime we make a call that requires user authentication or authorization or uses a specific scope.
-func (s *Service) NewAuthToken() *oauth2.Token {
-	config := &clientcredentials.Config{
-		ClientID:     s.IntegrationAppID,
-		ClientSecret: s.IntegrationAppSecret,
-		TokenURL:     spotifyauth.TokenURL,
+func (s *Service) NewAuthToken(mode string, authInfo *blueprint.UserAuthInfoForRequests) (*oauth2.Token, error) {
+	if authInfo.Token == nil && mode == "private" {
+		log.Println("Trying to fetch private access tokens from pre-existing tokens, which is empty. Check what you're passing and try again")
+		return nil, errors.New("invalid pre-existing tokens")
 	}
 
-	token, err := config.Token(context.Background())
-	if err != nil {
-		if err.Error() == "oauth2: cannot fetch token: 503 Service Unavailable" {
-			log.Printf("\n[services][spotify][base][SearchTrackWithID] error - 503 Service Unavailable\n")
-			return nil
+	if mode == "public" || authInfo.Token == nil {
+		config := &clientcredentials.Config{
+			ClientID:     s.IntegrationAppID,
+			ClientSecret: s.IntegrationAppSecret,
+			TokenURL:     spotifyauth.TokenURL,
 		}
-		log.Printf("\n[services][spotify][base][SearchTrackWithID] error  - could not fetch spotify token: %v\n", err)
-		return nil
+
+		token, err := config.Token(context.Background())
+		if err != nil {
+			if err.Error() == "oauth2: cannot fetch token: 503 Service Unavailable" {
+				log.Printf("\n[services][spotify][base][INewAuthToken] error - 503 Service Unavailable\n")
+				return nil, err
+			}
+			log.Printf("\n[services][spotify][base][SearchTrackWithID] error  - could not fetch spotify token: %v\n", err)
+			return nil, err
+		}
+		return token, nil
 	}
-	return token
+
+	if mode == "private" && authInfo.Token != nil {
+		auth := spotifyauth.New(
+			spotifyauth.WithClientID(s.IntegrationAppID),
+			spotifyauth.WithClientSecret(s.IntegrationAppSecret),
+			spotifyauth.WithRedirectURL(s.App.RedirectURL),
+		)
+
+		hasExpired, err := util.HasTokenExpired(authInfo.Token.ExpiresIn)
+		if err != nil {
+			return nil, err
+		}
+
+		var tokens *oauth2.Token
+
+		if hasExpired {
+			log.Println("User spotify token has expired.. going to refresh and get new tokens")
+
+			// refresh the token
+			refreshedTokens, err := auth.RefreshToken(context.TODO(), &oauth2.Token{
+				RefreshToken: authInfo.Token.RefreshToken,
+			})
+			if err != nil {
+				return nil, err
+			}
+			tokens = refreshedTokens
+			dbN := db.NewDB{DB: s.PgClient}
+			expiresIn := time.Now().Add(time.Hour).Format(time.RFC3339)
+
+			encryptedRefreshToken, err := util.Encrypt([]byte(tokens.RefreshToken), []byte(os.Getenv("ENCRYPTION_SECRET")))
+			if err != nil {
+				return nil, err
+			}
+
+			updateErr := dbN.UpdateUserAppAuthTokens(authInfo.User, tokens.AccessToken, expiresIn, IDENTIFIER, encryptedRefreshToken)
+			if updateErr != nil {
+				return nil, err
+			}
+		} else {
+			log.Println("Token has not expired... going to reuse")
+			tokens = &oauth2.Token{
+				AccessToken:  authInfo.Token.AccessToken,
+				RefreshToken: authInfo.Token.RefreshToken,
+			}
+		}
+
+		return tokens, nil
+	}
+
+	return nil, errors.New("invalid token refresh scheme")
+}
+
+func (s *Service) Tokens(authInfo blueprint.UserAuthInfoForRequests) (*spotifyauth.Authenticator, *oauth2.Token, error) {
+	auth := spotifyauth.New(
+		spotifyauth.WithClientID(s.IntegrationAppID),
+		spotifyauth.WithClientSecret(s.IntegrationAppSecret),
+		spotifyauth.WithRedirectURL(s.App.RedirectURL),
+	)
+
+	hasExpired, err := util.HasTokenExpired(authInfo.Token.ExpiresIn)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var tokens *oauth2.Token
+
+	if hasExpired {
+		log.Println("User spotify token has expired.. going to refresh and get new tokens")
+
+		// refresh the token
+		refreshedTokens, err := auth.RefreshToken(context.TODO(), &oauth2.Token{
+			RefreshToken: authInfo.Token.RefreshToken,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		tokens = refreshedTokens
+		dbN := db.NewDB{DB: s.PgClient}
+		expiresIn := time.Now().Add(time.Hour).Format(time.RFC3339)
+
+		encryptedRefreshToken, err := util.Encrypt([]byte(tokens.RefreshToken), []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if err != nil {
+			return nil, nil, err
+		}
+
+		updateErr := dbN.UpdateUserAppAuthTokens(authInfo.User, tokens.AccessToken, expiresIn, IDENTIFIER, encryptedRefreshToken)
+		if updateErr != nil {
+			return nil, nil, err
+		}
+	} else {
+		log.Println("Token has not expired... going to reuse")
+		tokens = &oauth2.Token{
+			AccessToken:  authInfo.Token.AccessToken,
+			RefreshToken: authInfo.Token.RefreshToken,
+		}
+	}
+
+	return auth, tokens, nil
 }
 
 // NewClient returns a new spotify client
@@ -160,7 +268,6 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData, re
 	log.Printf("\n[controllers][platforms][spotify][ConvertPlaylist] info - found %v tracks on spotify\n", len(spotifySearch.Tracks.Tracks))
 
 	var fullSpotifyTrack spotify.FullTrack
-
 	// we're extracting just the first track.
 	// NB: when the time comes to properly handle the results and return the best match (sometimes its like the 2nd result)
 	// then, this is where to probably start.
@@ -195,7 +302,7 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData, re
 		Cover:         cover,
 	}
 
-	ok := util.CacheTrackByID(&fetchedSpotifyTrack, s.RedisClient, IDENTIFIER)
+	_, ok := util.CacheTrackByID(&fetchedSpotifyTrack, s.RedisClient, IDENTIFIER)
 	if !ok {
 		log.Printf("[services][platforms][spotify][ConvertPlaylist] error - could not save cached result")
 	}
@@ -207,7 +314,7 @@ func (s *Service) SearchTrackWithTitle(searchData *blueprint.TrackSearchData, re
 // the user wants to convert. i.e the track is what the user wants to convert
 // and from the link, we can get the trackID.
 // Basically, the platform the user is trying to convert from.
-func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackSearchResult, error) {
+func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo, authInfo *blueprint.AuthToken) (*blueprint.TrackSearchResult, error) {
 	// the cacheKey. scheme is "spotify:track_id"
 	cacheKey := "spotify:track:" + info.EntityID
 	cachedTrack, err := s.RedisClient.Get(context.Background(), cacheKey).Result()
@@ -219,8 +326,16 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 
 	// we have not cached this track before
 	if err != nil && errors.Is(err, redis.Nil) {
-		log.Printf("\n[services][SearchTrackWithID] function track has not been cached")
-		token := s.NewAuthToken()
+		token, err := s.NewAuthToken("public", &blueprint.UserAuthInfoForRequests{
+			Token: authInfo,
+			User:  info.User,
+		})
+
+		if err != nil {
+			log.Printf("\n[services][spotify][base][FetchTracksForSourcePlatform] error - could not fetch token\n")
+			return nil, err
+		}
+
 		client := s.NewClient(context.Background(), token)
 		results, err := client.GetTrack(context.Background(), spotify.ID(info.EntityID))
 		if err != nil {
@@ -289,16 +404,25 @@ func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackS
 }
 
 // FetchPlaylistMetaInfo fetches metadata for a playlist. It'll always return the latest metadata as we hit the Spotify API.
-func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.PlaylistMetadata, error) {
-	token := s.NewAuthToken()
-	if token == nil {
-		log.Printf("\n[services][spotify][base][SearchPlaylistWithID] error - could not fetch token\n")
-		return nil, errors.New("could not fetch token")
+func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo, authToken *blueprint.AuthToken) (*blueprint.PlaylistMetadata, error) {
+	mode := "private"
+	if authToken == nil && info.User == "" {
+		mode = "public"
+	}
+
+	token, err := s.NewAuthToken(mode, &blueprint.UserAuthInfoForRequests{
+		Token: authToken,
+		User:  info.User,
+	})
+
+	if err != nil {
+		log.Println("Could not fetch token:", err)
+		return nil, err
 	}
 
 	ctx := context.Background()
 	client := s.NewClient(ctx, token)
-	options := spotify.Fields("description,uri,external_urls,snapshot_id,name,images,owner,tracks(total,items(track))")
+	options := spotify.Fields("description,uri,external_urls,snapshot_id,name,images,owner,tracks(total)")
 
 	cacheKey := util.FormatPlatformConversionCacheKey(info.EntityID, IDENTIFIER)
 	_, cacheErr := s.RedisClient.Get(context.Background(), cacheKey).Result()
@@ -340,7 +464,8 @@ func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.Pl
 		// no short url here.
 		// todo: try to pass the entity id here
 		//ShortURL: info.TaskID,
-		ID: string(playlistInfo.ID),
+		ID:     string(playlistInfo.ID),
+		Public: playlistInfo.IsPublic,
 	}
 
 	return playlistMeta, nil
@@ -348,10 +473,14 @@ func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.Pl
 
 // FetchTracksForSourcePlatform fetches the tracks for a given playlist (with playlistID). Its the method used
 // to fetch the tracks in a playlist if the user is trying to convert from spotify to another platform.
-func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlistMeta *blueprint.PlaylistMetadata, resultChan chan blueprint.TrackSearchResult) error {
-	token := s.NewAuthToken()
-	if token == nil {
-		log.Printf("\n[services][spotify][base][SearchPlaylistWithID] error - could not fetch token\n")
+func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, authToken *blueprint.AuthToken, playlistMeta *blueprint.PlaylistMetadata, resultChan chan blueprint.TrackSearchResult) error {
+	token, err := s.NewAuthToken("private", &blueprint.UserAuthInfoForRequests{
+		Token: authToken,
+		User:  info.User,
+	})
+
+	if err != nil {
+		log.Printf("\n[services][spotify][base][FetchTracksForSourcePlatform] error - could not fetch token\n")
 		return errors.New("could not fetch token")
 	}
 
@@ -362,13 +491,13 @@ func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlis
 	cachedSnapshot, cacheErr := s.RedisClient.Get(context.Background(), cacheKey).Result()
 
 	if cacheErr != nil && !errors.Is(cacheErr, redis.Nil) {
-		log.Printf("\n[services][SearchPlaylistWithID] error - Could not fetch snapshot id from cache\n")
+		log.Printf("\n[services][FetchTracksForSourcePlatform] error - Could not fetch snapshot id from cache\n")
 		return cacheErr
 	}
 
 	cachedSnapshotID, snapshotErr := s.RedisClient.Get(context.Background(), util.FormatPlatformPlaylistSnapshotID(IDENTIFIER, info.EntityID)).Result()
 	if snapshotErr != nil && !errors.Is(snapshotErr, redis.Nil) {
-		log.Printf("\n[services][SearchPlaylistWithID] error - Could not fetch snapshot id from cache\n")
+		log.Printf("\n[services][FetchTracksForSourcePlatform] error - Could not fetch snapshot id from cache\n")
 		return snapshotErr
 	}
 
@@ -378,7 +507,7 @@ func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlis
 
 		playlist, cErr := client.GetPlaylistItems(ctx, spotify.ID(info.EntityID))
 		if cErr != nil {
-			log.Printf("\n[services][spotify][base][FetchPlaylistWithID] - Could not fetch playlist from spotify: %v\n", cErr)
+			log.Printf("\n[services][spotify][base][FetchTracksForSourcePlatform] - Could not fetch playlist from spotify: %v\n", cErr)
 			return cErr
 		}
 
@@ -434,10 +563,10 @@ func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlis
 	}
 
 	playlistResult := blueprint.PlaylistSearchResult{}
-	err := json.Unmarshal([]byte(cachedSnapshot), &playlistResult)
-	if err != nil {
-		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not unmarshal playlist: %v\n", err)
-		return err
+	mErr := json.Unmarshal([]byte(cachedSnapshot), &playlistResult)
+	if mErr != nil {
+		log.Printf("\n[services][spotify][base][FetchPlaylistWithID] error - could not unmarshal playlist: %v\n", mErr)
+		return mErr
 	}
 
 	for _, track := range playlistResult.Tracks {
@@ -448,19 +577,19 @@ func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlis
 
 // FetchPlaylistHash fetches the hash of a playlist.
 // DEPRECATED: remove reference to this function in (services/HasPlaylistBeenUpdated)
-func (s *Service) FetchPlaylistHash(token, playlistId string) []byte {
-	t := s.NewAuthToken()
-	client := s.NewClient(context.Background(), t)
-	opts := spotify.Fields("snapshot_id")
+// func (s *Service) FetchPlaylistHash(token, playlistId string) []byte {
+// 	t := s.NewAuthToken()
+// 	client := s.NewClient(context.Background(), t)
+// 	opts := spotify.Fields("snapshot_id")
 
-	info, err := client.GetPlaylist(context.Background(), spotify.ID(playlistId), opts)
-	if err != nil {
-		log.Printf("\n[services][spotify][base][FetchPlaylistHash] error - could not fetch playlist: %v\n", err)
-		return nil
-	}
+// 	info, err := client.GetPlaylist(context.Background(), spotify.ID(playlistId), opts)
+// 	if err != nil {
+// 		log.Printf("\n[services][spotify][base][FetchPlaylistHash] error - could not fetch playlist: %v\n", err)
+// 		return nil
+// 	}
 
-	return []byte(info.SnapshotID)
-}
+// 	return []byte(info.SnapshotID)
+// }
 
 func (s *Service) FetchUserArtists(refreshToken string) (*blueprint.UserLibraryArtists, error) {
 	log.Printf("\n[services][spotify][base][FetchUserArtists] - fetching user's libraryArtists\n")
@@ -570,7 +699,7 @@ func (s *Service) FetchUserInfo(authInfo blueprint.UserAuthInfoForRequests) (*bl
 	//
 	//
 	// todo: use refreshing accessToken using the refreshToken if its expired or use accessToken if it hasnt.
-	client := s.NewClient(context.Background(), &oauth2.Token{RefreshToken: authInfo.RefreshToken})
+	client := s.NewClient(context.Background(), &oauth2.Token{RefreshToken: authInfo.Token.RefreshToken})
 	user, err := client.CurrentUser(context.Background())
 	if err != nil {
 		log.Printf("\n[services][spotify][base][FetchUserInfo] error - could not fetch user info: %v\n", err)

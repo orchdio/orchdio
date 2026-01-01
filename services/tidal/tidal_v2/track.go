@@ -71,7 +71,7 @@ type TrackRelationships struct {
 // TrackRelationship represents a relationship with data and links
 type TrackRelationship struct {
 	Data  []ResourceIdentifier `json:"data,omitempty"`
-	Links RelationshipLinks    `json:"links,omitempty"`
+	Links Links                `json:"links,omitempty"`
 }
 
 // TrackDataLinks contains self link for track data
@@ -167,7 +167,7 @@ type TrackIncludedRelationships struct {
 // TrackIncludedRelationship represents a single relationship in included resources
 type TrackIncludedRelationship struct {
 	Data  []ResourceIdentifier `json:"data,omitempty"`
-	Links RelationshipLinks    `json:"links,omitempty"`
+	Links Links                `json:"links,omitempty"`
 }
 
 // TrackIncludedLinks contains links for included resources

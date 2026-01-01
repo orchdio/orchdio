@@ -62,7 +62,7 @@ type AlbumRelationships struct {
 // AlbumRelationship represents a relationship with data and links
 type AlbumRelationship struct {
 	Data  []ResourceIdentifier `json:"data,omitempty"`
-	Links RelationshipLinks    `json:"links,omitempty"`
+	Links Links                `json:"links,omitempty"`
 }
 
 // AlbumDataLinks contains self link for album data
@@ -150,7 +150,7 @@ type AlbumIncludedRelationships struct {
 // AlbumIncludedRelationship represents a single relationship in included resources
 type AlbumIncludedRelationship struct {
 	Data  []ResourceIdentifier `json:"data,omitempty"`
-	Links RelationshipLinks    `json:"links,omitempty"`
+	Links Links                `json:"links,omitempty"`
 }
 
 // AlbumIncludedLinks contains links for included resources

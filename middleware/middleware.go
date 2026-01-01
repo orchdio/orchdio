@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"orchdio/blueprint"
+	"orchdio/constants"
 	"orchdio/services"
 	"orchdio/services/applemusic"
 	"orchdio/services/deezer"
@@ -50,7 +51,7 @@ func VerifyAppJWT(ctx *fiber.Ctx) error {
 func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 	// adding all in order to support wildcard. when the option is empty, we can presume they want to convert
 	// to all platforms (that they have added their credentials for and the user has authed, that is)
-	platforms := []string{ytmusic.IDENTIFIER, spotify.IDENTIFIER, deezer.IDENTIFIER, applemusic.IDENTIFIER, tidal.IDENTIFIER, "all"}
+	platforms := []string{ytmusic.IDENTIFIER, spotify.IDENTIFIER, deezer.IDENTIFIER, applemusic.IDENTIFIER, tidal.IDENTIFIER, constants.SoundCloudIdentifier, "all"}
 	app := ctx.Locals("app").(*blueprint.DeveloperApp)
 	linkBody := ctx.Body()
 
@@ -130,6 +131,13 @@ func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 		}
 	}
 
+	// in order to handle support for getting private data, in this case, playlists,
+	// we are assuming we only need this supported for playlists. because for most platform,
+	// a single track cannot really be "private".
+	// soundcloud (from the API response body for a Track), seems to have some form of "private" tracks
+	// we do not really care about it FOR NOW.
+	//
+	// todo: extend this to tracks, specifically for soundcloud
 	if strings.Contains(linkInfo.TargetLink, "playlist") {
 		// if the target platform is not set, we'll exit here. keep in mind in case of testing and it doesnt work as before.
 		if conversionBody.TargetPlatform == "" {
@@ -144,10 +152,19 @@ func ExtractLinkInfoFromBody(ctx *fiber.Ctx) error {
 			return util.ErrorResponse(ctx, http.StatusBadRequest, "bad request", "Bad request body. Please make sure you pass a valid target platform")
 		}
 		linkInfo.TargetPlatform = conversionBody.TargetPlatform
+
+		// if conversionBody.User != "" {
+		// 	// fetch the user and then update the linkInfo
+
+		// }
 		// set ctx local called "linkInfo" to the linkInfo type. this is for a playlist conversion.
 		// it looks like: {TargetLink: "https://music.youtube.com/playlist?list=OLAK5uy_m8ZQZ4Z1Z2X4uZL2o8Q", TargetPlatform: "spotify", Entity: "playlist"}
 		ctx.Locals("linkInfo", linkInfo)
 	}
+
+	// set the conversionBody in locals, we want to get some data here, specifically the user id, in the controller
+	// in order to get the appropriate auth tokens down the line.
+	ctx.Locals("conversionBody", conversionBody)
 
 	return ctx.Next()
 }

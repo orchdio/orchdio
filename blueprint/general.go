@@ -141,6 +141,10 @@ type LinkInfo struct {
 	Developer      string `json:"developer,omitempty"`
 	TaskID         string `json:"task_id,omitempty"`
 
+	// the user that this request is serving. This is needed in order to
+	// get the appropriate auth tokens for accessing private data.
+	User string `json:"user,omitempty"`
+
 	// uniqueID stands for the shortURL (some places in the code) and short_id (as stored in the DB)
 	// this is what we end up sending to the user to be able to access a conversion (playlist or track) data.
 	UniqueID string `json:"unique_id,omitempty"`
@@ -149,6 +153,7 @@ type LinkInfo struct {
 type ConversionBody struct {
 	URL            string `json:"url"`
 	TargetPlatform string `json:"target_platform,omitempty"`
+	User           string `json:"user,omitempty"`
 }
 
 type Pagination struct {

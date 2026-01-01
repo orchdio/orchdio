@@ -12,18 +12,21 @@ import (
 	"net/http"
 	"net/url"
 	"orchdio/blueprint"
+	"orchdio/constants"
 	"orchdio/db"
 	"orchdio/db/queries"
+	platform_internal "orchdio/internal/platform"
 	logger2 "orchdio/logger"
 	"orchdio/queue"
 	"orchdio/services"
 	"orchdio/services/applemusic"
 	"orchdio/services/deezer"
+	"orchdio/services/soundcloud"
 	"orchdio/services/spotify"
 	"orchdio/services/tidal"
 	"orchdio/util"
+	svixwebhook "orchdio/webhooks/svix"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -59,6 +62,10 @@ func (a *Controller) AppAuthRedirect(ctx *fiber.Ctx) error {
 	appScopes := ctx.Query("scopes")
 	developerPubKey := ctx.Locals("app_pub_key")
 
+	// soundcloud related stuff.. we need email passed here in order to do the Orchdio linking after auth
+	// because unfortunately soundcloud doesnt return email.
+	soundcloudEmail := ctx.Query("email")
+
 	// fixme: this seems redundant in most cases i am using it. remove where unnecessary and consider the possible useful cases.
 	loggerOpts := &blueprint.OrchdioLoggerOptions{
 		ApplicationPublicKey: zap.String("pubkey:", developerPubKey.(string)).String,
@@ -82,7 +89,10 @@ func (a *Controller) AppAuthRedirect(ctx *fiber.Ctx) error {
 		hostname = fmt.Sprintf("https://%s", hostname)
 	}
 
-	if appScopes == "" && platform != deezer.IDENTIFIER {
+	// soundcloud and deezer are both platforms that don't require scopes to be specified when authing
+	// Deezer auth flow is different (not actually really oauth2/2.1 compatible) from Soundcloud, soundcloud
+	// although, requires oauth2.1
+	if appScopes == "" && !lo.Contains([]string{constants.DeezerIdentifier, constants.SoundCloudIdentifier}, platform) {
 		logger.Error("[controllers][AppAuthRedirect] developer -  error: no scopes provided while trying to connect platform.", zap.String("platform", platform))
 		return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "No scopes provided. Please pass the scope you want to request from the user")
 	}
@@ -130,7 +140,10 @@ func (a *Controller) AppAuthRedirect(ctx *fiber.Ctx) error {
 	}
 
 	// then set the raw verifier in redis...
-	saveErr := a.Redis.Set(context.Background(), fmt.Sprintf("%s-verifier-raw", developerApp.UID.String()), rawVerifier, 0).Err()
+	// this seems to be a security risk: all integrations to auth for, will share the same stored verifier until they're replaced.
+	// fixme: delimit using the specific platform. then delete from redis store in the CompleteUserAuth flow or whereever the auth
+	// flow is concluded.
+	saveErr := a.Redis.Set(context.Background(), fmt.Sprintf("%s-verifier-raw-%s", developerApp.UID.String(), platform), rawVerifier, 0).Err()
 	if saveErr != nil {
 		log.Println("Could not save raw verifier in redis.")
 		return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
@@ -155,6 +168,7 @@ func (a *Controller) AppAuthRedirect(ctx *fiber.Ctx) error {
 		RedirectURL: redirectURL,
 		Scopes:      authScopes,
 		Platform:    platform,
+		Email:       soundcloudEmail,
 	}
 
 	switch platform {
@@ -271,7 +285,7 @@ func (a *Controller) AppAuthRedirect(ctx *fiber.Ctx) error {
 
 		dErr := json.Unmarshal(credentials, &decryptedAppleCredentials)
 		if dErr != nil {
-			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to deserialize deezer integrationCredentials", zap.Error(dErr))
+			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to deserialize apple music integrationCredentials", zap.Error(dErr))
 			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
@@ -285,6 +299,44 @@ func (a *Controller) AppAuthRedirect(ctx *fiber.Ctx) error {
 		redirectURL, _ := applemusic.FetchAuthURL(string(encryptedToken), redirectURL, authScopes, &decryptedAppleCredentials)
 		response.URL = string(redirectURL)
 		return util.SuccessResponse(ctx, http.StatusOK, response)
+
+	case constants.SoundCloudIdentifier:
+		if soundcloudEmail == "" {
+			logger.Error("[controllers][AppAuthRedirect] developer -  error: Email not passed in soundcloud auth")
+			return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Associated email is not passed for Soundcloud Auth")
+		}
+
+		if string(developerApp.SoundcloudCredentials) == "" {
+			logger.Error("[controllers][AppAuthRedirect] developer -  error: Soundcloud integration is not enabled for this app")
+			return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "SoundCloud integration is not enabled for this app. Please make sure you update the app with your Deezer credentials")
+		}
+
+		var decryptedSoundcloudCredentials blueprint.IntegrationCredentials
+		credentials, decErr := util.Decrypt(developerApp.SoundcloudCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
+		if decErr != nil {
+			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to decrypt soundcloud integrationCredentials", zap.Error(decErr))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+		}
+
+		dErr := json.Unmarshal(credentials, &decryptedSoundcloudCredentials)
+		if dErr != nil {
+			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to deserialize soundcloud integrationCredentials", zap.Error(dErr))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+		}
+
+		encryptedToken, sErr := util.SignAuthJwt(&redirectToken)
+		if sErr != nil {
+			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to sign soundcloud auth jwt", zap.Error(sErr))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+		}
+
+		redirectURL, err := soundcloud.FetchAuthURL(string(encryptedToken), redirectURL, []string{""}, &decryptedSoundcloudCredentials, rawVerifier)
+		if err != nil {
+			logger.Error("[controllers][AppAuthRedirect] developer -  error: unable to fetch soundcloud auth url", zap.Error(err))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", err.Error())
+		}
+		response.URL = string(redirectURL)
+		return util.SuccessResponse(ctx, http.StatusOK, response)
 	}
 
 	return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred in auth. perhaps not implemented yet")
@@ -293,12 +345,7 @@ func (a *Controller) AppAuthRedirect(ctx *fiber.Ctx) error {
 // HandleAppAuthRedirect handles the redirect from the platform auth page to orchdio.
 func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 
-	updatedUserCredentials := struct {
-		Username   string `json:"username,omitempty"`
-		Platform   string `json:"platform,omitempty"`
-		PlatformId string `json:"platform_id,omitempty"`
-		Token      []byte `json:"token,omitempty"`
-	}{}
+	updatedUserCredentials := blueprint.UserAuthCredentials{}
 
 	developerPubKey := ctx.Locals("app_pub_key")
 	platform := ctx.Locals("platform").(string)
@@ -498,8 +545,7 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		ctxPlatform := ctx.Params("platform")
 		// this is for the error code that may be returned for deezer (only)
 		errorCode := ctx.Query("error")
-		encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
-		if state == "" && ctxPlatform != applemusic.IDENTIFIER {
+		if state == "" {
 			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: no state present. please pass a state")
 			if ctxPlatform == deezer.IDENTIFIER {
 				return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "bad request", "You must provide a state. A state is the same as your Orchdio app id and must be updated both in your app credentials on Orchdio and in your app profile on Deezer")
@@ -612,6 +658,23 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		// to complete the auth flow on the authorizing platform. It is different from the developer app redirect url
 		// as the dev app redirect url is the final redirect at the end of this flow/controller.
 		redirectURL := fmt.Sprintf("%s/v1/auth/%s/callback", hostname, ctxPlatform)
+
+		rawVerifier, err := a.Redis.Get(context.Background(), fmt.Sprintf("%s-verifier-raw-%s", app.UID.String(), decodedState.Platform)).Result()
+		if err != nil {
+			log.Println("Error fetching rawVerifier from redis")
+			log.Println(err)
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+		}
+
+		whSender := svixwebhook.New(os.Getenv("SVIX_API_KEY"), false)
+		platformServiceFactory := platform_internal.NewPlatformServiceFactory(a.DB, a.Redis, app, whSender)
+		credentials, err := platformServiceFactory.GetCredentials(platform)
+		if err != nil {
+			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: No %s credentials found for app. Please add %s credential", zap.String("platform", platform), zap.String("platform", platform), zap.String("app_pubkey", app.PublicKey.String()))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+		}
+
+		var userEmail string
 		switch decodedState.Platform {
 		// spotify auth flow
 		case spotify.IDENTIFIER:
@@ -630,30 +693,7 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 				return nil
 			}()
 
-			if app.SpotifyCredentials == nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: No spotify credentials found for app. Please add spotify credential", zap.String("app_pubkey", app.PublicKey.String()))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-
-			// decrypt the app's integration credentials
-			decryptedIntegrationCredentials, dErr := util.Decrypt(app.SpotifyCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
-			if dErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to decrypt spotify credentials", zap.Error(dErr))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-			integrationCredentials := &blueprint.IntegrationCredentials{}
-			err = json.Unmarshal(decryptedIntegrationCredentials, integrationCredentials)
-			if err != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to unmarshal spotify credentials", zap.Error(err))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-
-			verifierRedisRecord := a.Redis.Get(context.Background(), fmt.Sprintf("%s-verifier-raw", app.UID.String()))
-			if verifierRedisRecord.Err() != nil {
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "Could not fetch raw code verifier for app")
-			}
-
-			client, oauthToken, cErr := spotify.CompleteUserAuth(ctx.Context(), r, redirectURL, integrationCredentials, verifierRedisRecord.Val())
+			userTokens, spotifyUser, authedUserCredentials, cErr := spotify.CompleteUserAuth(ctx.Context(), r, redirectURL, credentials, rawVerifier)
 			if cErr != nil {
 				// possible spotify auth errors.
 				if errors.Is(err, blueprint.ErrInvalidAuthCode) {
@@ -673,64 +713,12 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
-			encryptedRefreshToken, rErr := util.Encrypt([]byte(oauthToken.RefreshToken), []byte(encryptionSecretKey))
-			if rErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to encrypt spotify refresh token", zap.Error(rErr))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-
-			user, uErr := client.CurrentUser(ctx.Context())
-			if uErr != nil {
-				if strings.Contains(uErr.Error(), blueprint.ErrSpotifyUserNotRegistered) {
-					logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: user not registered", zap.Error(uErr))
-					return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "You have not been added to the waitlist for access to spotify. Please join the waitlist and try again.")
-				}
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to get current user during auth", zap.Error(uErr))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-
-			newUser := a.DB.QueryRowx(queries.CreateUserQuery, user.Email, uniqueId)
-			scErr := newUser.StructScan(userProfile)
-			if scErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to scan user during final auth", zap.Error(scErr))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-
-			// set the usernames and platform ids for spotify
-			updatedUserCredentials.Username = user.DisplayName
-			updatedUserCredentials.PlatformId = user.ID
-			updatedUserCredentials.Platform = spotify.IDENTIFIER
-			updatedUserCredentials.Token = encryptedRefreshToken
-
-			userPlatformToken = encryptedRefreshToken
-			userPlatformAccessToken = oauthToken.AccessToken
+			updatedUserCredentials = *authedUserCredentials
+			userEmail = spotifyUser.Email
 			expiresAt := time.Now().Add(time.Hour)
 			accessTokenExpiresIn = expiresAt.Format(time.RFC3339)
-
-			// get the user's apps that they've authed
-			userAppsInfo, err := database.FetchUserAppsInfoByUserUUID(userProfile.UUID.String(), app.UID.String())
-			if err != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch user apps info", zap.Error(err), zap.String("platform", "spotify"))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-
-			t := blueprint.OrchdioUserToken{
-				RegisteredClaims:   jwt.RegisteredClaims{},
-				Email:              userProfile.Email,
-				Username:           user.DisplayName,
-				UUID:               userProfile.UUID,
-				Platforms:          userAppsInfo,
-				LastAuthedPlatform: spotify.IDENTIFIER,
-			}
-
-			authT, sErr := util.SignJwt(&t)
-			if sErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign spotify auth jwt", zap.Error(sErr))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-			authedUserEmail = userProfile.Email
-			// update the redirect url to the developer app redirect url. this is the final redirect url at the end of the auth flow
-			redirectURL = fmt.Sprintf("%s?token=%s", app.RedirectURL, string(authT))
+			userPlatformAccessToken = userTokens.AccessToken
+			userPlatformToken = authedUserCredentials.Token
 
 		case tidal.IDENTIFIER:
 			r, rErr := http.NewRequest("GET", string(ctx.Request().RequestURI()), nil)
@@ -739,53 +727,9 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
-			if app.TidalCredentials == nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: No tidal credentials found for app. Please add tidal credential", zap.String("app_pubkey", app.PublicKey.String()))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-
-			decryptedIntegrationCredentials, dErr := util.Decrypt(app.TidalCredentials, []byte(os.Getenv("ENCRYPTION_SECRET")))
-			if dErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to decrypt tidal credentials", zap.Error(dErr))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-
-			integrationCredentials := &blueprint.IntegrationCredentials{}
-			err = json.Unmarshal(decryptedIntegrationCredentials, integrationCredentials)
-			if err != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to unmarshal tidal credentials", zap.Error(err))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-
-			rawVerifier, err := a.Redis.Get(context.Background(), fmt.Sprintf("%s-verifier-raw", app.UID.String())).Result()
-			if err != nil {
-				log.Println("Error fetching rawVerifier from redis")
-				log.Println(err)
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-
-			tidalClient, oauthToken, cErr := tidal.CompleteUserAuth(ctx.Context(), r, redirectURL, integrationCredentials, rawVerifier)
+			tidalUser, oauthToken, userCreds, cErr := tidal.CompleteUserAuth(ctx.Context(), r, redirectURL, credentials, rawVerifier)
 			if cErr != nil {
 				logger.Error("[controllers][HandleAppAuthRedirect] developer - error: could not complete user tidal auth", zap.Error(err))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-
-			encryptedRefreshToken, rErr := util.Encrypt([]byte(oauthToken.RefreshToken), []byte(encryptionSecretKey))
-			if rErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to encrypt tidal refresh token", zap.Error(rErr))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-
-			user, err := tidalClient.CurrentUser(context.TODO())
-			if err != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch tidal user", zap.Error(err))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-
-			newUser := a.DB.QueryRowx(queries.CreateUserQuery, user.Data.Attributes.Email, uniqueId)
-			scErr := newUser.StructScan(userProfile)
-			if scErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to scan tidal user during final auth", zap.Error(scErr))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
@@ -793,43 +737,11 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			// their username will be their email. in the API responses, this is probably not a good idea but at the same time
 			// trying to stay in standards with the developer guideline, we'd need to expose this to the API results
 			// consumed by 3rd party integrations.
-			// fixme: find a way around this user experience quagmire.
-			updatedUserCredentials.Username = user.Data.Attributes.Username
-			updatedUserCredentials.PlatformId = user.Data.ID
-			updatedUserCredentials.Platform = tidal.IDENTIFIER
-			updatedUserCredentials.Token = encryptedRefreshToken
-
-			// fixme: note this part until stable
-			userPlatformToken = encryptedRefreshToken
+			updatedUserCredentials = *userCreds
+			userEmail = tidalUser.Data.Attributes.Email
+			accessTokenExpiresIn = time.Now().Add(time.Hour).Format(time.RFC3339)
 			userPlatformAccessToken = oauthToken.AccessToken
-			expiresAt := time.Now().Add(time.Hour)
-			accessTokenExpiresIn = expiresAt.Format(time.RFC3339)
-
-			userAppsInfo, err := database.FetchUserAppsInfoByUserUUID(userProfile.UUID.String(), app.UID.String())
-			if err != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch user apps info", zap.Error(err), zap.String("platform", "spotify"))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-
-			t := blueprint.OrchdioUserToken{
-				RegisteredClaims:   jwt.RegisteredClaims{},
-				Email:              userProfile.Email,
-				Username:           user.Data.Attributes.Username,
-				UUID:               userProfile.UUID,
-				Platforms:          userAppsInfo,
-				LastAuthedPlatform: spotify.IDENTIFIER,
-			}
-
-			authT, sErr := util.SignJwt(&t)
-			if sErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign tidal auth jwt", zap.Error(sErr))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-			authedUserEmail = userProfile.Email
-			// update the redirect url to the developer app redirect url. this is the final redirect url at the end of the auth flow
-			redirectURL = fmt.Sprintf("%s?token=%s", app.RedirectURL, string(authT))
-
-			// todo: then get the current user, to test if the user part also works
+			userPlatformToken = userCreds.Token
 
 			// deezer auth flow
 		case deezer.IDENTIFIER:
@@ -844,22 +756,7 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 				return util.ErrorResponse(ctx, fiber.StatusUnauthorized, "unauthorized", "Deezer app access denied")
 			}
 
-			var deezerCredentials blueprint.IntegrationCredentials
-			creds, credErr := util.Decrypt(app.DeezerCredentials, []byte(encryptionSecretKey))
-			if credErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to decrypt deezer credentials", zap.Error(credErr))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-
-			err = json.Unmarshal(creds, &deezerCredentials)
-			if err != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to unmarshal deezer credentials", zap.Error(err))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-
-			deezerAuth := deezer.NewDeezerAuth(deezerCredentials.AppID, deezerCredentials.AppSecret, redirectURL)
-			deezerToken := deezerAuth.FetchAccessToken(code)
-			deezerUser, aErr := deezerAuth.CompleteUserAuth(deezerToken)
+			deezerUser, userCredentials, aErr := deezer.CompleteUserAuth(credentials, redirectURL, code)
 			if aErr != nil {
 				if errors.Is(err, blueprint.ErrInvalidPermissions) {
 					logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: deezer returned an invalid permissions error", zap.Error(aErr))
@@ -880,57 +777,46 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
-			encryptedRefreshToken, encErr := util.Encrypt(deezerToken, []byte(encryptionSecretKey))
-			if encErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to encrypt deezer refresh token", zap.Error(encErr))
+			updatedUserCredentials = *userCredentials
+			userEmail = deezerUser.Email
+			accessTokenExpiresIn = time.Now().Add(time.Hour).Format(time.RFC3339)
+			userPlatformToken = userCredentials.Token
+
+		// here is for soundcloud
+		case constants.SoundCloudIdentifier:
+			if decodedState.Email == "" {
+				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: Email is not present while completing auth. Bad request")
+				return util.ErrorResponse(ctx, fiber.StatusBadRequest, "bad request", "Invalid auth request")
+			}
+
+			r, rErr := http.NewRequest("GET", string(ctx.Request().RequestURI()), nil)
+			if rErr != nil {
+				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to create new http request for soundcloud auth", zap.Error(rErr))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
-			deezerID := strconv.Itoa(deezerUser.ID)
-			newUser := a.DB.QueryRowx(queries.CreateUserQuery, deezerUser.Email, uniqueId)
-
-			err = newUser.StructScan(userProfile)
-			if err != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to scan deezer user during final auth", zap.Error(err))
+			_, oauthToken, userCreds, cErr := soundcloud.CompleteUserAuth(ctx.Context(), r, redirectURL, credentials, rawVerifier)
+			if cErr != nil {
+				logger.Error("[controllers][HandleAppAuthRedirect] developer - error: could not complete user soundcloud auth", zap.Error(err))
 				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 			}
 
-			updatedUserCredentials.Username = deezerUser.Name
-			updatedUserCredentials.PlatformId = deezerID
-			updatedUserCredentials.Platform = deezer.IDENTIFIER
-			updatedUserCredentials.Token = encryptedRefreshToken
+			updatedUserCredentials = *userCreds
+			userEmail = decodedState.Email
+			accessTokenExpiresIn = time.Now().Add(time.Hour).Format(time.RFC3339)
+			userPlatformAccessToken = oauthToken.AccessToken
+			userPlatformToken = userCreds.Token
 
-			// get the user's apps that they've authed
-			userAppsInfo, err := database.FetchUserAppsInfoByUserUUID(userProfile.UUID.String(), app.UID.String())
-			if err != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch user apps info", zap.Error(err))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-
-			userPlatformToken = encryptedRefreshToken
-
-			// generate jwt token for orchdio labs
-			t := blueprint.OrchdioUserToken{
-				RegisteredClaims:   jwt.RegisteredClaims{},
-				Email:              deezerUser.Email,
-				Username:           deezerUser.Name,
-				UUID:               userProfile.UUID,
-				Platforms:          userAppsInfo,
-				LastAuthedPlatform: deezer.IDENTIFIER,
-			}
-
-			authToken, sErr := util.SignJwt(&t)
-			if sErr != nil {
-				logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign deezer auth jwt", zap.Error(sErr))
-				return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
-			}
-			authedUserEmail = deezerUser.Email
-			redirectURL = fmt.Sprintf("%s?token=%s", app.RedirectURL, string(authToken))
-
-		// redirect to the redirect url from the state token.
 		default:
 			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: invalid platform", zap.String("platform", decodedState.Platform))
 			return util.ErrorResponse(ctx, fiber.StatusNotImplemented, "unauthorized", "invalid platform")
+		}
+
+		newUser := a.DB.QueryRowx(queries.CreateUserQuery, userEmail, uniqueId)
+		scErr := newUser.StructScan(userProfile)
+		if scErr != nil {
+			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to scan user during final auth", zap.Error(scErr))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
 		}
 
 		logger.Info("[controllers][HandleAppAuthRedirect] developer -  App authenticating user is", zap.String("app_name", app.Name))
@@ -944,6 +830,7 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			User:         userProfile.UUID,
 			ExpiresIn:    accessTokenExpiresIn,
 			AccessToken:  userPlatformAccessToken,
+			LastAuthedAt: time.Now().Format(time.RFC3339),
 		}
 
 		// userAppIDBytes might be nil and error nil at the same time. in this case it means that the user already has an app,
@@ -985,7 +872,7 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 			App:  taskApp,
 			From: os.Getenv("ALERT_EMAIL"),
 			To:   authedUserEmail,
-			Payload: map[string]interface{}{
+			Payload: map[string]any{
 				"APP_NAME": app.Name,
 				"PLATFORM": strings.Title(decodedState.Platform),
 				"SCOPES":   services.BuildScopesExplanation(decodedState.Scopes, decodedState.Platform),
@@ -996,8 +883,33 @@ func (a *Controller) HandleAppAuthRedirect(ctx *fiber.Ctx) error {
 		// schedule a job to send notification email
 		_ = queue.NewOrchdioQueue(a.AsyncClient, a.DB, a.Redis, a.AsynqRouter)
 		logger.Info("[controllers][HandleAppAuthRedirect] developer -  user authorization and authentication done. Redirecting")
+
+		// final stufff
+		userAppsInfo, err := database.FetchUserAppsInfoByUserUUID(userProfile.UUID.String(), app.UID.String())
+		if err != nil {
+			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to fetch user apps info", zap.Error(err), zap.String("platform", "spotify"))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+		}
+
+		t := blueprint.OrchdioUserToken{
+			RegisteredClaims:   jwt.RegisteredClaims{},
+			Email:              userProfile.Email,
+			Username:           updatedUserCredentials.Username,
+			UUID:               userProfile.UUID,
+			Platforms:          userAppsInfo,
+			LastAuthedPlatform: spotify.IDENTIFIER,
+		}
+
+		authT, sErr := util.SignJwt(&t)
+		if sErr != nil {
+			logger.Error("[controllers][HandleAppAuthRedirect] developer -  error: unable to sign spotify auth jwt", zap.Error(sErr))
+			return util.ErrorResponse(ctx, fiber.StatusInternalServerError, "internal error", "An internal error occurred")
+		}
+		authedUserEmail = userProfile.Email
+		// update the redirect url to the developer app redirect url. this is the final redirect url at the end of the auth flow
+		redirectURL = fmt.Sprintf("%s?token=%s", app.RedirectURL, string(authT))
 		return ctx.Redirect(redirectURL, fiber.StatusTemporaryRedirect)
 	}
 
-	return util.ErrorResponse(ctx, fiber.StatusNotImplemented, "not implemented", "invalid auth verb")
+	return util.ErrorResponse(ctx, fiber.StatusBadRequest, "invalid auth request", "invalid auth verb")
 }

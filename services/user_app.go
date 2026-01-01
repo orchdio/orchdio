@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"orchdio/blueprint"
+	"orchdio/constants"
 	"orchdio/db"
 	"orchdio/db/queries"
 	"orchdio/services/applemusic"
@@ -29,7 +30,7 @@ func NewUserDevAppController(db *sqlx.DB) *UserDevApp {
 
 func (u *UserDevApp) CreateOrUpdateUserApp(body *blueprint.CreateNewUserAppData) ([]byte, error) {
 	log.Print("[controllers][developer][user_app] - creating user app")
-	platforms := []string{applemusic.IDENTIFIER, deezer.IDENTIFIER, tidal.IDENTIFIER, spotify.IDENTIFIER}
+	platforms := []string{applemusic.IDENTIFIER, deezer.IDENTIFIER, tidal.IDENTIFIER, spotify.IDENTIFIER, constants.SoundCloudIdentifier}
 
 	var userApp blueprint.UserApp
 	database := db.NewDB{DB: u.DB}

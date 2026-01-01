@@ -203,6 +203,7 @@ type DeveloperApp struct {
 	AppleMusicCredentials []byte    `json:"applemusic_credentials,omitempty" db:"applemusic_credentials"`
 	DeezerCredentials     []byte    `json:"deezer_credentials,omitempty" db:"deezer_credentials"`
 	TidalCredentials      []byte    `json:"tidal_credentials,omitempty" db:"tidal_credentials"`
+	SoundcloudCredentials []byte    `json:"soundcloud_credentials,omitempty" db:"soundcloud_credentials"`
 	DeezerState           string    `json:"deezer_state,omitempty" db:"deezer_state,omitempty"`
 	WebhookAppID          string    `json:"webhook_app_id,omitempty" db:"webhook_app_id,omitempty"`
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"orchdio/blueprint"
+	"orchdio/constants"
 	"orchdio/util"
 	"strings"
 	"time"
@@ -33,24 +34,26 @@ type Service struct {
 	IntegrationAppSecret string
 	IntegrationAppID     string
 	App                  *blueprint.DeveloperApp
+	Identifier           string
 }
 
 func NewService(redisClient *redis.Client, devApp *blueprint.DeveloperApp) *Service {
 	return &Service{
 		RedisClient: redisClient,
 		App:         devApp,
+		Identifier:  constants.YoutubeMusicIdentifier,
 		// fixme(note): we dont need this for now.
 		//IntegrationAppID:     integrationAppID,
 		//IntegrationAppSecret: integrationAppSecret,
 	}
 }
 
-func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlistMeta *blueprint.PlaylistMetadata, result chan blueprint.TrackSearchResult) error {
+func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, authToken *blueprint.AuthToken, playlistMeta *blueprint.PlaylistMetadata, result chan blueprint.TrackSearchResult) error {
 	log.Println("YTmusic not implemented yet...")
 	return blueprint.ErrNotImplemented
 }
 
-func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.PlaylistMetadata, error) {
+func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo, authToken *blueprint.AuthToken) (*blueprint.PlaylistMetadata, error) {
 	// todo: implement playlist meta info fetching
 	return nil, nil
 }
@@ -165,7 +168,7 @@ func (s *Service) CachePlaylistTracksWithID(tracks *[]blueprint.TrackSearchResul
 }
 
 // SearchTrackWithID fetches a track from the ID using the link.
-func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackSearchResult, error) {
+func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo, authToken *blueprint.AuthToken) (*blueprint.TrackSearchResult, error) {
 	cacheKey := "ytmusic:track:" + info.EntityID
 	cachedTrack, err := s.RedisClient.Get(context.Background(), cacheKey).Result()
 

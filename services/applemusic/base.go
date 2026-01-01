@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"orchdio/blueprint"
+	"orchdio/constants"
 	"orchdio/util"
 	"os"
 	"strings"
@@ -27,6 +28,7 @@ type Service struct {
 	App               *blueprint.DeveloperApp
 	RedisClient       *redis.Client
 	PgClient          *sqlx.DB
+	Identifier        string
 }
 
 func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB, redisClient *redis.Client, devApp *blueprint.DeveloperApp) *Service {
@@ -40,11 +42,12 @@ func NewService(credentials *blueprint.IntegrationCredentials, pgClient *sqlx.DB
 		RedisClient:       redisClient,
 		PgClient:          pgClient,
 		App:               devApp,
+		Identifier:        constants.AppleMusicIdentifier,
 	}
 }
 
 // SearchTrackWithID fetches a track from the ID using the link.
-func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo) (*blueprint.TrackSearchResult, error) {
+func (s *Service) SearchTrackWithID(info *blueprint.LinkInfo, authInfo *blueprint.AuthToken) (*blueprint.TrackSearchResult, error) {
 	cacheKey := "applemusic:track:" + info.EntityID
 	_, err := s.RedisClient.Get(context.Background(), cacheKey).Result()
 	if err != nil && err != redis.Nil {
@@ -288,12 +291,12 @@ func (s *Service) FetchTracks(tracks []blueprint.PlatformSearchTrack, red *redis
 	return &results, &omittedTracks, nil
 }
 
-func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, playlistMeta *blueprint.PlaylistMetadata, result chan blueprint.TrackSearchResult) error {
+func (s *Service) FetchTracksForSourcePlatform(info *blueprint.LinkInfo, authToken *blueprint.AuthToken, playlistMeta *blueprint.PlaylistMetadata, result chan blueprint.TrackSearchResult) error {
 	log.Println("Apple music not yet implemented...")
 	return blueprint.ErrNotImplemented
 }
 
-func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo) (*blueprint.PlaylistMetadata, error) {
+func (s *Service) FetchPlaylistMetaInfo(info *blueprint.LinkInfo, authToken *blueprint.AuthToken) (*blueprint.PlaylistMetadata, error) {
 
 	log.Print("Apple music support is disabled for now..")
 	return nil, blueprint.EnoResult

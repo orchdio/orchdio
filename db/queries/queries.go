@@ -59,7 +59,7 @@ const UpdateTaskStatus = `UPDATE tasks SET status = $2, updated_at = now() WHERE
 const UpdateTaskResult = `UPDATE tasks SET result = $2, updated_at = now() WHERE uuid = $1 RETURNING result;`
 
 const FetchTask = `SELECT id, uuid, entity_id, created_at, updated_at, app, status, coalesce(result, '{}') as result, coalesce(shortid, '') as shortid FROM tasks WHERE uuid= $1;`
-const FetchTaskByShortID = `SELECT id, uuid, entity_id, created_at, updated_at, app, status, coalesce(result, '{}') as result FROM tasks WHERE shortid = $1;`
+const FetchTaskByShortID = `SELECT id, uuid, entity_id, created_at, updated_at, app, status, coalesce(result, '{}') as result FROM tasks WHERE trim(shortid) = $1;`
 const DeleteTask = `DELETE FROM tasks WHERE uuid = $1;`
 
 const CreateOrAddSubscriberFollow = `INSERT INTO follows(uuid, developer, entity_id, subscribers, entity_url, created_at, updated_at, app) values ($1, $2, $3, $4, $5, now(), now(), $6)

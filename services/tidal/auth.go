@@ -6,9 +6,13 @@ import (
 	"log"
 	"net/http"
 	"orchdio/blueprint"
+	"orchdio/constants"
 	"orchdio/services/tidal/tidal_v2"
 	tidal_auth "orchdio/services/tidal/tidal_v2/auth"
+	"orchdio/util"
+	"os"
 
+	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 )
 
@@ -36,11 +40,11 @@ func FetchAuthURL(state, redirectURL string, scopes []string,
 	return []byte(url), nil
 }
 
-func CompleteUserAuth(ctx context.Context, req *http.Request, redirectURL string, integrationCredentials *blueprint.IntegrationCredentials, verifier string) (*tidal_v2.TidalClient, *oauth2.Token, error) {
+func CompleteUserAuth(ctx context.Context, req *http.Request, redirectURL string, integrationCredentials *blueprint.IntegrationCredentials, verifier string) (*tidal_v2.UserProfile, *oauth2.Token, *blueprint.UserAuthCredentials, error) {
 
 	if redirectURL == "" {
 		log.Printf("[services][auth][tidal] error - Redirect URI is empty")
-		return nil, nil, errors.New("redirect URI is empty")
+		return nil, nil, nil, errors.New("redirect URI is empty")
 	}
 
 	state := req.FormValue("state")
@@ -53,7 +57,7 @@ func CompleteUserAuth(ctx context.Context, req *http.Request, redirectURL string
 	if err != nil {
 		log.Println("[services][auth][TIDAL] CompleteUserAuth - could not create new tidal auth client")
 		log.Println(err)
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	token, err := tAuth.Token(ctx, state, req,
@@ -63,9 +67,29 @@ func CompleteUserAuth(ctx context.Context, req *http.Request, redirectURL string
 	if err != nil {
 		log.Println("[services][auth][TIDAL] CompleteUserAuth - could not fetch oauth token from request")
 		log.Println(err)
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+
+	encryptionSecretKey := os.Getenv("ENCRYPTION_SECRET")
+	encryptedRefreshToken, rErr := util.Encrypt([]byte(token.RefreshToken), []byte(encryptionSecretKey))
+	if rErr != nil {
+		log.Println("Could not encrypt refresh token during user auth completion on TIDAL")
+		return nil, nil, nil, err
 	}
 
 	tClient := tidal_v2.NewTidalClient(tAuth.Client(req.Context(), token))
-	return tClient, token, nil
+	// get the current user
+	user, err := tClient.CurrentUser(ctx)
+	if err != nil {
+		log.Println("[controllers][CompleteUserAuth] developer -  error: unable to fetch tidal user", zap.Error(err))
+		return nil, nil, nil, err
+	}
+
+	userCreds := &blueprint.UserAuthCredentials{
+		Username:   user.Data.Attributes.Username,
+		Platform:   constants.TidalIdentifier,
+		PlatformId: user.Data.ID,
+		Token:      encryptedRefreshToken,
+	}
+	return user, token, userCreds, nil
 }

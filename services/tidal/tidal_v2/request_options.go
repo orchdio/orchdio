@@ -19,6 +19,8 @@ type TrackIncludeOption string
 // AlbumIncludeOption represents valid include options for album endpoints
 type AlbumIncludeOption string
 
+type PlaylistItemsIncludeOption string
+
 const (
 	PlaylistIncludeCoverArt      PlaylistIncludeOption = "coverArt"
 	PlaylistIncludeItems         PlaylistIncludeOption = "items"
@@ -58,6 +60,9 @@ const (
 	AlbumIncludeSimilarAlbums    AlbumIncludeOption = "similarAlbums"
 	AlbumIncludeOwners           AlbumIncludeOption = "owners"
 	AlbumIncludeSuggestCoverArts AlbumIncludeOption = "owners"
+
+	// playlist item include options
+	PlaylistItemsInclude PlaylistItemsIncludeOption = "items"
 )
 
 type requestOptions struct {
@@ -140,6 +145,10 @@ func IncludeInSearch(options ...SearchIncludeOption) RequestOption {
 }
 
 func IncludeInSearchSuggestion(options ...SearchSuggestionIncludeOption) RequestOption {
+	return includeOption(options...)
+}
+
+func IncludeInPlaylistItems(options ...PlaylistItemsIncludeOption) RequestOption {
 	return includeOption(options...)
 }
 

@@ -37,6 +37,7 @@ type PlaylistConversion struct {
 		Spotify    *PlatformPlaylistTrackResult `json:"spotify,omitempty"`
 		Tidal      *PlatformPlaylistTrackResult `json:"tidal,omitempty"`
 		AppleMusic *PlatformPlaylistTrackResult `json:"applemusic,omitempty"`
+		SoundCloud *PlatformPlaylistTrackResult `json:"soundcloud,omitempty"`
 	} `json:"platforms,omitempty"`
 	OmittedTracks *[]OmittedTracks `json:"empty_tracks,omitempty"`
 	Meta          PlaylistMetadata `json:"meta,omitempty"`
@@ -62,6 +63,7 @@ type PlaylistMetadata struct {
 	LastUpdated string `json:"last_updated,omitempty"`
 	Checksum    string `json:"checksum,omitempty"`
 	ID          string `json:"id"`
+	Public      bool   `json:"public,omitempty"`
 }
 
 type PlaylistConversionEventMetadata struct {

@@ -154,16 +154,46 @@ func (tc *TidalClient) decodeErrorResponse(resp *http.Response) error {
 	}
 	buf := bytes.NewBuffer(body)
 
-	var e struct {
-		Err Error `json:"error"`
-	}
+	var e TidalErrorResponse
 
-	err = json.NewDecoder(buf).Decode(&e)
+	dErr := json.NewDecoder(buf).Decode(&e)
 
-	if err != nil {
+	if dErr != nil {
 		return fmt.Errorf("tidal client: could not decode TIDAL error: (%d) [%s]", len(body), body)
 	}
-	return nil
+	return e
+}
+
+// TidalErrorResponse represents the top-level error response
+type TidalErrorResponse struct {
+	Errors []TidalError `json:"errors"`
+}
+
+// TidalError represents a single error in the response
+type TidalError struct {
+	Code   string            `json:"code"`
+	Detail string            `json:"detail"`
+	Source *TidalErrorSource `json:"source,omitempty"`
+}
+
+// TidalErrorSource contains the source of the error
+type TidalErrorSource struct {
+	Parameter string `json:"parameter,omitempty"`
+	Pointer   string `json:"pointer,omitempty"`
+}
+
+// Error implements the error interface for TidalErrorResponse
+func (e TidalErrorResponse) Error() string {
+	if len(e.Errors) == 0 {
+		return "tidal api error: unknown error"
+	}
+
+	if len(e.Errors) == 1 {
+		return fmt.Sprintf("tidal api error: %s - %s", e.Errors[0].Code, e.Errors[0].Detail)
+	}
+
+	return fmt.Sprintf("tidal api error: %s - %s (and %d more errors)",
+		e.Errors[0].Code, e.Errors[0].Detail, len(e.Errors)-1)
 }
 
 func shouldRetry(status int) bool {
